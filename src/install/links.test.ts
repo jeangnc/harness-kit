@@ -9,6 +9,7 @@ import {
   lstatSync,
   readlinkSync,
   existsSync,
+  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -165,6 +166,84 @@ test("applyConfigLinks skips vendors not in the active set", async () => {
     const claude = fakeVendor("claude", claudeHome);
     await applyConfigLinks({ repoRoot, distRoot, vendors: [claude] });
     assert.ok(!existsSync(join(codexHome, "config.toml")));
+  });
+});
+
+test("applyConfigLinks removes orphan symlinks that point into the managed source tree", async () => {
+  await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
+    const srcDir = join(repoRoot, "src/configs/claude");
+    mkdirSync(srcDir, { recursive: true });
+    writeFileSync(join(srcDir, "settings.json"), "{}");
+    mkdirSync(claudeHome, { recursive: true });
+    const orphanSrc = join(repoRoot, "src/configs/claude/removed-feature");
+    symlinkSync(orphanSrc, join(claudeHome, "removed-feature"));
+    writeManifest(distRoot, {
+      links: [
+        {
+          src: "configs/claude/settings.json",
+          vendors: ["claude"],
+          destRel: "settings.json",
+          kind: "file",
+        },
+      ],
+    });
+    const claude = fakeVendor("claude", claudeHome);
+    await applyConfigLinks({ repoRoot, distRoot, vendors: [claude] });
+    assert.throws(
+      () => lstatSync(join(claudeHome, "removed-feature")),
+      /ENOENT/,
+      "orphan symlink should have been removed",
+    );
+    assert.ok(lstatSync(join(claudeHome, "settings.json")).isSymbolicLink());
+  });
+});
+
+test("applyConfigLinks leaves untouched symlinks pointing outside the managed source tree", async () => {
+  await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
+    mkdirSync(claudeHome, { recursive: true });
+    const externalTarget = join(repoRoot, "..", "external", "file.json");
+    mkdirSync(join(repoRoot, "..", "external"), { recursive: true });
+    writeFileSync(externalTarget, "{}");
+    symlinkSync(externalTarget, join(claudeHome, "external.json"));
+    writeManifest(distRoot, { links: [] });
+    const claude = fakeVendor("claude", claudeHome);
+    await applyConfigLinks({ repoRoot, distRoot, vendors: [claude] });
+    assert.ok(lstatSync(join(claudeHome, "external.json")).isSymbolicLink());
+  });
+});
+
+test("applyConfigLinks removes alias-orphan symlinks (vendor stopped emitting an alias)", async () => {
+  await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
+    const srcDir = join(repoRoot, "src/configs/common");
+    mkdirSync(srcDir, { recursive: true });
+    writeFileSync(join(srcDir, "AGENTS.md"), "shared");
+    mkdirSync(claudeHome, { recursive: true });
+    symlinkSync(join(srcDir, "AGENTS.md"), join(claudeHome, "STALE.md"));
+    writeManifest(distRoot, {
+      links: [
+        {
+          src: "configs/common/AGENTS.md",
+          vendors: ["claude"],
+          destRel: "AGENTS.md",
+          kind: "file",
+        },
+      ],
+    });
+    const claude = fakeVendor("claude", claudeHome);
+    await applyConfigLinks({ repoRoot, distRoot, vendors: [claude] });
+    assert.throws(() => lstatSync(join(claudeHome, "STALE.md")), /ENOENT/);
+    assert.ok(lstatSync(join(claudeHome, "AGENTS.md")).isSymbolicLink());
+  });
+});
+
+test("applyConfigLinks leaves untouched non-symlink files in the vendor home", async () => {
+  await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
+    mkdirSync(claudeHome, { recursive: true });
+    writeFileSync(join(claudeHome, "user-data.json"), "preserve me");
+    writeManifest(distRoot, { links: [] });
+    const claude = fakeVendor("claude", claudeHome);
+    await applyConfigLinks({ repoRoot, distRoot, vendors: [claude] });
+    assert.equal(readFileSync(join(claudeHome, "user-data.json"), "utf8"), "preserve me");
   });
 });
 

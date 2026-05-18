@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises";
-import { basename, join, relative } from "node:path";
+import { readFile, readdir, readlink, rm } from "node:fs/promises";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 import { z } from "zod";
 
@@ -70,8 +70,52 @@ export async function planConfigLinks(
 
 export async function applyConfigLinks(options: ApplyConfigLinksOptions): Promise<void> {
   const plan = await planConfigLinks(options);
+  await sweepOrphanLinks(plan, options);
   for (const entry of plan) {
     await applyLink({ srcAbs: entry.srcAbs, destAbs: entry.destAbs });
+  }
+}
+
+async function sweepOrphanLinks(
+  plan: readonly PlannedLink[],
+  options: ApplyConfigLinksOptions,
+): Promise<void> {
+  const managedSrcRoot = join(options.repoRoot, "src") + "/";
+  const planned = new Set(plan.map((p) => p.destAbs));
+  const scanDirs = new Set<string>();
+  for (const vendor of options.vendors) scanDirs.add(vendor.home);
+  for (const entry of plan) scanDirs.add(dirname(entry.destAbs));
+
+  for (const dir of scanDirs) {
+    const entries = await readdirOrEmpty(dir);
+    for (const name of entries) {
+      const path = join(dir, name);
+      if (planned.has(path)) continue;
+      const target = await readlinkOrNull(path);
+      if (target === null) continue;
+      const absTarget = resolve(dir, target);
+      if (!absTarget.startsWith(managedSrcRoot)) continue;
+      await rm(path);
+    }
+  }
+}
+
+async function readdirOrEmpty(dir: string): Promise<readonly string[]> {
+  try {
+    return await readdir(dir);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw e;
+  }
+}
+
+async function readlinkOrNull(path: string): Promise<string | null> {
+  try {
+    return await readlink(path);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "EINVAL" || code === "ENOENT") return null;
+    throw e;
   }
 }
 
