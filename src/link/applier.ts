@@ -14,10 +14,20 @@ export async function applyLink(options: ApplyLinkOptions): Promise<void> {
     if (existing.isSymbolicLink()) {
       await rm(destAbs);
     } else {
-      await rename(destAbs, `${destAbs}.backup`);
+      await rename(destAbs, await pickBackupPath(destAbs));
     }
   }
   await symlink(srcAbs, destAbs);
+}
+
+async function pickBackupPath(destAbs: string): Promise<string> {
+  const base = `${destAbs}.backup`;
+  if ((await lstatOrNull(base)) === null) return base;
+  for (let i = 2; i < 1000; i++) {
+    const candidate = `${base}.${i}`;
+    if ((await lstatOrNull(candidate)) === null) return candidate;
+  }
+  throw new Error(`could not find a free backup path for ${destAbs}`);
 }
 
 async function lstatOrNull(path: string): Promise<Awaited<ReturnType<typeof lstat>> | null> {

@@ -115,3 +115,27 @@ test("applyLink backs up a non-symlink directory before linking", async () => {
     assert.equal(readFileSync(join(`${dest}.backup`, "user-file.txt"), "utf8"), "user-data");
   });
 });
+
+test("applyLink picks a unique backup name when .backup already exists", async () => {
+  await withSandbox(async (root) => {
+    const src = join(root, "src-dir");
+    const dest = join(root, "dest-dir");
+    const existingBackup = `${dest}.backup`;
+    mkdirSync(src);
+    writeFileSync(join(src, "inside.txt"), "from-src");
+    mkdirSync(dest);
+    writeFileSync(join(dest, "current.txt"), "current");
+    mkdirSync(existingBackup);
+    writeFileSync(join(existingBackup, "old.txt"), "old-backup");
+
+    await applyLink({ srcAbs: src, destAbs: dest });
+
+    assert.ok(lstatSync(dest).isSymbolicLink());
+    assert.equal(readFileSync(join(dest, "inside.txt"), "utf8"), "from-src");
+    assert.equal(
+      readFileSync(join(existingBackup, "old.txt"), "utf8"),
+      "old-backup",
+      "must preserve the original .backup directory",
+    );
+  });
+});
