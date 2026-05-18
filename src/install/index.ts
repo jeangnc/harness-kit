@@ -77,8 +77,22 @@ async function resolveContext(
     ((msg: string): void => {
       if (!silent) console.log(msg);
     });
-  const marketplace = await readMarketplaceName(distRoot);
+  const marketplace = await resolveMarketplaceName(distRoot, options.vendors);
   return { distRoot, repoRoot, vendors: options.vendors, marketplace, run: runner, log };
+}
+
+async function resolveMarketplaceName(
+  distRoot: string,
+  vendors: readonly Vendor[],
+): Promise<string> {
+  const names = await Promise.all(vendors.map(async (v) => readMarketplaceName(distRoot, v)));
+  const [first, ...rest] = names;
+  if (first === undefined) throw new Error("install requires at least one vendor");
+  const mismatch = rest.find((n) => n !== first);
+  if (mismatch !== undefined) {
+    throw new Error(`vendor marketplaces disagree on name: got "${mismatch}", expected "${first}"`);
+  }
+  return first;
 }
 
 function buildVendorContext(

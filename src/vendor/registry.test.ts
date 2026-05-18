@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { join } from "node:path";
 
 import { resolveVendors } from "./registry.js";
 import type { Vendor } from "./schema.js";
@@ -8,7 +9,11 @@ const fakeVendor = (name: string): Vendor => ({
   name,
   home: `/tmp/.${name}`,
   pluginManifestPath: `.${name}-plugin/plugin.json`,
+  marketplaceManifestPath: `${name}/.${name}-plugin/marketplace.json`,
+  vendorOutDir: (outRoot) => join(outRoot, name),
+  pluginOutDir: (outRoot, pluginName) => join(outRoot, name, pluginName),
   emitPluginManifest: async () => undefined,
+  emitMarketplaceManifest: async () => undefined,
   install: async () => undefined,
   uninstall: async () => undefined,
 });

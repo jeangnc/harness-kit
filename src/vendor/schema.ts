@@ -1,4 +1,5 @@
 import type { CommandRunner } from "../install/runner.js";
+import type { Marketplace } from "../marketplace/index.js";
 import type { Plugin } from "../plugin/index.js";
 
 export interface LinkedFile {
@@ -27,12 +28,21 @@ export interface VendorEmitContext {
   readonly pluginOutDir: string;
 }
 
+export interface VendorMarketplaceEmitContext {
+  readonly outRoot: string;
+  readonly marketplace: Marketplace;
+}
+
 export interface Vendor {
   readonly name: string;
   readonly home: string;
   readonly pluginManifestPath: string;
+  readonly marketplaceManifestPath: string;
+  readonly vendorOutDir: (outRoot: string) => string;
+  readonly pluginOutDir: (outRoot: string, pluginName: string) => string;
   readonly aliases?: (linkedFile: LinkedFile) => readonly string[];
   readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;
+  readonly emitMarketplaceManifest: (ctx: VendorMarketplaceEmitContext) => Promise<void>;
   readonly install: (ctx: VendorInstallContext) => Promise<void>;
   readonly uninstall: (ctx: VendorInstallContext) => Promise<void>;
 }

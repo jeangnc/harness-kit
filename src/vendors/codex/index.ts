@@ -3,18 +3,35 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { runIgnoreFailure } from "../../install/runner.js";
-import { writeVendorPluginManifest } from "../shared.js";
-import type { Vendor, VendorEmitContext, VendorInstallContext } from "../../vendor/schema.js";
+import { defaultEmitMarketplaceManifest, defaultEmitPluginManifest } from "../shared.js";
+import type {
+  Vendor,
+  VendorEmitContext,
+  VendorInstallContext,
+  VendorMarketplaceEmitContext,
+} from "../../vendor/schema.js";
 
-const MANIFEST_REL = ".codex-plugin/plugin.json";
+const VENDOR_DIR = "codex";
+const PLUGIN_MANIFEST_REL = ".codex-plugin/plugin.json";
+const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.codex-plugin/marketplace.json`;
 
 export function makeCodexVendor(home: string): Vendor {
   return {
     name: "codex",
     home,
-    pluginManifestPath: MANIFEST_REL,
+    pluginManifestPath: PLUGIN_MANIFEST_REL,
+    marketplaceManifestPath: MARKETPLACE_MANIFEST_REL,
+    vendorOutDir(outRoot) {
+      return join(outRoot, VENDOR_DIR);
+    },
+    pluginOutDir(outRoot, pluginName) {
+      return join(outRoot, VENDOR_DIR, pluginName);
+    },
     async emitPluginManifest(ctx: VendorEmitContext): Promise<void> {
-      await writeVendorPluginManifest(ctx.pluginOutDir, MANIFEST_REL, ctx.manifest);
+      await defaultEmitPluginManifest(PLUGIN_MANIFEST_REL, ctx);
+    },
+    async emitMarketplaceManifest(ctx: VendorMarketplaceEmitContext): Promise<void> {
+      await defaultEmitMarketplaceManifest(MARKETPLACE_MANIFEST_REL, ctx);
     },
     async install(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;

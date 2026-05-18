@@ -5,8 +5,23 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { lint } from "./lint.js";
+import type { Vendor } from "./vendor/schema.js";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
+
+const claudeVendor: Vendor = {
+  name: "claude",
+  home: "/tmp/.claude",
+  pluginManifestPath: ".claude-plugin/plugin.json",
+  marketplaceManifestPath: "claude/.claude-plugin/marketplace.json",
+  vendorOutDir: (outRoot) => join(outRoot, "claude"),
+  pluginOutDir: (outRoot, pluginName) => join(outRoot, "claude", pluginName),
+  emitPluginManifest: async () => undefined,
+  emitMarketplaceManifest: async () => undefined,
+  install: async () => undefined,
+  uninstall: async () => undefined,
+};
+const vendors: readonly Vendor[] = [claudeVendor];
 
 interface Sandbox {
   readonly outRoot: string;
@@ -31,10 +46,10 @@ async function withSandbox<T>(fn: (sandbox: Sandbox) => Promise<T>): Promise<T> 
 test("lint passes on clean markdown", async () => {
   await withSandbox(async ({ outRoot, writeMd }) => {
     writeMd(
-      "plugins/foo/skills/bar/SKILL.md",
+      "claude/foo/skills/bar/SKILL.md",
       "---\nname: bar\ndescription: ok\n---\n\n# Bar\n\nClean body.\n",
     );
-    const result = await lint({ outRoot, silent: true });
+    const result = await lint({ outRoot, vendors, silent: true });
     assert.equal(result.errorCount, 0);
   });
 });
@@ -42,10 +57,10 @@ test("lint passes on clean markdown", async () => {
 test("lint flags markdown rule violations", async () => {
   await withSandbox(async ({ outRoot, writeMd }) => {
     writeMd(
-      "plugins/foo/skills/bar/SKILL.md",
+      "claude/foo/skills/bar/SKILL.md",
       "---\nname: bar\ndescription: bad\n---\n\n# Heading\n## Skipped a level (MD001)\n",
     );
-    const result = await lint({ outRoot, silent: true });
+    const result = await lint({ outRoot, vendors, silent: true });
     assert.ok(result.errorCount > 0, "expected lint to report violations");
   });
 });
@@ -54,10 +69,10 @@ test("lint default config disables line-length (MD013)", async () => {
   await withSandbox(async ({ outRoot, writeMd }) => {
     const longLine = "x".repeat(500);
     writeMd(
-      "plugins/foo/skills/bar/SKILL.md",
+      "claude/foo/skills/bar/SKILL.md",
       `---\nname: bar\ndescription: long\n---\n\n# Bar\n\n${longLine}\n`,
     );
-    const result = await lint({ outRoot, silent: true });
+    const result = await lint({ outRoot, vendors, silent: true });
     assert.equal(result.errorCount, 0, "MD013 should be disabled by default");
   });
 });
@@ -65,10 +80,10 @@ test("lint default config disables line-length (MD013)", async () => {
 test("lint default config tolerates inline HTML (MD033)", async () => {
   await withSandbox(async ({ outRoot, writeMd }) => {
     writeMd(
-      "plugins/foo/skills/bar/SKILL.md",
+      "claude/foo/skills/bar/SKILL.md",
       "---\nname: bar\ndescription: html\n---\n\n# Bar\n\n<div>inline</div>\n",
     );
-    const result = await lint({ outRoot, silent: true });
+    const result = await lint({ outRoot, vendors, silent: true });
     assert.equal(result.errorCount, 0, "MD033 should be disabled by default");
   });
 });
@@ -76,21 +91,21 @@ test("lint default config tolerates inline HTML (MD033)", async () => {
 test("lint default config allows duplicate sibling headings across files (MD024)", async () => {
   await withSandbox(async ({ outRoot, writeMd }) => {
     writeMd(
-      "plugins/foo/skills/a/SKILL.md",
+      "claude/foo/skills/a/SKILL.md",
       "---\nname: a\ndescription: x\n---\n\n# Title\n\n## Notes\n",
     );
     writeMd(
-      "plugins/foo/skills/b/SKILL.md",
+      "claude/foo/skills/b/SKILL.md",
       "---\nname: b\ndescription: x\n---\n\n# Title\n\n## Notes\n",
     );
-    const result = await lint({ outRoot, silent: true });
+    const result = await lint({ outRoot, vendors, silent: true });
     assert.equal(result.errorCount, 0);
   });
 });
 
 test("lint succeeds when there are no markdown files", async () => {
   await withSandbox(async ({ outRoot }) => {
-    const result = await lint({ outRoot, silent: true });
+    const result = await lint({ outRoot, vendors, silent: true });
     assert.equal(result.errorCount, 0);
   });
 });

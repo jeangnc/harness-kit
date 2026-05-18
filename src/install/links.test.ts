@@ -22,9 +22,13 @@ function fakeVendor(name: string, home: string, opts: { aliasesFor?: string } = 
     name,
     home,
     pluginManifestPath: `.${name}-plugin/plugin.json`,
+    marketplaceManifestPath: `${name}/.${name}-plugin/marketplace.json`,
+    vendorOutDir: (outRoot) => join(outRoot, name),
+    pluginOutDir: (outRoot, pluginName) => join(outRoot, name, pluginName),
     aliases: (file) =>
       opts.aliasesFor && file.basename === opts.aliasesFor ? [join(home, "ALIASED.md")] : [],
     emitPluginManifest: async () => undefined,
+    emitMarketplaceManifest: async () => undefined,
     install: async () => undefined,
     uninstall: async () => undefined,
   };

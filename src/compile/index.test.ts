@@ -203,7 +203,7 @@ test("compile emits SKILL.md with frontmatter and body for a typed skill source"
   await withTempDist(async (dist) => {
     await compile({ srcRoot: goodRoot, outRoot: dist, vendors });
 
-    const skillPath = join(dist, "plugins/claude/foo/skills/bar/SKILL.md");
+    const skillPath = join(dist, "claude/foo/skills/bar/SKILL.md");
     assert.ok(existsSync(skillPath), `expected ${skillPath} to exist`);
 
     const content = readFileSync(skillPath, "utf8");
@@ -218,7 +218,7 @@ test("compile copies non-skill plugin files verbatim", async () => {
   await withTempDist(async (dist) => {
     await compile({ srcRoot: goodRoot, outRoot: dist, vendors });
 
-    const manifestPath = join(dist, "plugins/claude/foo/.claude-plugin/plugin.json");
+    const manifestPath = join(dist, "claude/foo/.claude-plugin/plugin.json");
     assert.ok(existsSync(manifestPath), `expected ${manifestPath} to exist`);
 
     const original = readFileSync(join(goodRoot, "plugins/foo/.claude-plugin/plugin.json"), "utf8");
@@ -231,20 +231,26 @@ test("compile does not write SKILL.ts source files into dist", async () => {
   await withTempDist(async (dist) => {
     await compile({ srcRoot: goodRoot, outRoot: dist, vendors });
 
-    const tsPath = join(dist, "plugins/claude/foo/skills/bar/SKILL.ts");
+    const tsPath = join(dist, "claude/foo/skills/bar/SKILL.ts");
     assert.ok(!existsSync(tsPath), `did not expect ${tsPath} to exist`);
   });
 });
 
-test("compile copies .claude-plugin/marketplace.json verbatim into dist root", async () => {
+test("compile emits a per-vendor marketplace.json under dist/<vendor>/.<vendor>-plugin/", async () => {
   await withTempDist(async (dist) => {
     await compile({ srcRoot: goodRoot, outRoot: dist, vendors });
 
-    const distManifest = join(dist, ".claude-plugin/marketplace.json");
+    const distManifest = join(dist, "claude/.claude-plugin/marketplace.json");
     assert.ok(existsSync(distManifest), `expected ${distManifest} to exist`);
-    const original = readFileSync(join(goodRoot, ".claude-plugin/marketplace.json"), "utf8");
-    const copied = readFileSync(distManifest, "utf8");
-    assert.equal(copied, original);
+    const emitted = JSON.parse(readFileSync(distManifest, "utf8")) as {
+      name: string;
+      plugins: ReadonlyArray<{ name: string; source: unknown }>;
+    };
+    const original = JSON.parse(
+      readFileSync(join(goodRoot, ".claude-plugin/marketplace.json"), "utf8"),
+    ) as { name: string };
+    assert.equal(emitted.name, original.name);
+    assert.ok(emitted.plugins.length > 0);
   });
 });
 
@@ -261,7 +267,7 @@ test("compile renders typed companions into the {{companions}} placeholder", asy
   await withTempDist(async (dist) => {
     await compile({ srcRoot: companionRenderRoot, outRoot: dist, vendors });
 
-    const skillPath = join(dist, "plugins/claude/foo/skills/bar/SKILL.md");
+    const skillPath = join(dist, "claude/foo/skills/bar/SKILL.md");
     const content = readFileSync(skillPath, "utf8");
 
     assert.ok(
@@ -285,7 +291,7 @@ test("compile reads body from sibling body.md", async () => {
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /# Bar from body\.md\n\nReal body content\./);
     },
   );
@@ -302,7 +308,7 @@ test("compile does not copy body.md into dist", async () => {
     { skillSource: SKILL_TS_BARE, bodyMd: "# Bar\n" },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const stray = join(distRoot, "plugins/claude/foo/skills/bar/body.md");
+      const stray = join(distRoot, "claude/foo/skills/bar/body.md");
       assert.ok(!existsSync(stray), `did not expect ${stray} to exist`);
     },
   );
@@ -317,7 +323,7 @@ test("compile substitutes {{skill:...}} for a discovered local skill", async () 
     async (srcRoot, distRoot) => {
       makeStubSkill(srcRoot, "dev-tools", "ruby");
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /see `dev-tools:ruby` for ruby idioms/);
     },
   );
@@ -346,7 +352,7 @@ test("compile renders {{ext:...}} as a backticked id without checking it exists"
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /see `superpowers:test-driven-development` for TDD/);
     },
   );
@@ -429,7 +435,7 @@ test("compile emits plugin.json from PLUGIN.ts with legacy keys preserved", asyn
   await withTempDist(async (dist) => {
     await compile({ srcRoot: withPluginRoot, outRoot: dist, vendors });
 
-    const manifestPath = join(dist, "plugins/claude/foo/.claude-plugin/plugin.json");
+    const manifestPath = join(dist, "claude/foo/.claude-plugin/plugin.json");
     assert.ok(existsSync(manifestPath), `expected ${manifestPath} to exist`);
 
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
@@ -446,7 +452,7 @@ test("compile does not write PLUGIN.ts source files into dist", async () => {
   await withTempDist(async (dist) => {
     await compile({ srcRoot: withPluginRoot, outRoot: dist, vendors });
 
-    const tsPath = join(dist, "plugins/claude/foo/PLUGIN.ts");
+    const tsPath = join(dist, "claude/foo/PLUGIN.ts");
     assert.ok(!existsSync(tsPath), `did not expect ${tsPath} to exist`);
   });
 });
@@ -456,7 +462,7 @@ test("compile does not emit context into the legacy plugin.json", async () => {
     await compile({ srcRoot: withPluginRoot, outRoot: dist, vendors });
 
     const manifest = JSON.parse(
-      readFileSync(join(dist, "plugins/claude/foo/.claude-plugin/plugin.json"), "utf8"),
+      readFileSync(join(dist, "claude/foo/.claude-plugin/plugin.json"), "utf8"),
     ) as Record<string, unknown>;
     assert.equal("context" in manifest, false);
   });
@@ -536,8 +542,8 @@ export default definePlugin({
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      assert.ok(existsSync(join(distRoot, "plugins/claude/foo/.claude-plugin/plugin.json")));
-      assert.ok(existsSync(join(distRoot, "plugins/claude/foo/context/instructions.md")));
+      assert.ok(existsSync(join(distRoot, "claude/foo/.claude-plugin/plugin.json")));
+      assert.ok(existsSync(join(distRoot, "claude/foo/context/instructions.md")));
     },
   );
 });
@@ -558,7 +564,7 @@ export default defineSkill({ name: "bar", description: "fixture" });
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /see `\.\.\/\.\.\/shared\/linear-ids\.md` for the map/);
     },
   );
@@ -598,7 +604,7 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
       chmodSync(join(srcRoot, "plugins/foo/hooks/example.sh"), 0o755);
       await compile({ srcRoot, outRoot: distRoot, vendors });
 
-      const distScript = join(distRoot, "plugins/claude/foo/hooks/example.sh");
+      const distScript = join(distRoot, "claude/foo/hooks/example.sh");
       assert.ok(existsSync(distScript), `expected ${distScript} to exist`);
       const mode = statSync(distScript).mode & 0o777;
       assert.equal(
@@ -621,7 +627,7 @@ inline body
 `;
   await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
     await compile({ srcRoot, outRoot: distRoot, vendors });
-    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(
       out,
       /^---\nname: bar\ndescription: plain markdown skill\n---\n\n# Bar\ninline body\n$/,
@@ -639,7 +645,7 @@ see {{ext:superpowers:tdd}} for tdd
 `;
   await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
     await compile({ srcRoot, outRoot: distRoot, vendors });
-    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /see `superpowers:tdd` for tdd/);
     assert.ok(!out.includes("{{ext:"), "raw token should not survive in dist");
   });
@@ -664,7 +670,7 @@ companions:
     { skillMd, companionFiles: { "a.md": "# A\n", "b.md": "# B\n" } },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.ok(
         out.includes(
           "## Companion files (read on demand)\n\n- `a.md` — First companion.\n- `b.md` — Second companion.",
@@ -692,7 +698,7 @@ companions:
     { skillMd, companionFiles: { "a.md": "# A\n" } },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       const frontmatterMatch = /^---\n([\s\S]*?)\n---/.exec(out);
       assert.ok(frontmatterMatch, "dist file should have frontmatter");
       const fm = frontmatterMatch[1] ?? "";
@@ -730,7 +736,7 @@ test("compile does not write the source SKILL.md as both rewritten skill and ver
   const skillMd = `---\nname: bar\ndescription: x\n---\n\nsee {{ext:foo:bar}}\n`;
   await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
     await compile({ srcRoot, outRoot: distRoot, vendors });
-    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
     assert.ok(
       !out.includes("{{ext:"),
       `dist SKILL.md should be the rewritten version, got:\n${out}`,
@@ -743,7 +749,7 @@ test("compile renders {{skill:...}} from a plain SKILL.md to a TS-authored sibli
   await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
     makeStubSkill(srcRoot, "dev-tools", "ruby");
     await compile({ srcRoot, outRoot: distRoot, vendors });
-    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /see `dev-tools:ruby`/);
   });
 });
@@ -756,7 +762,7 @@ test("compile discovers a SKILL.md skill as a local skill (visible to {{skill:..
     writeFileSync(join(peerDir, "SKILL.md"), `---\nname: peer\ndescription: peer\n---\n\n# Peer\n`);
     ensurePluginInMarketplace(srcRoot, "other");
     await compile({ srcRoot, outRoot: distRoot, vendors });
-    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /see `other:peer`/);
   });
 });
@@ -789,7 +795,7 @@ test("compile expands {{include:./path.md}} in a SKILL.md body", async () => {
     { skillMd, companionFiles: { "fragment.md": "INLINED-CONTENT\n" } },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /before\nINLINED-CONTENT\n\nafter/);
       assert.ok(!out.includes("{{include:"), `raw include token survived in:\n${out}`);
     },
@@ -802,7 +808,7 @@ test("compile resolves placeholders inside an included file against the host ski
     { skillMd, companionFiles: { "shared.md": "see {{ext:foo:bar}} please\n" } },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /see `foo:bar` please/);
     },
   );
@@ -841,7 +847,7 @@ test("compile does not copy included .md files into dist", async () => {
     { skillMd, companionFiles: { "fragment.md": "inlined\n" } },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const stray = join(distRoot, "plugins/claude/foo/skills/bar/fragment.md");
+      const stray = join(distRoot, "claude/foo/skills/bar/fragment.md");
       assert.ok(!existsSync(stray), `included file should not land in dist at ${stray}`);
     },
   );
@@ -853,7 +859,7 @@ test("compile leaves frontmatter untouched when {{include:...}} appears in body"
     { skillMd, companionFiles: { "fragment.md": "body content\n" } },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /^---\nname: bar\ndescription: untouched description\n---\n\n/);
     },
   );
@@ -874,7 +880,7 @@ test("compile substitutes {{skill:...}} inside the frontmatter description", asy
   await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
     makeStubSkill(srcRoot, "dev-tools", "ruby");
     await compile({ srcRoot, outRoot: distRoot, vendors });
-    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /description: use `dev-tools:ruby` instead/);
     assert.ok(!out.includes("{{skill:"), `raw token survived in frontmatter:\n${out}`);
   });
@@ -884,7 +890,7 @@ test("compile substitutes {{ext:...}} inside the frontmatter description", async
   const skillMd = `---\nname: bar\ndescription: see {{ext:superpowers:tdd}} for details\n---\n\n# Bar\n`;
   await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
     await compile({ srcRoot, outRoot: distRoot, vendors });
-    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /description: see `superpowers:tdd` for details/);
     assert.ok(!out.includes("{{ext:"), `raw token survived in frontmatter:\n${out}`);
   });
@@ -920,10 +926,7 @@ companions:
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const companion = readFileSync(
-        join(distRoot, "plugins/claude/foo/skills/bar/procedure.md"),
-        "utf8",
-      );
+      const companion = readFileSync(join(distRoot, "claude/foo/skills/bar/procedure.md"), "utf8");
       assert.match(companion, /see `superpowers:tdd` for tdd/);
       assert.ok(!companion.includes("{{ext:"), `raw token in companion:\n${companion}`);
     },
@@ -983,10 +986,7 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(
-        join(distRoot, "plugins/claude/foo/skills/bar/procedure.md"),
-        "utf8",
-      );
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/procedure.md"), "utf8");
       assert.match(out, /see `\.\.\/\.\.\/shared\/notes\.md`/);
     },
   );
@@ -1005,7 +1005,7 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/agents/reviewer.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/agents/reviewer.md"), "utf8");
       assert.match(out, /Invoke `foo:bar` for help\./);
     },
   );
@@ -1040,7 +1040,7 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/commands/ship.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/commands/ship.md"), "utf8");
       assert.match(out, /Run `foo:bar` first\./);
     },
   );
@@ -1075,7 +1075,7 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/agents/reviewer.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/agents/reviewer.md"), "utf8");
       assert.match(out, /see `\.\.\/shared\/notes\.md`/);
     },
   );
@@ -1085,7 +1085,7 @@ test("compile builds the markdown-only fixture end-to-end", async () => {
   await withTempDist(async (dist) => {
     await compile({ srcRoot: mdSourceRoot, outRoot: dist, vendors });
 
-    const skillPath = join(dist, "plugins/claude/foo/skills/bar/SKILL.md");
+    const skillPath = join(dist, "claude/foo/skills/bar/SKILL.md");
     assert.ok(existsSync(skillPath), `expected ${skillPath} to exist`);
 
     const content = readFileSync(skillPath, "utf8");
@@ -1095,7 +1095,7 @@ test("compile builds the markdown-only fixture end-to-end", async () => {
     assert.doesNotMatch(content, /\{\{include:/);
     assert.doesNotMatch(content, /\{\{ext:/);
 
-    const preambleCopy = join(dist, "plugins/claude/foo/skills/bar/preamble.md");
+    const preambleCopy = join(dist, "claude/foo/skills/bar/preamble.md");
     assert.ok(!existsSync(preambleCopy), `did not expect ${preambleCopy} to exist`);
   });
 });
@@ -1109,7 +1109,7 @@ test("compile substitutes {{command:plugin:name}} as `/plugin:name` for a discov
     async (srcRoot, distRoot) => {
       makeStubCommand(srcRoot, "dev-tools", "open-pr");
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /run `\/dev-tools:open-pr` to ship/);
     },
   );
@@ -1148,7 +1148,7 @@ test("compile substitutes {{agent:plugin:name}} as `name` (bare) for a discovere
     async (srcRoot, distRoot) => {
       makeStubAgent(srcRoot, "dev-tools", "code-reviewer");
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /dispatch `code-reviewer` for review/);
     },
   );
@@ -1186,7 +1186,7 @@ test("compile renders {{ext-command:...}} as `/plugin:name` without local lookup
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /run `\/dev-tools:open-pr` after merging/);
     },
   );
@@ -1212,7 +1212,7 @@ test("compile renders {{ext-agent:...}} as bare `name` without local lookup", as
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /dispatch `code-reviewer` for review/);
     },
   );
@@ -1251,10 +1251,7 @@ export default defineSkill({ name: "bar", description: "stub" });
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(
-        join(distRoot, "plugins/claude/foo/context/instructions.md"),
-        "utf8",
-      );
+      const out = readFileSync(join(distRoot, "claude/foo/context/instructions.md"), "utf8");
       assert.match(out, /use `foo:bar` when needed/);
     },
   );
@@ -1301,10 +1298,7 @@ export default definePlugin({
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(
-        join(distRoot, "plugins/claude/foo/context/instructions.md"),
-        "utf8",
-      );
+      const out = readFileSync(join(distRoot, "claude/foo/context/instructions.md"), "utf8");
       assert.match(out, /see `superpowers:tdd` for details/);
     },
   );
@@ -1328,10 +1322,7 @@ export default definePlugin({
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(
-        join(distRoot, "plugins/claude/foo/context/instructions.md"),
-        "utf8",
-      );
+      const out = readFileSync(join(distRoot, "claude/foo/context/instructions.md"), "utf8");
       assert.match(out, /see `\.\/sibling\.md`/);
     },
   );
@@ -1373,7 +1364,7 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "plugins/claude/foo/notes/scratch.md"), "utf8");
+      const out = readFileSync(join(distRoot, "claude/foo/notes/scratch.md"), "utf8");
       assert.equal(out, "raw {{skill:foo:ghost}} unchanged\n");
     },
   );
@@ -1400,7 +1391,7 @@ export default definePlugin({
       makeStubCommand(srcRoot, "foo", "open");
       makeStubAgent(srcRoot, "foo", "rev");
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      assert.ok(existsSync(join(distRoot, "plugins/claude/foo/.claude-plugin/plugin.json")));
+      assert.ok(existsSync(join(distRoot, "claude/foo/.claude-plugin/plugin.json")));
     },
   );
 });
@@ -1495,7 +1486,7 @@ export default defineSkill({ name: "bar", description: "demo" });
       );
       makeStubSkill(srcRoot, "other", "tdd");
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      assert.ok(existsSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md")));
+      assert.ok(existsSync(join(distRoot, "claude/foo/skills/bar/SKILL.md")));
     },
   );
 });
@@ -1577,7 +1568,7 @@ export default defineSkill({ name: "other-skill", description: "demo" });
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      assert.ok(existsSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md")));
+      assert.ok(existsSync(join(distRoot, "claude/foo/skills/bar/SKILL.md")));
     },
   );
 });
@@ -1597,7 +1588,7 @@ export default defineSkill({ name: "bar", description: "demo" });
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
-      assert.ok(existsSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md")));
+      assert.ok(existsSync(join(distRoot, "claude/foo/skills/bar/SKILL.md")));
     },
   );
 });
@@ -1648,7 +1639,7 @@ test("compile preserves upstream passthrough keys in emitted plugin.json", async
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
       const emitted = JSON.parse(
-        readFileSync(join(distRoot, "plugins/claude/foo/.claude-plugin/plugin.json"), "utf8"),
+        readFileSync(join(distRoot, "claude/foo/.claude-plugin/plugin.json"), "utf8"),
       ) as Record<string, unknown>;
       assert.equal(emitted["category"], "development");
       assert.deepEqual(emitted["tags"], ["ai", "tools"]);
@@ -1713,7 +1704,7 @@ export default defineSkill({ name: "bar", description: "demo" });
     );
 
     await compile({ srcRoot, outRoot: distRoot, vendors });
-    assert.ok(existsSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md")));
+    assert.ok(existsSync(join(distRoot, "claude/foo/skills/bar/SKILL.md")));
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
     rmSync(distRoot, { recursive: true, force: true });

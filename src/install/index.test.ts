@@ -38,7 +38,11 @@ function makeRecordingVendor(
     name,
     home,
     pluginManifestPath: `.${name}-plugin/plugin.json`,
+    marketplaceManifestPath: `${name}/.${name}-plugin/marketplace.json`,
+    vendorOutDir: (outRoot) => join(outRoot, name),
+    pluginOutDir: (outRoot, pluginName) => join(outRoot, name, pluginName),
     emitPluginManifest: async () => undefined,
+    emitMarketplaceManifest: async () => undefined,
     install: async (ctx) => {
       record.installs.push(ctx);
     },
@@ -64,13 +68,17 @@ async function withInstallFixture<T>(
 ): Promise<T> {
   const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-install-"));
   const distRoot = join(sandbox, "dist");
-  mkdirSync(join(distRoot, ".claude-plugin"), { recursive: true });
-  writeFileSync(
-    join(distRoot, ".claude-plugin/marketplace.json"),
-    JSON.stringify({ name: options.marketplaceName }),
-  );
+  const vendors = new Set(options.plugins.map((p) => p.vendor));
+  if (vendors.size === 0) vendors.add("claude");
+  for (const vendor of vendors) {
+    mkdirSync(join(distRoot, vendor, `.${vendor}-plugin`), { recursive: true });
+    writeFileSync(
+      join(distRoot, vendor, `.${vendor}-plugin/marketplace.json`),
+      JSON.stringify({ name: options.marketplaceName }),
+    );
+  }
   for (const plugin of options.plugins) {
-    const pluginPath = join(distRoot, "plugins", plugin.vendor, plugin.name);
+    const pluginPath = join(distRoot, plugin.vendor, plugin.name);
     const manifestDir = join(pluginPath, `.${plugin.vendor}-plugin`);
     mkdirSync(manifestDir, { recursive: true });
     writeFileSync(
@@ -231,9 +239,8 @@ test("uninstall dispatches vendor.uninstall with discovered plugins", async () =
 test("install rejects a marketplace.json missing the required `name` field", async () => {
   const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-install-"));
   const distRoot = join(sandbox, "dist");
-  mkdirSync(join(distRoot, ".claude-plugin"), { recursive: true });
-  writeFileSync(join(distRoot, ".claude-plugin/marketplace.json"), JSON.stringify({}));
-  mkdirSync(join(distRoot, "plugins/claude"), { recursive: true });
+  mkdirSync(join(distRoot, "claude/.claude-plugin"), { recursive: true });
+  writeFileSync(join(distRoot, "claude/.claude-plugin/marketplace.json"), JSON.stringify({}));
   try {
     const recorder = recordingRunner();
     const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
@@ -250,12 +257,12 @@ test("install rejects a marketplace.json missing the required `name` field", asy
 test("install rejects a plugin.json missing the required `version` field", async () => {
   const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-install-"));
   const distRoot = join(sandbox, "dist");
-  mkdirSync(join(distRoot, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(distRoot, "claude/.claude-plugin"), { recursive: true });
   writeFileSync(
-    join(distRoot, ".claude-plugin/marketplace.json"),
+    join(distRoot, "claude/.claude-plugin/marketplace.json"),
     JSON.stringify({ name: "shop" }),
   );
-  const pluginPath = join(distRoot, "plugins/claude/alpha");
+  const pluginPath = join(distRoot, "claude/alpha");
   mkdirSync(join(pluginPath, ".claude-plugin"), { recursive: true });
   writeFileSync(join(pluginPath, ".claude-plugin/plugin.json"), JSON.stringify({ name: "alpha" }));
   try {

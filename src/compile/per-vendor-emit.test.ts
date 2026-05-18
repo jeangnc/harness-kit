@@ -35,7 +35,7 @@ function seedMinimalPlugin(srcRoot: string, pluginName: string): void {
   );
 }
 
-test("compile emits one subtree per declared vendor under dist/plugins/<vendor>/<name>/", async () => {
+test("compile emits one subtree per declared vendor under dist/<vendor>/<name>/", async () => {
   await withSandbox(async (root) => {
     const srcRoot = join(root, "src");
     const outRoot = join(root, "dist");
@@ -43,11 +43,8 @@ test("compile emits one subtree per declared vendor under dist/plugins/<vendor>/
 
     await compile({ srcRoot, outRoot, vendors: [claudeVendor, codexVendor] });
 
-    assert.equal(
-      existsSync(join(outRoot, "plugins/claude/alpha/.claude-plugin/plugin.json")),
-      true,
-    );
-    assert.equal(existsSync(join(outRoot, "plugins/codex/alpha/.codex-plugin/plugin.json")), true);
+    assert.equal(existsSync(join(outRoot, "claude/alpha/.claude-plugin/plugin.json")), true);
+    assert.equal(existsSync(join(outRoot, "codex/alpha/.codex-plugin/plugin.json")), true);
   });
 });
 
@@ -60,10 +57,10 @@ test("compile writes each vendor's plugin manifest at the vendor-declared path",
     await compile({ srcRoot, outRoot, vendors: [claudeVendor, codexVendor] });
 
     const claudeManifest = JSON.parse(
-      readFileSync(join(outRoot, "plugins/claude/beta/.claude-plugin/plugin.json"), "utf8"),
+      readFileSync(join(outRoot, "claude/beta/.claude-plugin/plugin.json"), "utf8"),
     ) as { name: string; version: string };
     const codexManifest = JSON.parse(
-      readFileSync(join(outRoot, "plugins/codex/beta/.codex-plugin/plugin.json"), "utf8"),
+      readFileSync(join(outRoot, "codex/beta/.codex-plugin/plugin.json"), "utf8"),
     ) as { name: string; version: string };
 
     assert.equal(claudeManifest.name, "beta");
@@ -81,9 +78,9 @@ test("compile only emits subtrees for vendors passed in (gemini absent → no ge
 
     await compile({ srcRoot, outRoot, vendors: [claudeVendor] });
 
-    assert.equal(existsSync(join(outRoot, "plugins/claude/gamma")), true);
-    assert.equal(existsSync(join(outRoot, "plugins/codex")), false);
-    assert.equal(existsSync(join(outRoot, "plugins/gemini")), false);
+    assert.equal(existsSync(join(outRoot, "claude/gamma")), true);
+    assert.equal(existsSync(join(outRoot, "codex")), false);
+    assert.equal(existsSync(join(outRoot, "gemini")), false);
   });
 });
 
@@ -101,7 +98,7 @@ test("compile mirrors skills inside each vendor subtree", async () => {
 
     await compile({ srcRoot, outRoot, vendors: [claudeVendor, codexVendor] });
 
-    assert.equal(existsSync(join(outRoot, "plugins/claude/delta/skills/widget/SKILL.md")), true);
-    assert.equal(existsSync(join(outRoot, "plugins/codex/delta/skills/widget/SKILL.md")), true);
+    assert.equal(existsSync(join(outRoot, "claude/delta/skills/widget/SKILL.md")), true);
+    assert.equal(existsSync(join(outRoot, "codex/delta/skills/widget/SKILL.md")), true);
   });
 });

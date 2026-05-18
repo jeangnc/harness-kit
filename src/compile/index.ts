@@ -1,14 +1,9 @@
-import { copyFile, mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { compileTree, type BodyInvariant, type OwningPlugin } from "./emit.js";
 import { pathExists } from "../fs.js";
 import { throwInvariantViolations } from "./discovery.js";
-import {
-  SOURCE_MARKETPLACE_MANIFEST,
-  SOURCE_PLUGIN_MANIFEST_JSON,
-  SOURCE_PLUGIN_MANIFEST_TS,
-} from "../layout/conventions.js";
+import { SOURCE_PLUGIN_MANIFEST_JSON, SOURCE_PLUGIN_MANIFEST_TS } from "../layout/conventions.js";
 import {
   collectLocalIds,
   listMarkdownNames,
@@ -40,7 +35,9 @@ export async function compile(options: CompileOptions): Promise<void> {
   checkHookRequires(adapter, localIds);
 
   const skipRelPaths: ReadonlySet<string> = new Set(vendors.map((v) => v.pluginManifestPath));
-  await copyMarketplaceManifest(srcRoot, outRoot);
+  for (const vendor of vendors) {
+    await vendor.emitMarketplaceManifest({ outRoot, marketplace: adapter.marketplace });
+  }
   for (const plugin of adapter.plugins) {
     for (const vendor of vendors) {
       await emitPluginForVendor(
@@ -83,13 +80,6 @@ async function loadAdapter(srcRoot: string): Promise<LayoutAdapter> {
   }
 }
 
-async function copyMarketplaceManifest(srcRoot: string, outRoot: string): Promise<void> {
-  const src = join(srcRoot, SOURCE_MARKETPLACE_MANIFEST);
-  const dst = join(outRoot, SOURCE_MARKETPLACE_MANIFEST);
-  await mkdir(join(outRoot, dirname(SOURCE_MARKETPLACE_MANIFEST)), { recursive: true });
-  await copyFile(src, dst);
-}
-
 async function emitPluginForVendor(
   plugin: ResolvedPlugin,
   vendor: Vendor,
@@ -98,7 +88,7 @@ async function emitPluginForVendor(
   skipRelPaths: ReadonlySet<string>,
   bodyInvariants: readonly BodyInvariant[],
 ): Promise<void> {
-  const pluginOutDir = join(outRoot, "plugins", vendor.name, plugin.name);
+  const pluginOutDir = vendor.pluginOutDir(outRoot, plugin.name);
   await vendor.emitPluginManifest({ manifest: plugin.manifest, pluginOutDir });
   const contextFiles = await collectSubstitutableFiles(plugin);
   const owner: OwningPlugin = {

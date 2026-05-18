@@ -46,18 +46,18 @@ async function withSandbox<T>(fn: (srcRoot: string, outRoot: string) => Promise<
 test("build emits SKILL.md to outRoot when given explicit paths", async () => {
   await withSandbox(async (srcRoot, outRoot) => {
     await build({ srcRoot, outRoot, silent: true });
-    assert.ok(existsSync(join(outRoot, "plugins/claude/foo/skills/bar/SKILL.md")));
+    assert.ok(existsSync(join(outRoot, "claude/foo/skills/bar/SKILL.md")));
   });
 });
 
-test("build cleans the outRoot/plugins tree before compiling", async () => {
+test("build cleans each vendor's dist subtree before compiling", async () => {
   await withSandbox(async (srcRoot, outRoot) => {
-    const stalePath = join(outRoot, "plugins/old/skills/gone/SKILL.md");
-    mkdirSync(join(outRoot, "plugins/old/skills/gone"), { recursive: true });
+    const stalePath = join(outRoot, "claude/old/skills/gone/SKILL.md");
+    mkdirSync(join(outRoot, "claude/old/skills/gone"), { recursive: true });
     writeFileSync(stalePath, "stale\n");
     await build({ srcRoot, outRoot, silent: true });
     assert.ok(!existsSync(stalePath), "stale plugin should be removed");
-    assert.ok(existsSync(join(outRoot, "plugins/claude/foo/skills/bar/SKILL.md")));
+    assert.ok(existsSync(join(outRoot, "claude/foo/skills/bar/SKILL.md")));
   });
 });
 

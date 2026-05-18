@@ -3,26 +3,39 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { runIgnoreFailure } from "../../install/runner.js";
-import { writeVendorPluginManifest } from "../shared.js";
+import { defaultEmitMarketplaceManifest, defaultEmitPluginManifest } from "../shared.js";
 import type {
   LinkedFile,
   Vendor,
   VendorEmitContext,
   VendorInstallContext,
+  VendorMarketplaceEmitContext,
 } from "../../vendor/schema.js";
 
-const MANIFEST_REL = ".claude-plugin/plugin.json";
+const VENDOR_DIR = "claude";
+const PLUGIN_MANIFEST_REL = ".claude-plugin/plugin.json";
+const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.claude-plugin/marketplace.json`;
 
 export function makeClaudeVendor(home: string): Vendor {
   return {
     name: "claude",
     home,
-    pluginManifestPath: MANIFEST_REL,
+    pluginManifestPath: PLUGIN_MANIFEST_REL,
+    marketplaceManifestPath: MARKETPLACE_MANIFEST_REL,
+    vendorOutDir(outRoot) {
+      return join(outRoot, VENDOR_DIR);
+    },
+    pluginOutDir(outRoot, pluginName) {
+      return join(outRoot, VENDOR_DIR, pluginName);
+    },
     aliases(file: LinkedFile): readonly string[] {
       return file.basename === "AGENTS.md" ? [join(home, "CLAUDE.md")] : [];
     },
     async emitPluginManifest(ctx: VendorEmitContext): Promise<void> {
-      await writeVendorPluginManifest(ctx.pluginOutDir, MANIFEST_REL, ctx.manifest);
+      await defaultEmitPluginManifest(PLUGIN_MANIFEST_REL, ctx);
+    },
+    async emitMarketplaceManifest(ctx: VendorMarketplaceEmitContext): Promise<void> {
+      await defaultEmitMarketplaceManifest(MARKETPLACE_MANIFEST_REL, ctx);
     },
     async install(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;

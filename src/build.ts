@@ -3,7 +3,6 @@ import { resolve, join, dirname } from "node:path";
 
 import { compile, type BodyInvariant } from "./compile/index.js";
 import { emitConfigsManifest } from "./configs/emit.js";
-import { SOURCE_MARKETPLACE_MANIFEST } from "./layout/conventions.js";
 import { resolveVendorsForRepo } from "./vendor/registry.js";
 import type { Vendor } from "./vendor/schema.js";
 
@@ -21,8 +20,13 @@ export async function build(options: BuildOptions = {}): Promise<void> {
   const outRoot = resolve(options.outRoot ?? "./dist");
   const repoRoot = resolve(options.repoRoot ?? dirname(srcRoot));
   const vendors = options.vendors ?? (await resolveVendorsForRepo(repoRoot));
-  await rm(join(outRoot, "plugins"), { recursive: true, force: true });
-  await rm(join(outRoot, dirname(SOURCE_MARKETPLACE_MANIFEST)), { recursive: true, force: true });
+  for (const vendor of vendors) {
+    await rm(vendor.vendorOutDir(outRoot), { recursive: true, force: true });
+    await rm(join(outRoot, dirname(vendor.marketplaceManifestPath)), {
+      recursive: true,
+      force: true,
+    });
+  }
   await rm(join(outRoot, "configs.json"), { force: true });
   await compile({
     srcRoot,
