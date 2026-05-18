@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { z } from "zod";
@@ -156,7 +156,7 @@ async function* collectSkills(pluginRoot: string): AsyncGenerator<NamedFile> {
     if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
     const skillFile = join(skillsDir, entry.name, "SKILL.md");
     try {
-      await readFile(skillFile, "utf8");
+      await access(skillFile);
     } catch {
       continue;
     }

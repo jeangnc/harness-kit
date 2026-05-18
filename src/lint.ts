@@ -24,10 +24,7 @@ const DEFAULT_CONFIG = {
 
 export async function lint(options: LintOptions = {}): Promise<LintResult> {
   const outRoot = resolve(options.outRoot ?? "./dist");
-  const silent = options.silent ?? false;
-  const log = silent
-    ? (_line: string): void => undefined
-    : (line: string): void => console.log(line);
+  const log = options.silent ? (): void => undefined : (line: string): void => console.log(line);
   const exitCode = await markdownlintCli2Main({
     directory: outRoot,
     argv: [...DEFAULT_GLOBS],

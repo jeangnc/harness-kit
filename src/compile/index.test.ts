@@ -104,7 +104,6 @@ async function withSkillFixture<T>(
   options: SkillFixtureOptions,
   fn: (srcRoot: string, distRoot: string) => Promise<T>,
 ): Promise<T> {
-  // Sandbox lives inside the package so SKILL.ts can resolve `#harness-kit` subpath imports.
   const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_"));
   const srcRoot = join(sandbox, "src");
   const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
@@ -1276,7 +1275,6 @@ export default defineSkill({ name: "bar", description: "demo" });
       },
     },
     async (srcRoot, distRoot) => {
-      // Other plugin lives in the same src tree
       const otherDir = join(srcRoot, "plugins/other");
       mkdirSync(otherDir, { recursive: true });
       writeFileSync(

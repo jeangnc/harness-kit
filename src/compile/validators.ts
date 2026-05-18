@@ -20,6 +20,12 @@ export function buildRegistry(
   return {
     skill: (value) => {
       if (value === null) return { ok: false, error: "expected `{{skill:<plugin>:<name>}}`" };
+      if (!FQ_ID.test(value)) {
+        return {
+          ok: false,
+          error: `skill id "${value}" must match <plugin>:<skill> (kebab-case)`,
+        };
+      }
       if (!localIds.skills.has(value)) {
         return { ok: false, error: `unknown skill id "${value}" — not a local skill` };
       }

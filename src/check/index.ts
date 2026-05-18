@@ -21,7 +21,8 @@ import {
 import { installedKindConfigs, localKindConfigs, type KindConfig } from "./kinds.js";
 import { closestMatch } from "./suggest.js";
 
-export type CheckMode = "local" | "installed" | "all";
+export const CHECK_MODES = ["local", "installed", "all"] as const;
+export type CheckMode = (typeof CHECK_MODES)[number];
 
 export interface CheckOptions {
   readonly srcRoot: string;

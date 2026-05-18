@@ -27,8 +27,7 @@ export function checkCompanionsTokenParity(
   body: string,
   companions: readonly Companion[] | undefined,
 ): string[] {
-  const hasCompanions = (companions?.length ?? 0) > 0;
-  if (!hasCompanions) return [];
+  if (!companions?.length) return [];
   const hasToken = parsePlaceholders(body).some(
     (t) => t.prefix === COMPANIONS_PREFIX && t.value === null,
   );

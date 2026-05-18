@@ -6,7 +6,7 @@ import { defineCommand, runMain } from "citty";
 import { z } from "zod";
 
 import { build } from "./build.js";
-import { check, type CheckMode, type ExtViolation } from "./check/index.js";
+import { CHECK_MODES, check, type CheckMode, type ExtViolation } from "./check/index.js";
 import { initHarness } from "./init/index.js";
 import { install, uninstall } from "./install/index.js";
 import { lint } from "./lint.js";
@@ -18,9 +18,13 @@ const PackageJsonSchema = z.object({ version: z.string().min(1) });
 const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
 const pkg = PackageJsonSchema.parse(JSON.parse(readFileSync(pkgPath, "utf8")));
 
+function isCheckMode(value: string): value is CheckMode {
+  return (CHECK_MODES as readonly string[]).includes(value);
+}
+
 function parseCheckMode(value: string): CheckMode {
-  if (value === "local" || value === "installed" || value === "all") return value;
-  throw new Error(`Unknown check mode "${value}". Valid: local, installed, all`);
+  if (isCheckMode(value)) return value;
+  throw new Error(`Unknown check mode "${value}". Valid: ${CHECK_MODES.join(", ")}`);
 }
 
 const buildCmd = defineCommand({

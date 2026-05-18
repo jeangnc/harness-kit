@@ -22,7 +22,6 @@ export async function uninstall(options: InstallOptions): Promise<void> {
   await uninstallWithRunner(options, defaultRunner);
 }
 
-/** @internal Test-only entry; lets callers inject a recording runner. */
 export async function installWithRunner(
   options: InstallOptions,
   runner: CommandRunner,
@@ -39,7 +38,6 @@ export async function installWithRunner(
   }
 }
 
-/** @internal Test-only entry; lets callers inject a recording runner. */
 export async function uninstallWithRunner(
   options: InstallOptions,
   runner: CommandRunner,
@@ -92,7 +90,7 @@ function buildVendorContext(
     marketplace: ctx.marketplace,
     plugins,
     run: ctx.run,
-    log: (msg) => ctx.log(msg),
+    log: ctx.log,
   };
 }
 

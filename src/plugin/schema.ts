@@ -1,13 +1,11 @@
 import { z } from "zod";
 
-import { FQ_ID, PLUGIN_ID } from "../ids.js";
+import { FQ_ID } from "../ids.js";
+import { description, kebabName, singleLineString } from "../schema-primitives.js";
 
 export const ContextEntrySchema = z.object({
   file: z.string().min(1).regex(/\.md$/, "file must be a .md path"),
-  summary: z
-    .string()
-    .min(1)
-    .refine((s) => !s.includes("\n"), "summary cannot contain newlines"),
+  summary: singleLineString("summary"),
 });
 
 export type ContextEntry = z.infer<typeof ContextEntrySchema>;
@@ -65,13 +63,9 @@ export type HookRequirement = z.infer<typeof HookRequirementSchema>;
 
 export const PluginSchema = z
   .object({
-    name: z.string().min(1).regex(PLUGIN_ID, "name must be lowercase kebab-case"),
+    name: kebabName,
     version: z.string().min(1),
-    description: z
-      .string()
-      .min(1)
-      .max(1024)
-      .refine((s) => !s.includes("\n"), "description cannot contain newlines"),
+    description,
     author: AuthorSchema.optional(),
     homepage: z.string().min(1).optional(),
     repository: z.string().min(1).optional(),

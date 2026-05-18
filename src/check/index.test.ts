@@ -240,8 +240,6 @@ test("check reports line:col into the source file", async () => {
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         const violation = result.violations[0]!;
-        // Frontmatter is 4 lines (---, name, description, ---), blank separator = 5
-        // Body line "line one" -> source line 6, "line two with..." -> source line 7
         assert.equal(violation.line, 7);
         assert.equal(typeof violation.column, "number");
         assert.ok(violation.column > 1);
@@ -430,7 +428,6 @@ test("check, in local mode, suggests the closest skill match on a near-miss", as
       ],
     },
     async (srcRoot) => {
-      // intentionally one-char-off in the reference
       const result = await check({
         srcRoot,
         mode: "local",
@@ -538,7 +535,6 @@ test("check, in local mode, reports a malformed {{skill:}} when value does not m
 });
 
 test("check, in local mode, does not perform any installed-cache reads", async () => {
-  // Sources is intentionally not provided; mode=local must not consult defaultSources()
   await withLocalSrcFixture(
     {
       skills: [{ plugin: "foo", skill: "bar", body: "no refs\n" }],

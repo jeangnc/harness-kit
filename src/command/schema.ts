@@ -1,16 +1,11 @@
 import { z } from "zod";
 
+import { description, kebabName } from "../schema-primitives.js";
+
 export const CommandSchema = z
   .object({
-    name: z
-      .string()
-      .min(1)
-      .regex(/^[a-z0-9-]+$/, "name must be lowercase kebab-case"),
-    description: z
-      .string()
-      .min(1)
-      .max(1024)
-      .refine((s) => !s.includes("\n"), "description cannot contain newlines"),
+    name: kebabName,
+    description,
     "argument-hint": z.string().min(1).optional(),
     "allowed-tools": z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
     model: z.string().min(1).optional(),

@@ -101,11 +101,16 @@ async function sweepOrphanLinks(
   }
 }
 
+function errnoCode(e: unknown): string | null {
+  if (e instanceof Error && "code" in e && typeof e.code === "string") return e.code;
+  return null;
+}
+
 async function readdirOrEmpty(dir: string): Promise<readonly string[]> {
   try {
     return await readdir(dir);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if (errnoCode(e) === "ENOENT") return [];
     throw e;
   }
 }
@@ -114,7 +119,7 @@ async function readlinkOrNull(path: string): Promise<string | null> {
   try {
     return await readlink(path);
   } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
+    const code = errnoCode(e);
     if (code === "EINVAL" || code === "ENOENT") return null;
     throw e;
   }

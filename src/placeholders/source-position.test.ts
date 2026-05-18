@@ -21,10 +21,7 @@ test("offsetToLineCol counts lines on a multi-line input", () => {
 });
 
 test("offsetToLineCol clamps offsets past the end to the final position", () => {
-  const text = "abc\n";
-  const result = offsetToLineCol(text, 100);
-  assert.equal(result.line >= 1, true);
-  assert.equal(result.column >= 1, true);
+  assert.deepEqual(offsetToLineCol("abc\n", 100), { line: 2, column: 1 });
 });
 
 test("offsetToLineCol handles a string with no newlines", () => {

@@ -3,9 +3,9 @@ import { dirname, join } from "node:path";
 
 import type { Plugin } from "../plugin/index.js";
 
-export type VendorPluginManifest = Omit<Plugin, "context" | "hookRequires">;
+type VendorPluginManifest = Omit<Plugin, "context" | "hookRequires">;
 
-export function toVendorPluginManifest(plugin: Plugin): VendorPluginManifest {
+function toVendorPluginManifest(plugin: Plugin): VendorPluginManifest {
   const { context: _ctx, hookRequires: _hr, ...rest } = plugin;
   return rest;
 }

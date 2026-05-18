@@ -1,8 +1,7 @@
 import { rm } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 
-import { compile } from "./compile/index.js";
-import type { BodyInvariant } from "./compile/index.js";
+import { compile, type BodyInvariant } from "./compile/index.js";
 import { emitConfigsManifest } from "./configs/emit.js";
 import { SOURCE_MARKETPLACE_MANIFEST } from "./layout/conventions.js";
 import { resolveVendorsForRepo } from "./vendor/registry.js";

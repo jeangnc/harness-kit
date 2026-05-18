@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { PLUGIN_ID } from "../ids.js";
+import { kebabName } from "../schema-primitives.js";
 
 const OwnerSchema = z
   .object({
@@ -82,7 +82,7 @@ const SourceSchema = z.union([RelativeSourceSchema, ObjectSourceSchema]);
 
 export const PluginEntrySchema = z
   .object({
-    name: z.string().min(1).regex(PLUGIN_ID, "name must be lowercase kebab-case"),
+    name: kebabName,
     source: SourceSchema,
     strict: z.boolean().optional(),
     description: z.string().min(1).optional(),
@@ -94,7 +94,7 @@ export type PluginSource = PluginEntry["source"];
 
 export const MarketplaceSchema = z
   .object({
-    name: z.string().min(1).regex(PLUGIN_ID, "name must be lowercase kebab-case"),
+    name: kebabName,
     owner: OwnerSchema,
     metadata: MetadataSchema.optional(),
     homepage: z.string().min(1).optional(),

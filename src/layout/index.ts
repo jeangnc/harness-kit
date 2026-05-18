@@ -59,9 +59,6 @@ export type LayoutError =
       readonly path: string;
     };
 
-const MANIFEST_JSON = SOURCE_PLUGIN_MANIFEST_JSON;
-const MANIFEST_TS = SOURCE_PLUGIN_MANIFEST_TS;
-
 function resolvePluginDir(srcRoot: string, pluginRoot: string | undefined, source: string): string {
   if (source.startsWith("./") || source.startsWith("../") || source === ".") {
     return resolve(srcRoot, source);
@@ -72,16 +69,12 @@ function resolvePluginDir(srcRoot: string, pluginRoot: string | undefined, sourc
   return resolve(srcRoot, source);
 }
 
-function joinUnder(pluginDir: string, override: string | undefined, fallback: string): string {
-  return join(pluginDir, override ?? fallback);
-}
-
 async function loadPluginManifest(
   entryName: string,
   pluginDir: string,
 ): Promise<Result<{ manifest: Plugin; source: "PLUGIN.ts" | "plugin.json" }, LayoutError>> {
-  const tsPath = join(pluginDir, MANIFEST_TS);
-  const jsonPath = join(pluginDir, MANIFEST_JSON);
+  const tsPath = join(pluginDir, SOURCE_PLUGIN_MANIFEST_TS);
+  const jsonPath = join(pluginDir, SOURCE_PLUGIN_MANIFEST_JSON);
   const [hasTs, hasJson] = await Promise.all([pathExists(tsPath), pathExists(jsonPath)]);
 
   if (hasTs && hasJson) {
@@ -159,7 +152,10 @@ export async function loadLayout(srcRoot: string): Promise<Result<LayoutAdapter,
         kind: "plugin-name-mismatch",
         entryName: entry.name,
         manifestName: manifest.name,
-        path: join(pluginDir, manifestSource === "PLUGIN.ts" ? MANIFEST_TS : MANIFEST_JSON),
+        path: join(
+          pluginDir,
+          manifestSource === "PLUGIN.ts" ? SOURCE_PLUGIN_MANIFEST_TS : SOURCE_PLUGIN_MANIFEST_JSON,
+        ),
       });
     }
 
@@ -168,10 +164,10 @@ export async function loadLayout(srcRoot: string): Promise<Result<LayoutAdapter,
       pluginDir,
       manifest,
       manifestSource,
-      skillsDir: joinUnder(pluginDir, undefined, "skills"),
-      commandsDir: joinUnder(pluginDir, manifest.commands, "commands"),
-      agentsDir: joinUnder(pluginDir, manifest.agents, "agents"),
-      hooksDir: joinUnder(pluginDir, manifest.hooks, "hooks"),
+      skillsDir: join(pluginDir, "skills"),
+      commandsDir: join(pluginDir, manifest.commands ?? "commands"),
+      agentsDir: join(pluginDir, manifest.agents ?? "agents"),
+      hooksDir: join(pluginDir, manifest.hooks ?? "hooks"),
     });
   }
 

@@ -3,13 +3,8 @@ import { dirname, resolve } from "node:path";
 
 import { pathExists } from "../fs.js";
 import { FQ_ID } from "../ids.js";
+import type { LocalIds } from "../layout/index.js";
 import { offsetToLineCol, parsePlaceholders, type Placeholder } from "../placeholders/index.js";
-
-export interface LocalIds {
-  readonly skills: ReadonlySet<string>;
-  readonly commands: ReadonlySet<string>;
-  readonly agents: ReadonlySet<string>;
-}
 
 export interface OwningPlugin {
   readonly name: string;

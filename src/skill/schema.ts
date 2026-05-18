@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { description, kebabName, singleLineString } from "../schema-primitives.js";
+
 const RESERVED_COMPANION_FILENAMES: ReadonlySet<string> = new Set(["body.md", "SKILL.md"]);
 
 export function isReservedCompanionFilename(name: string): boolean {
@@ -14,25 +16,15 @@ export const CompanionSchema = z.object({
       (f) => !isReservedCompanionFilename(f),
       (f) => ({ message: `"${f}" is reserved and cannot be used as a companion filename` }),
     ),
-  summary: z
-    .string()
-    .min(1)
-    .refine((s) => !s.includes("\n"), "companion summary cannot contain newlines"),
+  summary: singleLineString("companion summary"),
 });
 
 export type Companion = z.infer<typeof CompanionSchema>;
 
 export const SkillSchema = z
   .object({
-    name: z
-      .string()
-      .min(1)
-      .regex(/^[a-z0-9-]+$/, "name must be lowercase kebab-case"),
-    description: z
-      .string()
-      .min(1)
-      .max(1024)
-      .refine((s) => !s.includes("\n"), "description cannot contain newlines"),
+    name: kebabName,
+    description,
     companions: z
       .array(CompanionSchema)
       .optional()
