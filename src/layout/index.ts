@@ -214,7 +214,7 @@ async function listSkillNames(dir: string): Promise<readonly string[]> {
   return out;
 }
 
-async function listMarkdownNames(dir: string): Promise<readonly string[]> {
+export async function listMarkdownNames(dir: string): Promise<readonly string[]> {
   if (!(await pathExists(dir))) return [];
   const entries = await readdir(dir, { withFileTypes: true });
   const out: string[] = [];

@@ -11,6 +11,7 @@ import {
 } from "../layout/conventions.js";
 import {
   collectLocalIds,
+  listMarkdownNames,
   loadLayout,
   type LayoutAdapter,
   type LocalIds,
@@ -99,7 +100,7 @@ async function emitPluginForVendor(
 ): Promise<void> {
   const pluginOutDir = join(outRoot, "plugins", vendor.name, plugin.name);
   await vendor.emitPluginManifest({ manifest: plugin.manifest, pluginOutDir });
-  const contextFiles = pluginContextFiles(plugin);
+  const contextFiles = await collectSubstitutableFiles(plugin);
   const owner: OwningPlugin = {
     name: plugin.name,
     dependencies: new Set((plugin.manifest.dependencies ?? []).map(dependencyName)),
@@ -115,10 +116,15 @@ async function emitPluginForVendor(
   });
 }
 
-function pluginContextFiles(plugin: ResolvedPlugin): ReadonlySet<string> {
+async function collectSubstitutableFiles(plugin: ResolvedPlugin): Promise<ReadonlySet<string>> {
   const result = new Set<string>();
   for (const entry of plugin.manifest.context ?? []) {
     result.add(join(plugin.pluginDir, entry.file));
+  }
+  for (const dir of [plugin.agentsDir, plugin.commandsDir]) {
+    for (const name of await listMarkdownNames(dir)) {
+      result.add(join(dir, `${name}.md`));
+    }
   }
   return result;
 }

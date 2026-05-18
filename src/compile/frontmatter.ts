@@ -8,8 +8,8 @@ import type { Companion, Skill } from "../skill/index.js";
 
 export const COMPANIONS_PREFIX = "companions";
 
-export function renderFrontmatter(skill: Skill): string {
-  const lines = [`name: ${skill.name}`, `description: ${skill.description}`];
+export function renderFrontmatter(skill: Skill, description: string = skill.description): string {
+  const lines = [`name: ${skill.name}`, `description: ${description}`];
   if (skill.companions?.length) {
     lines.push(dump({ companions: skill.companions }).trimEnd());
   }

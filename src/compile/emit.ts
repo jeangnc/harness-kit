@@ -57,6 +57,7 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
       owner,
     );
     for (const p of result.resolvedIncludes) handledAbsPaths.add(p);
+    for (const p of result.emittedCompanions) handledAbsPaths.add(p);
   }
 
   for (const absPath of contextFiles) {
@@ -96,21 +97,7 @@ async function emitContextFile(
   localIds: LocalIds,
   owner: OwningPlugin,
 ): Promise<void> {
-  const raw = await readFile(srcPath, "utf8");
-  const dir = dirname(srcPath);
-  const expanded = await expandIncludes(raw, srcPath, dir);
-  if (!expanded.ok) {
-    throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
-  }
-  const expandedBody = expanded.value.body;
-  const existingRefs = await precomputeExistingRefs(expandedBody, dir);
-  const registry = buildRegistry(undefined, localIds, existingRefs, dir, owner);
-  const result = substitute(expandedBody, registry);
-  if (!result.ok) {
-    throwInvariantViolations(srcPath, result.errors);
-  }
-  await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, result.rendered);
+  await emitSubstitutedFile(srcPath, outPath, dirname(srcPath), localIds, owner);
 }
 
 async function collectSkillFolders(srcRoot: string): Promise<Map<string, string[]>> {
@@ -131,6 +118,7 @@ async function collectSkillFolders(srcRoot: string): Promise<Map<string, string[
 
 interface EmitResult {
   readonly resolvedIncludes: ReadonlySet<string>;
+  readonly emittedCompanions: ReadonlySet<string>;
 }
 
 async function emitSkill(
@@ -180,10 +168,47 @@ async function emitSkill(
     throwInvariantViolations(srcPath, result.errors);
   }
 
-  await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, renderFrontmatter(skill) + result.rendered);
+  const descriptionResult = substitute(skill.description, registry);
+  if (!descriptionResult.ok) {
+    throwInvariantViolations(srcPath, descriptionResult.errors);
+  }
 
-  return { resolvedIncludes: expanded.value.resolvedIncludes };
+  await mkdir(dirname(outPath), { recursive: true });
+  await writeFile(outPath, renderFrontmatter(skill, descriptionResult.rendered) + result.rendered);
+
+  const emittedCompanions = new Set<string>();
+  for (const companion of skill.companions ?? []) {
+    const companionSrc = join(skillDir, companion.file);
+    if (expanded.value.resolvedIncludes.has(companionSrc)) continue;
+    const companionOut = join(dirname(outPath), companion.file);
+    await emitSubstitutedFile(companionSrc, companionOut, skillDir, localIds, owner);
+    emittedCompanions.add(companionSrc);
+  }
+
+  return { resolvedIncludes: expanded.value.resolvedIncludes, emittedCompanions };
+}
+
+async function emitSubstitutedFile(
+  srcPath: string,
+  outPath: string,
+  baseDir: string,
+  localIds: LocalIds,
+  owner: OwningPlugin,
+): Promise<void> {
+  const raw = await readFile(srcPath, "utf8");
+  const expanded = await expandIncludes(raw, srcPath, baseDir);
+  if (!expanded.ok) {
+    throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
+  }
+  const body = expanded.value.body;
+  const existingRefs = await precomputeExistingRefs(body, baseDir);
+  const registry = buildRegistry(undefined, localIds, existingRefs, baseDir, owner);
+  const result = substitute(body, registry);
+  if (!result.ok) {
+    throwInvariantViolations(srcPath, result.errors);
+  }
+  await mkdir(dirname(outPath), { recursive: true });
+  await writeFile(outPath, result.rendered);
 }
 
 async function* walk(dir: string): AsyncGenerator<string> {

@@ -869,6 +869,218 @@ test("compile does not flag an included sibling as an undeclared companion", asy
   );
 });
 
+test("compile substitutes {{skill:...}} inside the frontmatter description", async () => {
+  const skillMd = `---\nname: bar\ndescription: use {{skill:dev-tools:ruby}} instead\n---\n\n# Bar\n`;
+  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
+    makeStubSkill(srcRoot, "dev-tools", "ruby");
+    await compile({ srcRoot, outRoot: distRoot, vendors });
+    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    assert.match(out, /description: use `dev-tools:ruby` instead/);
+    assert.ok(!out.includes("{{skill:"), `raw token survived in frontmatter:\n${out}`);
+  });
+});
+
+test("compile substitutes {{ext:...}} inside the frontmatter description", async () => {
+  const skillMd = `---\nname: bar\ndescription: see {{ext:superpowers:tdd}} for details\n---\n\n# Bar\n`;
+  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
+    await compile({ srcRoot, outRoot: distRoot, vendors });
+    const out = readFileSync(join(distRoot, "plugins/claude/foo/skills/bar/SKILL.md"), "utf8");
+    assert.match(out, /description: see `superpowers:tdd` for details/);
+    assert.ok(!out.includes("{{ext:"), `raw token survived in frontmatter:\n${out}`);
+  });
+});
+
+test("compile fails when frontmatter description references an unknown local skill", async () => {
+  const skillMd = `---\nname: bar\ndescription: see {{skill:foo:ghost}}\n---\n\n# Bar\n`;
+  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
+    await assert.rejects(
+      compile({ srcRoot, outRoot: distRoot, vendors }),
+      /unknown skill id "foo:ghost"/,
+    );
+  });
+});
+
+test("compile substitutes placeholders inside declared companion files", async () => {
+  const skillMd = `---
+name: bar
+description: x
+companions:
+  - file: procedure.md
+    summary: Step procedure.
+---
+
+# Bar
+
+{{companions}}
+`;
+  await withSkillFixture(
+    {
+      skillMd,
+      companionFiles: { "procedure.md": "see {{ext:superpowers:tdd}} for tdd\n" },
+    },
+    async (srcRoot, distRoot) => {
+      await compile({ srcRoot, outRoot: distRoot, vendors });
+      const companion = readFileSync(
+        join(distRoot, "plugins/claude/foo/skills/bar/procedure.md"),
+        "utf8",
+      );
+      assert.match(companion, /see `superpowers:tdd` for tdd/);
+      assert.ok(!companion.includes("{{ext:"), `raw token in companion:\n${companion}`);
+    },
+  );
+});
+
+test("compile fails when a companion references an unknown local skill", async () => {
+  const skillMd = `---
+name: bar
+description: x
+companions:
+  - file: procedure.md
+    summary: Step procedure.
+---
+
+# Bar
+
+{{companions}}
+`;
+  await withSkillFixture(
+    {
+      skillMd,
+      companionFiles: { "procedure.md": "see {{skill:foo:ghost}}\n" },
+    },
+    async (srcRoot, distRoot) => {
+      await assert.rejects(
+        compile({ srcRoot, outRoot: distRoot, vendors }),
+        /unknown skill id "foo:ghost"/,
+      );
+    },
+  );
+});
+
+test("compile resolves {{ref:...}} in companions relative to the skill directory", async () => {
+  const skillMd = `---
+name: bar
+description: x
+companions:
+  - file: procedure.md
+    summary: Step procedure.
+---
+
+# Bar
+
+{{companions}}
+`;
+  await withPluginFixture(
+    {
+      pluginSource: `import { definePlugin } from "#harness-kit";
+export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
+`,
+      extraFiles: {
+        "shared/notes.md": "# Notes\n",
+        "skills/bar/SKILL.md": skillMd,
+        "skills/bar/procedure.md": "see {{ref:../../shared/notes.md}}\n",
+      },
+    },
+    async (srcRoot, distRoot) => {
+      await compile({ srcRoot, outRoot: distRoot, vendors });
+      const out = readFileSync(
+        join(distRoot, "plugins/claude/foo/skills/bar/procedure.md"),
+        "utf8",
+      );
+      assert.match(out, /see `\.\.\/\.\.\/shared\/notes\.md`/);
+    },
+  );
+});
+
+test("compile substitutes placeholders inside agent files", async () => {
+  await withPluginFixture(
+    {
+      pluginSource: `import { definePlugin } from "#harness-kit";
+export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
+`,
+      extraFiles: {
+        "skills/bar/SKILL.md": `---\nname: bar\ndescription: x\n---\n\n# Bar\n`,
+        "agents/reviewer.md": `---\nname: reviewer\ndescription: x\n---\n\nInvoke {{skill:foo:bar}} for help.\n`,
+      },
+    },
+    async (srcRoot, distRoot) => {
+      await compile({ srcRoot, outRoot: distRoot, vendors });
+      const out = readFileSync(join(distRoot, "plugins/claude/foo/agents/reviewer.md"), "utf8");
+      assert.match(out, /Invoke `foo:bar` for help\./);
+    },
+  );
+});
+
+test("compile fails when an agent file references an unknown local skill", async () => {
+  await withPluginFixture(
+    {
+      pluginSource: `import { definePlugin } from "#harness-kit";
+export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
+`,
+      extraFiles: {
+        "agents/reviewer.md": `---\nname: reviewer\ndescription: x\n---\n\nSee {{skill:foo:ghost}}.\n`,
+      },
+    },
+    async (srcRoot, distRoot) => {
+      await assert.rejects(compile({ srcRoot, outRoot: distRoot, vendors }), /foo:ghost/);
+    },
+  );
+});
+
+test("compile substitutes placeholders inside command files", async () => {
+  await withPluginFixture(
+    {
+      pluginSource: `import { definePlugin } from "#harness-kit";
+export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
+`,
+      extraFiles: {
+        "skills/bar/SKILL.md": `---\nname: bar\ndescription: x\n---\n\n# Bar\n`,
+        "commands/ship.md": `---\nname: ship\ndescription: x\n---\n\nRun {{skill:foo:bar}} first.\n`,
+      },
+    },
+    async (srcRoot, distRoot) => {
+      await compile({ srcRoot, outRoot: distRoot, vendors });
+      const out = readFileSync(join(distRoot, "plugins/claude/foo/commands/ship.md"), "utf8");
+      assert.match(out, /Run `foo:bar` first\./);
+    },
+  );
+});
+
+test("compile fails when a command file references an unknown local skill", async () => {
+  await withPluginFixture(
+    {
+      pluginSource: `import { definePlugin } from "#harness-kit";
+export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
+`,
+      extraFiles: {
+        "commands/ship.md": `---\nname: ship\ndescription: x\n---\n\nRun {{skill:foo:ghost}}.\n`,
+      },
+    },
+    async (srcRoot, distRoot) => {
+      await assert.rejects(compile({ srcRoot, outRoot: distRoot, vendors }), /foo:ghost/);
+    },
+  );
+});
+
+test("compile resolves {{ref:...}} in agent files relative to the agent file", async () => {
+  await withPluginFixture(
+    {
+      pluginSource: `import { definePlugin } from "#harness-kit";
+export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
+`,
+      extraFiles: {
+        "shared/notes.md": "# Notes\n",
+        "agents/reviewer.md": `---\nname: reviewer\ndescription: x\n---\n\nsee {{ref:../shared/notes.md}}\n`,
+      },
+    },
+    async (srcRoot, distRoot) => {
+      await compile({ srcRoot, outRoot: distRoot, vendors });
+      const out = readFileSync(join(distRoot, "plugins/claude/foo/agents/reviewer.md"), "utf8");
+      assert.match(out, /see `\.\.\/shared\/notes\.md`/);
+    },
+  );
+});
+
 test("compile builds the markdown-only fixture end-to-end", async () => {
   await withTempDist(async (dist) => {
     await compile({ srcRoot: mdSourceRoot, outRoot: dist, vendors });
