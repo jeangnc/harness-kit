@@ -22,6 +22,7 @@ const DEFAULT_CONFIG = {
   MD024: { siblings_only: true },
   MD031: { list_items: false },
   MD033: false,
+  MD040: false,
   MD041: false,
 } as const;
 
