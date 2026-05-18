@@ -23,10 +23,17 @@ test("cli build --help exits 0 and mentions --src", () => {
   assert.match(stdout, /--src/);
 });
 
-test("cli install --help exits 0 and mentions --targets", () => {
+test("cli install --help exits 0 and mentions --dry-run", () => {
   const { status, stdout } = runCli(["install", "--help"]);
   assert.equal(status, 0);
-  assert.match(stdout, /--targets/);
+  assert.match(stdout, /--dry-run/);
+});
+
+test("cli init --help exits 0 and mentions --marketplace and --vendors", () => {
+  const { status, stdout } = runCli(["init", "--help"]);
+  assert.equal(status, 0);
+  assert.match(stdout, /--marketplace/);
+  assert.match(stdout, /--vendors/);
 });
 
 test("cli uninstall --help exits 0 and mentions --dist", () => {

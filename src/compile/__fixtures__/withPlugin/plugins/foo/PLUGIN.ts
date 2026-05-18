@@ -5,6 +5,6 @@ export default definePlugin({
   version: "1.2.3",
   description: "demo plugin used by withPlugin fixture",
   license: "MIT",
-  keywords: ["claude", "demo"],
+  keywords: ["fixture", "demo"],
   dependencies: ["bar-core"],
 });

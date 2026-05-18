@@ -34,11 +34,13 @@ export interface CompileTreeOptions {
   readonly bodyInvariants: readonly BodyInvariant[];
   readonly contextFiles?: ReadonlySet<string>;
   readonly owner: OwningPlugin;
+  readonly skipRelPaths?: ReadonlySet<string>;
 }
 
 export async function compileTree(options: CompileTreeOptions): Promise<void> {
   const { srcRoot, outRoot, localIds, bodyInvariants, owner } = options;
   const contextFiles = options.contextFiles ?? new Set<string>();
+  const skipRelPaths = options.skipRelPaths ?? new Set<string>();
   const skillFolders = await collectSkillFolders(srcRoot);
   const handledAbsPaths = new Set<string>();
 
@@ -65,15 +67,27 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
 
   for await (const absPath of walk(srcRoot)) {
     const file = basename(absPath);
+    const rel = relative(srcRoot, absPath);
     if (SKILL_SOURCE_FILENAMES.has(file)) continue;
     if (absPath.endsWith(".ts")) continue;
     if (file === "body.md") continue;
     if (handledAbsPaths.has(absPath)) continue;
+    if (skipRelPaths.has(rel)) continue;
+    if (isUnderAnySkipDir(rel, skipRelPaths)) continue;
 
     const target = join(outRoot, relative(srcRoot, absPath));
     await mkdir(dirname(target), { recursive: true });
     await copyFile(absPath, target);
   }
+}
+
+function isUnderAnySkipDir(rel: string, skipRelPaths: ReadonlySet<string>): boolean {
+  for (const skip of skipRelPaths) {
+    const skipDir = dirname(skip);
+    if (skipDir === "." || skipDir === "") continue;
+    if (rel === skipDir || rel.startsWith(`${skipDir}/`)) return true;
+  }
+  return false;
 }
 
 async function emitContextFile(

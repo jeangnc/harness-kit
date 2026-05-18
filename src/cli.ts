@@ -7,28 +7,16 @@ import { z } from "zod";
 
 import { build } from "./build.js";
 import { check, type CheckMode, type ExtViolation } from "./check/index.js";
-import { install, uninstall, type Target } from "./install/index.js";
+import { initHarness } from "./init/index.js";
+import { install, uninstall } from "./install/index.js";
 import { lint } from "./lint.js";
+import { builtinVendors } from "./vendor/builtins.js";
+import { resolveVendors, resolveVendorsForRepo } from "./vendor/registry.js";
 
 const PackageJsonSchema = z.object({ version: z.string().min(1) });
 
 const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
 const pkg = PackageJsonSchema.parse(JSON.parse(readFileSync(pkgPath, "utf8")));
-
-function isTarget(value: string): value is Target {
-  return value === "claude" || value === "codex";
-}
-
-function parseTargets(value: string | undefined): readonly Target[] | undefined {
-  if (!value) return undefined;
-  return value.split(",").map((p) => {
-    const trimmed = p.trim();
-    if (!isTarget(trimmed)) {
-      throw new Error(`Unknown target "${trimmed}". Valid: claude, codex`);
-    }
-    return trimmed;
-  });
-}
 
 function parseCheckMode(value: string): CheckMode {
   if (value === "local" || value === "installed" || value === "all") return value;
@@ -36,49 +24,89 @@ function parseCheckMode(value: string): CheckMode {
 }
 
 const buildCmd = defineCommand({
-  meta: { name: "build", description: "Compile typed skill sources to dist/" },
+  meta: { name: "build", description: "Compile harness sources to dist/" },
   args: {
     src: { type: "string", default: "./src", description: "source root" },
     out: { type: "string", default: "./dist", description: "output root" },
+    repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
     silent: { type: "boolean", default: false, description: "suppress success log" },
   },
   run: async ({ args }) => {
-    await build({ srcRoot: args.src, outRoot: args.out, silent: args.silent });
+    await build({
+      srcRoot: args.src,
+      outRoot: args.out,
+      repoRoot: args.repo,
+      silent: args.silent,
+    });
   },
 });
 
 const installArgs = {
   dist: { type: "string", default: "./dist", description: "dist root" },
-  targets: {
-    type: "string",
-    description: "comma-separated targets: claude,codex (default: both)",
-    required: false,
-  },
+  repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
   silent: { type: "boolean", default: false, description: "suppress success log" },
+  "dry-run": { type: "boolean", default: false, description: "print plan without applying" },
 } as const;
 
 const installCmd = defineCommand({
-  meta: { name: "install", description: "Install compiled plugins into Claude/Codex" },
+  meta: { name: "install", description: "Link configs + register plugins per declared vendor" },
   args: installArgs,
   run: async ({ args }) => {
-    const targets = parseTargets(args.targets);
+    const vendors = await resolveVendorsForRepo(args.repo);
     await install({
       distRoot: args.dist,
+      repoRoot: args.repo,
+      vendors,
       silent: args.silent,
-      ...(targets !== undefined ? { targets } : {}),
+      dryRun: args["dry-run"],
     });
   },
 });
 
 const uninstallCmd = defineCommand({
-  meta: { name: "uninstall", description: "Remove installed plugins from Claude/Codex" },
+  meta: { name: "uninstall", description: "Remove installed plugins per declared vendor" },
   args: installArgs,
   run: async ({ args }) => {
-    const targets = parseTargets(args.targets);
+    const vendors = await resolveVendorsForRepo(args.repo);
     await uninstall({
       distRoot: args.dist,
+      repoRoot: args.repo,
+      vendors,
       silent: args.silent,
-      ...(targets !== undefined ? { targets } : {}),
+      dryRun: args["dry-run"],
+    });
+  },
+});
+
+const initCmd = defineCommand({
+  meta: {
+    name: "init",
+    description: "Scaffold a harness repo (harness.yaml, src/configs, src/plugins)",
+  },
+  args: {
+    repo: { type: "string", default: ".", description: "repo root to scaffold into" },
+    marketplace: { type: "string", required: true, description: "marketplace name" },
+    vendors: {
+      type: "string",
+      required: true,
+      description: `comma-separated vendors (known: ${builtinVendors()
+        .map((v) => v.name)
+        .join(", ")})`,
+    },
+    silent: { type: "boolean", default: false, description: "suppress success log" },
+  },
+  run: async ({ args }) => {
+    const vendors = args.vendors
+      .split(",")
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    if (vendors.length === 0) throw new Error("--vendors must list at least one vendor");
+    resolveVendors(vendors, builtinVendors());
+    await initHarness({
+      repoRoot: args.repo,
+      marketplace: args.marketplace,
+      vendors,
+      silent: args.silent,
     });
   },
 });
@@ -143,14 +171,15 @@ const lintCmd = defineCommand({
 
 const main = defineCommand({
   meta: {
-    name: "harness-kit",
+    name: "harness",
     version: pkg.version,
     description:
-      "Build your own multi-agent harness: author plugins once, ship to Claude Code and Codex.",
+      "Build your own multi-agent harness: author plugins once, ship to every declared vendor.",
   },
   subCommands: {
     build: buildCmd,
     check: checkCmd,
+    init: initCmd,
     install: installCmd,
     lint: lintCmd,
     uninstall: uninstallCmd,

@@ -1,9 +1,14 @@
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { compileTree, type BodyInvariant, type OwningPlugin } from "./emit.js";
 import { pathExists } from "../fs.js";
 import { throwInvariantViolations } from "./discovery.js";
+import {
+  SOURCE_MARKETPLACE_MANIFEST,
+  SOURCE_PLUGIN_MANIFEST_JSON,
+  SOURCE_PLUGIN_MANIFEST_TS,
+} from "../layout/conventions.js";
 import {
   collectLocalIds,
   loadLayout,
@@ -11,26 +16,41 @@ import {
   type LocalIds,
   type ResolvedPlugin,
 } from "../layout/index.js";
-import type { DependencyEntry, HookRequirement, Plugin } from "../plugin/index.js";
+import type { DependencyEntry, HookRequirement } from "../plugin/index.js";
+import type { Vendor } from "../vendor/schema.js";
 
 export type { BodyInvariant } from "./emit.js";
 
 export interface CompileOptions {
   readonly srcRoot: string;
   readonly outRoot: string;
+  readonly vendors: readonly Vendor[];
   readonly bodyInvariants?: readonly BodyInvariant[];
 }
 
 export async function compile(options: CompileOptions): Promise<void> {
-  const { srcRoot, outRoot } = options;
+  const { srcRoot, outRoot, vendors } = options;
+  if (vendors.length === 0) {
+    throw new Error("compile requires at least one vendor");
+  }
   const adapter = await loadAdapter(srcRoot);
   const localIds = await collectLocalIds(adapter);
   await checkContextFiles(adapter);
   checkHookRequires(adapter, localIds);
 
+  const skipRelPaths: ReadonlySet<string> = new Set(vendors.map((v) => v.pluginManifestPath));
   await copyMarketplaceManifest(srcRoot, outRoot);
   for (const plugin of adapter.plugins) {
-    await emitPlugin(plugin, outRoot, localIds, options.bodyInvariants ?? []);
+    for (const vendor of vendors) {
+      await emitPluginForVendor(
+        plugin,
+        vendor,
+        outRoot,
+        localIds,
+        skipRelPaths,
+        options.bodyInvariants ?? [],
+      );
+    }
   }
 }
 
@@ -47,11 +67,11 @@ async function loadAdapter(srcRoot: string): Promise<LayoutAdapter> {
       throw new Error(`plugin "${error.name}" not found at ${error.path}`);
     case "manifest-missing":
       return throwInvariantViolations(error.pluginDir, [
-        `plugin "${error.name}": no PLUGIN.ts or .claude-plugin/plugin.json`,
+        `plugin "${error.name}": no ${SOURCE_PLUGIN_MANIFEST_TS} or ${SOURCE_PLUGIN_MANIFEST_JSON}`,
       ]);
     case "manifest-collision":
-      return throwInvariantViolations(join(error.pluginDir, "PLUGIN.ts"), [
-        `both PLUGIN.ts and .claude-plugin/plugin.json exist at ${error.pluginDir} — pick one`,
+      return throwInvariantViolations(join(error.pluginDir, SOURCE_PLUGIN_MANIFEST_TS), [
+        `both ${SOURCE_PLUGIN_MANIFEST_TS} and ${SOURCE_PLUGIN_MANIFEST_JSON} exist at ${error.pluginDir} — pick one`,
       ]);
     case "manifest-invalid":
       return throwInvariantViolations(error.path, error.issues);
@@ -63,20 +83,22 @@ async function loadAdapter(srcRoot: string): Promise<LayoutAdapter> {
 }
 
 async function copyMarketplaceManifest(srcRoot: string, outRoot: string): Promise<void> {
-  const src = join(srcRoot, ".claude-plugin/marketplace.json");
-  const dst = join(outRoot, ".claude-plugin/marketplace.json");
-  await mkdir(join(outRoot, ".claude-plugin"), { recursive: true });
+  const src = join(srcRoot, SOURCE_MARKETPLACE_MANIFEST);
+  const dst = join(outRoot, SOURCE_MARKETPLACE_MANIFEST);
+  await mkdir(join(outRoot, dirname(SOURCE_MARKETPLACE_MANIFEST)), { recursive: true });
   await copyFile(src, dst);
 }
 
-async function emitPlugin(
+async function emitPluginForVendor(
   plugin: ResolvedPlugin,
+  vendor: Vendor,
   outRoot: string,
   localIds: LocalIds,
+  skipRelPaths: ReadonlySet<string>,
   bodyInvariants: readonly BodyInvariant[],
 ): Promise<void> {
-  const pluginOutDir = join(outRoot, "plugins", plugin.name);
-  await emitPluginManifest(plugin, pluginOutDir);
+  const pluginOutDir = join(outRoot, "plugins", vendor.name, plugin.name);
+  await vendor.emitPluginManifest({ manifest: plugin.manifest, pluginOutDir });
   const contextFiles = pluginContextFiles(plugin);
   const owner: OwningPlugin = {
     name: plugin.name,
@@ -89,20 +111,8 @@ async function emitPlugin(
     bodyInvariants,
     contextFiles,
     owner,
+    skipRelPaths,
   });
-}
-
-async function emitPluginManifest(plugin: ResolvedPlugin, pluginOutDir: string): Promise<void> {
-  const target = join(pluginOutDir, ".claude-plugin/plugin.json");
-  await mkdir(join(pluginOutDir, ".claude-plugin"), { recursive: true });
-  await writeFile(target, JSON.stringify(toLegacyPluginJson(plugin.manifest), null, 2) + "\n");
-}
-
-type LegacyPluginManifest = Omit<Plugin, "context" | "hookRequires">;
-
-function toLegacyPluginJson(plugin: Plugin): LegacyPluginManifest {
-  const { context: _ctx, hookRequires: _hr, ...legacy } = plugin;
-  return legacy;
 }
 
 function pluginContextFiles(plugin: ResolvedPlugin): ReadonlySet<string> {
@@ -122,7 +132,7 @@ async function checkContextFiles(adapter: LayoutAdapter): Promise<void> {
       }
     }
     if (errors.length > 0) {
-      throwInvariantViolations(join(plugin.pluginDir, "PLUGIN.ts"), errors);
+      throwInvariantViolations(join(plugin.pluginDir, SOURCE_PLUGIN_MANIFEST_TS), errors);
     }
   }
 }
@@ -135,7 +145,7 @@ function checkHookRequires(adapter: LayoutAdapter, localIds: LocalIds): void {
       if (violation) errors.push(`hookRequires (${req.event}): ${violation}`);
     }
     if (errors.length > 0) {
-      throwInvariantViolations(join(plugin.pluginDir, "PLUGIN.ts"), errors);
+      throwInvariantViolations(join(plugin.pluginDir, SOURCE_PLUGIN_MANIFEST_TS), errors);
     }
   }
 }

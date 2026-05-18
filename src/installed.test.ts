@@ -75,7 +75,11 @@ test("discoverInstalled finds skills in a flat <marketplace>/<plugin>/skills/<sk
       plugin: "plugin-y",
       skill: "lone",
     });
-    const result = (await discoverInstalled([{ name: "claude", root }])).skills;
+    const result = (
+      await discoverInstalled([
+        { name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+      ])
+    ).skills;
     const ids = result.map((s) => `${s.plugin}:${s.skill}`).sort();
     assert.deepEqual(ids, ["plugin-x:skill-1", "plugin-x:skill-2", "plugin-y:lone"]);
   });
@@ -97,7 +101,11 @@ test("discoverInstalled finds skills in a versioned <marketplace>/<plugin>/<vers
       version: "1.0.0",
       skill: "helper",
     });
-    const result = (await discoverInstalled([{ name: "codex", root }])).skills;
+    const result = (
+      await discoverInstalled([
+        { name: "codex", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+      ])
+    ).skills;
     const ids = result.map((s) => `${s.plugin}:${s.skill}`).sort();
     assert.deepEqual(ids, ["plugin-z:helper", "plugin-z:main"]);
   });
@@ -111,7 +119,11 @@ test("discoverInstalled tags each skill with its source name", async () => {
       plugin: "p",
       skill: "s",
     });
-    const [skill] = (await discoverInstalled([{ name: "claude", root }])).skills;
+    const [skill] = (
+      await discoverInstalled([
+        { name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+      ])
+    ).skills;
     assert.ok(skill);
     assert.equal(skill.source, "claude");
     assert.equal(skill.plugin, "p");
@@ -120,16 +132,26 @@ test("discoverInstalled tags each skill with its source name", async () => {
   });
 });
 
-test("discoverInstalled returns empty when source root does not exist (e.g. user has no codex install)", async () => {
+test("discoverInstalled returns empty when source root does not exist", async () => {
   const result = (
-    await discoverInstalled([{ name: "codex", root: "/this/path/definitely/does/not/exist" }])
+    await discoverInstalled([
+      {
+        name: "any",
+        root: "/this/path/definitely/does/not/exist",
+        manifestRelativePath: ".any-plugin/plugin.json",
+      },
+    ])
   ).skills;
   assert.deepEqual(result, []);
 });
 
 test("discoverInstalled returns empty when source root exists but has no skills", async () => {
   await withInstalledSourceFixture(async (root) => {
-    const result = (await discoverInstalled([{ name: "claude", root }])).skills;
+    const result = (
+      await discoverInstalled([
+        { name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+      ])
+    ).skills;
     assert.deepEqual(result, []);
   });
 });
@@ -154,8 +176,8 @@ test("discoverInstalled aggregates skills across multiple sources", async () => 
       });
       const result = (
         await discoverInstalled([
-          { name: "claude", root: claudeRoot },
-          { name: "codex", root: codexRoot },
+          { name: "claude", root: claudeRoot, manifestRelativePath: ".claude-plugin/plugin.json" },
+          { name: "codex", root: codexRoot, manifestRelativePath: ".claude-plugin/plugin.json" },
         ])
       ).skills;
       const ids = result.map((s) => `${s.source}/${s.plugin}:${s.skill}`).sort();
@@ -172,7 +194,11 @@ test("discoverInstalled skips symlinked directories to avoid loops", async () =>
   await withInstalledSourceFixture(async (root) => {
     placeSkill(root, { layout: "flat", marketplace: "m", plugin: "p", skill: "real" });
     symlinkSync(join(root, "m"), join(root, "loop"));
-    const result = (await discoverInstalled([{ name: "claude", root }])).skills;
+    const result = (
+      await discoverInstalled([
+        { name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+      ])
+    ).skills;
     const ids = result.map((s) => `${s.plugin}:${s.skill}`);
     assert.deepEqual(ids, ["p:real"]);
   });
@@ -192,22 +218,61 @@ test("indexInstalled groups installed skills by <plugin>:<skill> id", async () =
       plugin: "plugin-x",
       skill: "skill-1",
     });
-    const artifacts = await discoverInstalled([{ name: "claude", root }]);
+    const artifacts = await discoverInstalled([
+      { name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+    ]);
     const index = indexInstalled(artifacts).skills;
     assert.equal(index.get("plugin-x:skill-1")?.length, 2);
     assert.equal(index.has("plugin-x:other"), false);
   });
 });
 
-test("defaultSources returns a claude source and a codex source", () => {
-  const names = defaultSources()
-    .map((s: PluginSource) => s.name)
-    .sort();
-  assert.deepEqual(names, ["claude", "codex"]);
+test("defaultSources derives one source per supplied vendor", () => {
+  const fakeVendors = [
+    {
+      name: "alpha",
+      home: "/tmp/alpha-home",
+      pluginManifestPath: ".alpha-plugin/plugin.json",
+      emitPluginManifest: async () => undefined,
+      install: async () => undefined,
+      uninstall: async () => undefined,
+    },
+    {
+      name: "beta",
+      home: "/tmp/beta-home",
+      pluginManifestPath: ".beta-plugin/plugin.json",
+      emitPluginManifest: async () => undefined,
+      install: async () => undefined,
+      uninstall: async () => undefined,
+    },
+  ];
+  const sources = defaultSources(fakeVendors);
+  assert.deepEqual(
+    sources.map((s: PluginSource) => ({
+      name: s.name,
+      root: s.root,
+      manifestRelativePath: s.manifestRelativePath,
+    })),
+    [
+      {
+        name: "alpha",
+        root: "/tmp/alpha-home/plugins/cache",
+        manifestRelativePath: ".alpha-plugin/plugin.json",
+      },
+      {
+        name: "beta",
+        root: "/tmp/beta-home/plugins/cache",
+        manifestRelativePath: ".beta-plugin/plugin.json",
+      },
+    ],
+  );
 });
 
-test("defaultSources roots resolve under the user's home directory", () => {
-  for (const source of defaultSources()) {
-    assert.match(source.root, /\.(claude|codex)\/plugins\/cache$/);
+test("defaultSources falls back to built-in vendors when none are supplied", () => {
+  const sources = defaultSources();
+  assert.ok(sources.length > 0, "expected at least one built-in vendor");
+  for (const source of sources) {
+    assert.ok(source.root.endsWith("/plugins/cache"), "root should end with plugins/cache");
+    assert.ok(source.manifestRelativePath.endsWith("/plugin.json"));
   }
 });

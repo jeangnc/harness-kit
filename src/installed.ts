@@ -1,14 +1,17 @@
 import { readFile, readdir } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { z } from "zod";
+
+import { builtinVendors } from "./vendor/builtins.js";
+import type { Vendor } from "./vendor/schema.js";
 
 const PluginManifestSchema = z.object({ name: z.string().min(1) });
 
 export interface PluginSource {
   readonly name: string;
   readonly root: string;
+  readonly manifestRelativePath: string;
 }
 
 export interface InstalledSkill {
@@ -44,18 +47,15 @@ export interface InstalledIndex {
   readonly agents: ReadonlyMap<string, readonly InstalledAgent[]>;
 }
 
-export function defaultSources(): readonly PluginSource[] {
-  const home = homedir();
-  return [
-    { name: "claude", root: join(home, ".claude/plugins/cache") },
-    { name: "codex", root: join(home, ".codex/plugins/cache") },
-  ];
+export function defaultSources(
+  vendors: readonly Vendor[] = builtinVendors(),
+): readonly PluginSource[] {
+  return vendors.map((vendor) => ({
+    name: vendor.name,
+    root: join(vendor.home, "plugins/cache"),
+    manifestRelativePath: vendor.pluginManifestPath,
+  }));
 }
-
-const PLUGIN_MANIFEST_RELATIVE_PATHS = [
-  ".claude-plugin/plugin.json",
-  ".codex-plugin/plugin.json",
-] as const;
 
 export async function discoverInstalled(
   sources: readonly PluginSource[],
@@ -64,7 +64,7 @@ export async function discoverInstalled(
   const commands: InstalledCommand[] = [];
   const agents: InstalledAgent[] = [];
   for (const source of sources) {
-    for await (const plugin of findPluginRoots(source.root)) {
+    for await (const plugin of findPluginRoots(source.root, source.manifestRelativePath)) {
       for await (const skill of collectSkills(plugin.root)) {
         skills.push({
           source: source.name,
@@ -118,8 +118,11 @@ interface PluginRoot {
   readonly root: string;
 }
 
-async function* findPluginRoots(dir: string): AsyncGenerator<PluginRoot> {
-  const name = await readPluginNameAt(dir);
+async function* findPluginRoots(
+  dir: string,
+  manifestRelativePath: string,
+): AsyncGenerator<PluginRoot> {
+  const name = await readPluginName(join(dir, manifestRelativePath));
   if (name !== null) {
     yield { name, root: dir };
     return;
@@ -132,16 +135,8 @@ async function* findPluginRoots(dir: string): AsyncGenerator<PluginRoot> {
   }
   for (const entry of entries) {
     if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) yield* findPluginRoots(join(dir, entry.name));
+    if (entry.isDirectory()) yield* findPluginRoots(join(dir, entry.name), manifestRelativePath);
   }
-}
-
-async function readPluginNameAt(dir: string): Promise<string | null> {
-  for (const rel of PLUGIN_MANIFEST_RELATIVE_PATHS) {
-    const name = await readPluginName(join(dir, rel));
-    if (name) return name;
-  }
-  return null;
 }
 
 interface NamedFile {

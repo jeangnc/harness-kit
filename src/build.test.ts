@@ -12,6 +12,7 @@ async function withSandbox<T>(fn: (srcRoot: string, outRoot: string) => Promise<
   const sandbox = mkdtempSync(join(repoRoot, ".test-tmp-build-"));
   const srcRoot = join(sandbox, "src");
   const outRoot = join(sandbox, "out");
+  writeFileSync(join(sandbox, "harness.yaml"), "marketplace: build-test\nvendors:\n  - claude\n");
   const skillDir = join(srcRoot, "plugins/foo/skills/bar");
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(
@@ -45,7 +46,7 @@ async function withSandbox<T>(fn: (srcRoot: string, outRoot: string) => Promise<
 test("build emits SKILL.md to outRoot when given explicit paths", async () => {
   await withSandbox(async (srcRoot, outRoot) => {
     await build({ srcRoot, outRoot, silent: true });
-    assert.ok(existsSync(join(outRoot, "plugins/foo/skills/bar/SKILL.md")));
+    assert.ok(existsSync(join(outRoot, "plugins/claude/foo/skills/bar/SKILL.md")));
   });
 });
 
@@ -56,7 +57,7 @@ test("build cleans the outRoot/plugins tree before compiling", async () => {
     writeFileSync(stalePath, "stale\n");
     await build({ srcRoot, outRoot, silent: true });
     assert.ok(!existsSync(stalePath), "stale plugin should be removed");
-    assert.ok(existsSync(join(outRoot, "plugins/foo/skills/bar/SKILL.md")));
+    assert.ok(existsSync(join(outRoot, "plugins/claude/foo/skills/bar/SKILL.md")));
   });
 });
 

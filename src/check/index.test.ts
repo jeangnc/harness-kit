@@ -167,8 +167,8 @@ async function withInstalledFixture<T>(
       );
     }
   }
-  return fn([{ name: "claude", root }]).finally(() =>
-    rmSync(root, { recursive: true, force: true }),
+  return fn([{ name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" }]).finally(
+    () => rmSync(root, { recursive: true, force: true }),
   );
 }
 

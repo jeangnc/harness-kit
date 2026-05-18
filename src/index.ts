@@ -46,7 +46,23 @@ export { lint } from "./lint.js";
 export type { LintOptions, LintResult } from "./lint.js";
 
 export { install, uninstall } from "./install/index.js";
-export type { InstallOptions, Target } from "./install/index.js";
+export type { InstallOptions } from "./install/index.js";
+
+export { initHarness } from "./init/index.js";
+export type { InitOptions } from "./init/index.js";
+
+export { loadHarnessConfig } from "./config/harness.js";
+export type { HarnessConfig } from "./config/harness.js";
+
+export { builtinVendors } from "./vendor/builtins.js";
+export { resolveVendors } from "./vendor/registry.js";
+export type {
+  DiscoveredVendorPlugin,
+  LinkedFile,
+  Vendor,
+  VendorEmitContext,
+  VendorInstallContext,
+} from "./vendor/schema.js";
 
 export { check } from "./check/index.js";
 export type {

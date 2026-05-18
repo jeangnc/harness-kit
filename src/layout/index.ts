@@ -2,6 +2,11 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import {
+  SOURCE_MARKETPLACE_MANIFEST,
+  SOURCE_PLUGIN_MANIFEST_JSON,
+  SOURCE_PLUGIN_MANIFEST_TS,
+} from "./conventions.js";
 import { formatZodIssues } from "../errors/index.js";
 import { pathExists } from "../fs.js";
 import { MarketplaceSchema, type Marketplace, type PluginEntry } from "../marketplace/index.js";
@@ -54,8 +59,8 @@ export type LayoutError =
       readonly path: string;
     };
 
-const MANIFEST_JSON = ".claude-plugin/plugin.json";
-const MANIFEST_TS = "PLUGIN.ts";
+const MANIFEST_JSON = SOURCE_PLUGIN_MANIFEST_JSON;
+const MANIFEST_TS = SOURCE_PLUGIN_MANIFEST_TS;
 
 function resolvePluginDir(srcRoot: string, pluginRoot: string | undefined, source: string): string {
   if (source.startsWith("./") || source.startsWith("../") || source === ".") {
@@ -114,7 +119,7 @@ async function loadPluginManifest(
 }
 
 export async function loadLayout(srcRoot: string): Promise<Result<LayoutAdapter, LayoutError>> {
-  const marketplacePath = join(srcRoot, ".claude-plugin/marketplace.json");
+  const marketplacePath = join(srcRoot, SOURCE_MARKETPLACE_MANIFEST);
   if (!(await pathExists(marketplacePath))) {
     return err({ kind: "marketplace-missing", path: marketplacePath });
   }
