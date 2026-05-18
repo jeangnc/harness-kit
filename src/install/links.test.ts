@@ -198,6 +198,33 @@ test("applyConfigLinks removes orphan symlinks that point into the repo's src tr
   });
 });
 
+test("applyConfigLinks sweeps orphan symlinks living in a subdirectory alongside a planned link", async () => {
+  await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
+    const srcDir = join(repoRoot, "src/configs/claude/hooks");
+    mkdirSync(srcDir, { recursive: true });
+    writeFileSync(join(srcDir, "pre-push"), "#!/bin/sh\n");
+    mkdirSync(join(claudeHome, "hooks"), { recursive: true });
+    symlinkSync(
+      join(repoRoot, "src/configs/claude/hooks/removed-hook"),
+      join(claudeHome, "hooks/removed-hook"),
+    );
+    writeManifest(distRoot, {
+      links: [
+        {
+          src: "configs/claude/hooks/pre-push",
+          vendors: ["claude"],
+          destRel: "hooks/pre-push",
+          kind: "file",
+        },
+      ],
+    });
+    const claude = fakeVendor("claude", claudeHome);
+    await applyConfigLinks({ repoRoot, distRoot, vendors: [claude] });
+    assert.throws(() => lstatSync(join(claudeHome, "hooks/removed-hook")), /ENOENT/);
+    assert.ok(lstatSync(join(claudeHome, "hooks/pre-push")).isSymbolicLink());
+  });
+});
+
 test("applyConfigLinks removes orphan symlinks pointing anywhere into the repo (e.g. pre-migration paths)", async () => {
   await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
     const srcDir = join(repoRoot, "src/configs/claude");

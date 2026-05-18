@@ -82,9 +82,10 @@ async function sweepOrphanLinks(
 ): Promise<void> {
   const managedRoot = options.repoRoot + "/";
   const planned = new Set(plan.map((p) => p.destAbs));
-  const scanDirs = new Set<string>();
-  for (const vendor of options.vendors) scanDirs.add(vendor.home);
-  for (const entry of plan) scanDirs.add(dirname(entry.destAbs));
+  const scanDirs = new Set<string>([
+    ...options.vendors.map((v) => v.home),
+    ...plan.map((p) => dirname(p.destAbs)),
+  ]);
 
   for (const dir of scanDirs) {
     const entries = await readdirOrEmpty(dir);
