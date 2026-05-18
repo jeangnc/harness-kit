@@ -169,7 +169,7 @@ test("applyConfigLinks skips vendors not in the active set", async () => {
   });
 });
 
-test("applyConfigLinks removes orphan symlinks that point into the managed source tree", async () => {
+test("applyConfigLinks removes orphan symlinks that point into the repo's src tree", async () => {
   await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
     const srcDir = join(repoRoot, "src/configs/claude");
     mkdirSync(srcDir, { recursive: true });
@@ -198,7 +198,35 @@ test("applyConfigLinks removes orphan symlinks that point into the managed sourc
   });
 });
 
-test("applyConfigLinks leaves untouched symlinks pointing outside the managed source tree", async () => {
+test("applyConfigLinks removes orphan symlinks pointing anywhere into the repo (e.g. pre-migration paths)", async () => {
+  await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
+    const srcDir = join(repoRoot, "src/configs/claude");
+    mkdirSync(srcDir, { recursive: true });
+    writeFileSync(join(srcDir, "settings.json"), "{}");
+    mkdirSync(claudeHome, { recursive: true });
+    const preMigrationOrphan = join(repoRoot, "configs/claude/hooks");
+    symlinkSync(preMigrationOrphan, join(claudeHome, "hooks"));
+    writeManifest(distRoot, {
+      links: [
+        {
+          src: "configs/claude/settings.json",
+          vendors: ["claude"],
+          destRel: "settings.json",
+          kind: "file",
+        },
+      ],
+    });
+    const claude = fakeVendor("claude", claudeHome);
+    await applyConfigLinks({ repoRoot, distRoot, vendors: [claude] });
+    assert.throws(
+      () => lstatSync(join(claudeHome, "hooks")),
+      /ENOENT/,
+      "orphan symlink to a pre-migration repo path should have been removed",
+    );
+  });
+});
+
+test("applyConfigLinks leaves untouched symlinks pointing outside the repo", async () => {
   await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
     mkdirSync(claudeHome, { recursive: true });
     const externalTarget = join(repoRoot, "..", "external", "file.json");

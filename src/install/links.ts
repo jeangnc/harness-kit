@@ -80,7 +80,7 @@ async function sweepOrphanLinks(
   plan: readonly PlannedLink[],
   options: ApplyConfigLinksOptions,
 ): Promise<void> {
-  const managedSrcRoot = join(options.repoRoot, "src") + "/";
+  const managedRoot = options.repoRoot + "/";
   const planned = new Set(plan.map((p) => p.destAbs));
   const scanDirs = new Set<string>();
   for (const vendor of options.vendors) scanDirs.add(vendor.home);
@@ -94,7 +94,7 @@ async function sweepOrphanLinks(
       const target = await readlinkOrNull(path);
       if (target === null) continue;
       const absTarget = resolve(dir, target);
-      if (!absTarget.startsWith(managedSrcRoot)) continue;
+      if (!absTarget.startsWith(managedRoot)) continue;
       await rm(path);
     }
   }
