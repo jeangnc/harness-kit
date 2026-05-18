@@ -1,0 +1,108 @@
+# Vendors
+
+A **vendor** is harness-kit's extension point for targeting a coding-agent runtime. Each vendor knows where its home directory is, what its plugin manifest looks like, and how to install or uninstall plugins through its own CLI or cache layout. The compile + install pipelines are vendor-agnostic — everything vendor-specific lives behind the `Vendor` interface.
+
+Built-in: [`claude`](../src/vendors/claude/index.ts) and [`codex`](../src/vendors/codex/index.ts). Custom vendors are wired through the programmatic API today; `harness.yaml` currently only resolves built-in names.
+
+## The `Vendor` interface
+
+Defined in [`src/vendor/schema.ts`](../src/vendor/schema.ts):
+
+```ts
+interface Vendor {
+  readonly name: string;
+  readonly home: string;
+  readonly pluginManifestPath: string;
+  readonly aliases?: (linkedFile: LinkedFile) => readonly string[];
+  readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;
+  readonly install: (ctx: VendorInstallContext) => Promise<void>;
+  readonly uninstall: (ctx: VendorInstallContext) => Promise<void>;
+}
+
+interface LinkedFile {
+  readonly srcAbs: string;
+  readonly destAbs: string;
+  readonly destRel: string;
+  readonly basename: string;
+}
+
+interface DiscoveredVendorPlugin {
+  readonly name: string;
+  readonly path: string;
+  readonly version: string;
+}
+
+interface VendorInstallContext {
+  readonly distRoot: string;
+  readonly marketplace: string;
+  readonly plugins: readonly DiscoveredVendorPlugin[];
+  readonly run: CommandRunner;
+  readonly log: (msg: string) => void;
+}
+
+interface VendorEmitContext {
+  readonly manifest: Plugin;
+  readonly pluginOutDir: string;
+}
+```
+
+### Field responsibilities
+
+- **`name`** — identifier used in `harness.yaml` `vendors:` list and in the `dist/plugins/<name>/` subtree.
+- **`home`** — absolute path to the vendor's user-level home (e.g. `~/.claude`, `~/.codex`). Config links and aliases are anchored here.
+- **`pluginManifestPath`** — relative path inside each compiled plugin where the vendor manifest is written (e.g. `.claude-plugin/plugin.json`).
+- **`aliases`** *(optional)* — given a linked config file, return additional symlink destinations. Claude uses this to add a `CLAUDE.md` alias whenever an `AGENTS.md` config is linked.
+- **`emitPluginManifest`** — write the per-vendor manifest into `ctx.pluginOutDir` during compile. The shared `Plugin` shape is provided; the vendor decides how (or whether) to translate it.
+- **`install`** — register the discovered plugins with the vendor (CLI commands, cache priming, whatever the vendor needs). `ctx.run` is a recordable command runner so test code can intercept shell calls.
+- **`uninstall`** — reverse of `install`. Should be idempotent.
+
+## Built-in vendors
+
+### `claude`
+
+- **Home**: `~/.claude`
+- **Manifest path**: `.claude-plugin/plugin.json`
+- **Aliases**: a linked `AGENTS.md` also gets a `CLAUDE.md` symlink in the vendor home (one-way).
+- **Install**: for each discovered plugin, `claude plugin uninstall <name>@<marketplace>` (ignore-failure), remove `~/.claude/plugins/cache/<marketplace>/<name>`, then `claude plugin install <name>@<marketplace>`. The clean-reinstall cycle avoids stale-cache surprises.
+- **Uninstall**: `claude plugin uninstall <name>@<marketplace>` per plugin, then `claude plugin marketplace remove <marketplace>`.
+
+### `codex`
+
+- **Home**: `~/.codex`
+- **Manifest path**: `.codex-plugin/plugin.json`
+- **Install**: drops `~/.codex/plugins/cache/<marketplace>`, runs `codex plugin marketplace add <distRoot>`, then copies each compiled plugin into `~/.codex/plugins/cache/<marketplace>/<name>/<version>/`. The copy primes the cache so Codex picks up plugins immediately without a separate fetch step.
+- **Uninstall**: `codex plugin marketplace remove <marketplace>`, then drops the cache directory.
+
+## Writing a custom vendor
+
+Implement the interface and pass your vendor to `install` / `uninstall` / `build` directly:
+
+```ts
+import { build, install, type Vendor } from "@jean.gnc/harness-kit";
+
+const myVendor: Vendor = {
+  name: "myagent",
+  home: `${process.env.HOME}/.myagent`,
+  pluginManifestPath: ".myagent/plugin.json",
+  async emitPluginManifest(ctx) {
+    /* write ctx.manifest into ctx.pluginOutDir / pluginManifestPath */
+  },
+  async install(ctx) {
+    /* register plugins with the vendor */
+  },
+  async uninstall(ctx) {
+    /* reverse of install */
+  },
+};
+
+await build({ srcRoot: "./src", outRoot: "./dist", vendors: [myVendor] });
+await install({ vendors: [myVendor] });
+```
+
+`harness.yaml` currently resolves vendor names against `builtinVendors()` only, so custom vendors must be wired through the programmatic API. Vendor-name registration in `harness.yaml` is a separate piece of work.
+
+## See also
+
+- [`src/vendor/schema.ts`](../src/vendor/schema.ts) — interface definitions.
+- [`src/vendors/claude/index.ts`](../src/vendors/claude/index.ts) and [`src/vendors/codex/index.ts`](../src/vendors/codex/index.ts) — reference implementations.
+- [`src/install/links.ts`](../src/install/links.ts) — how the config-link planner consumes `aliases`.
