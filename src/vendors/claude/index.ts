@@ -53,6 +53,13 @@ export function makeClaudeVendor(home: string): Vendor {
           force: true,
         });
       }
+      await runIgnoreFailure(ctx.run, "claude", [
+        "plugin",
+        "marketplace",
+        "update",
+        ctx.marketplace,
+      ]);
+      ctx.log(`[claude] refreshed marketplace ${ctx.marketplace}`);
       for (const plugin of ctx.plugins) {
         await ctx.run("claude", ["plugin", "install", `${plugin.name}@${ctx.marketplace}`]);
         ctx.log(`[claude] installed ${plugin.name}`);

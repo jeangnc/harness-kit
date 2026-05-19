@@ -121,6 +121,7 @@ test("claudeVendor.install uninstalls + installs each plugin via claude CLI", as
   assert.deepEqual(cmds, [
     "claude plugin uninstall alpha@test-market",
     "claude plugin uninstall beta@test-market",
+    "claude plugin marketplace update test-market",
     "claude plugin install alpha@test-market",
     "claude plugin install beta@test-market",
   ]);
