@@ -292,7 +292,7 @@ test("install passes an empty plugin list when the vendor dist subtree is empty"
   );
 });
 
-test("install defaults the vendor context mode to remote", async () => {
+test("install defaults the vendor context mode to local", async () => {
   await withInstallFixture(
     { marketplaceName: "shop", plugins: [] },
     async ({ distRoot, sandbox }) => {
@@ -300,7 +300,7 @@ test("install defaults the vendor context mode to remote", async () => {
       const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       await installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run);
-      assert.equal(claudeRecord.installs[0]!.mode, "remote");
+      assert.equal(claudeRecord.installs[0]!.mode, "local");
     },
   );
 });
@@ -313,10 +313,10 @@ test("install threads the requested mode into the vendor context", async () => {
       const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       await installWithRunner(
-        { distRoot, vendors: [claude], silent: true, mode: "local" },
+        { distRoot, vendors: [claude], silent: true, mode: "remote" },
         recorder.run,
       );
-      assert.equal(claudeRecord.installs[0]!.mode, "local");
+      assert.equal(claudeRecord.installs[0]!.mode, "remote");
     },
   );
 });

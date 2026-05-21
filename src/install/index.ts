@@ -81,7 +81,7 @@ async function resolveContext(
       if (!silent) console.log(msg);
     });
   const marketplace = await resolveMarketplaceName(distRoot, options.vendors);
-  const mode = options.mode ?? "remote";
+  const mode = options.mode ?? "local";
   return { distRoot, repoRoot, vendors: options.vendors, marketplace, mode, run: runner, log };
 }
 

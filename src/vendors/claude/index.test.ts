@@ -28,7 +28,7 @@ function ctx(over: Partial<VendorInstallContext> = {}): VendorInstallContext {
     distRoot: "/tmp/dist",
     marketplace: "test-market",
     plugins: [],
-    mode: "remote",
+    mode: "local",
     run,
     log: () => undefined,
     ...over,
@@ -107,11 +107,12 @@ test("claudeVendor.aliases returns empty for non-AGENTS files", () => {
   assert.deepEqual(aliases, []);
 });
 
-test("claudeVendor.install uninstalls + installs each plugin via claude CLI", async () => {
+test("claudeVendor.install in remote mode uninstalls + installs each plugin via claude CLI", async () => {
   const { run, calls } = recordingRunner();
   await claudeVendor.install(
     ctx({
       run,
+      mode: "remote",
       plugins: [
         { name: "alpha", path: "/tmp/dist/claude/alpha", version: "1.0.0" },
         { name: "beta", path: "/tmp/dist/claude/beta", version: "0.2.0" },

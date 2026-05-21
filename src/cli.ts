@@ -57,7 +57,7 @@ const installCmd = defineCommand({
   meta: { name: "install", description: "Link configs + register plugins per declared vendor" },
   args: {
     ...installArgs,
-    mode: { type: "string", default: "remote", description: "install source: local | remote" },
+    mode: { type: "string", default: "local", description: "install source: local | remote" },
   },
   run: async ({ args }) => {
     const mode = parseInstallMode(args.mode);
