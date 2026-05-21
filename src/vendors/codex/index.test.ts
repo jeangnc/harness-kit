@@ -62,6 +62,7 @@ test("codexVendor.install primes cache + registers marketplace", async () => {
       distRoot,
       marketplace: "test-market",
       plugins: [{ name: "alpha", path: alphaPath, version: "1.2.3" }],
+      mode: "remote",
       run,
       log: () => undefined,
     };
@@ -82,6 +83,7 @@ test("codexVendor.install is a no-op when no plugins", async () => {
       distRoot,
       marketplace: "m",
       plugins: [],
+      mode: "remote",
       run,
       log: () => undefined,
     });
@@ -100,6 +102,7 @@ test("codexVendor.install wipes any pre-existing marketplace cache", async () =>
       distRoot,
       marketplace: "test-market",
       plugins: [{ name: "alpha", path: alphaPath, version: "1.0.0" }],
+      mode: "remote",
       run,
       log: () => undefined,
     });
@@ -121,6 +124,7 @@ test("codexVendor.uninstall removes marketplace cache + calls codex CLI", async 
       distRoot,
       marketplace: "test-market",
       plugins: [],
+      mode: "remote",
       run,
       log: () => undefined,
     });

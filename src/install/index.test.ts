@@ -291,3 +291,32 @@ test("install passes an empty plugin list when the vendor dist subtree is empty"
     },
   );
 });
+
+test("install defaults the vendor context mode to remote", async () => {
+  await withInstallFixture(
+    { marketplaceName: "shop", plugins: [] },
+    async ({ distRoot, sandbox }) => {
+      const recorder = recordingRunner();
+      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
+      await installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run);
+      assert.equal(claudeRecord.installs[0]!.mode, "remote");
+    },
+  );
+});
+
+test("install threads the requested mode into the vendor context", async () => {
+  await withInstallFixture(
+    { marketplaceName: "shop", plugins: [] },
+    async ({ distRoot, sandbox }) => {
+      const recorder = recordingRunner();
+      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
+      await installWithRunner(
+        { distRoot, vendors: [claude], silent: true, mode: "local" },
+        recorder.run,
+      );
+      assert.equal(claudeRecord.installs[0]!.mode, "local");
+    },
+  );
+});

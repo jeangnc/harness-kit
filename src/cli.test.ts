@@ -29,6 +29,18 @@ test("cli install --help exits 0 and mentions --dry-run", () => {
   assert.match(stdout, /--dry-run/);
 });
 
+test("cli install --help mentions --mode", () => {
+  const { status, stdout } = runCli(["install", "--help"]);
+  assert.equal(status, 0);
+  assert.match(stdout, /--mode/);
+});
+
+test("cli install --mode with an unknown value exits non-zero", () => {
+  const { status, stderr } = runCli(["install", "--mode=bogus"]);
+  assert.notEqual(status, 0);
+  assert.match(stderr, /Unknown install mode "bogus"/);
+});
+
 test("cli init --help exits 0 and mentions --marketplace and --vendors", () => {
   const { status, stdout } = runCli(["init", "--help"]);
   assert.equal(status, 0);

@@ -47,6 +47,8 @@ export type { LintOptions, LintResult } from "./lint.js";
 
 export { install, uninstall } from "./install/index.js";
 export type { InstallOptions } from "./install/index.js";
+export { INSTALL_MODES, isInstallMode, parseInstallMode } from "./install/mode.js";
+export type { InstallMode } from "./install/mode.js";
 
 export { initHarness } from "./init/index.js";
 export type { InitOptions } from "./init/index.js";

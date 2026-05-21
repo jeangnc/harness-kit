@@ -40,7 +40,7 @@ export function makeClaudeVendor(home: string): Vendor {
     async install(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;
       ctx.log(
-        `[claude] refreshing ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace}`,
+        `[claude] refreshing ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace} (${ctx.mode})`,
       );
       for (const plugin of ctx.plugins) {
         await runIgnoreFailure(ctx.run, "claude", [
@@ -53,12 +53,7 @@ export function makeClaudeVendor(home: string): Vendor {
           force: true,
         });
       }
-      await runIgnoreFailure(ctx.run, "claude", [
-        "plugin",
-        "marketplace",
-        "update",
-        ctx.marketplace,
-      ]);
+      await refreshMarketplace(ctx);
       ctx.log(`[claude] refreshed marketplace ${ctx.marketplace}`);
       for (const plugin of ctx.plugins) {
         await ctx.run("claude", ["plugin", "install", `${plugin.name}@${ctx.marketplace}`]);
@@ -82,6 +77,14 @@ export function makeClaudeVendor(home: string): Vendor {
       ]);
     },
   };
+}
+
+async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
+  const args =
+    ctx.mode === "local"
+      ? ["plugin", "marketplace", "add", join(ctx.distRoot, VENDOR_DIR), "--scope", "local"]
+      : ["plugin", "marketplace", "update", ctx.marketplace];
+  await runIgnoreFailure(ctx.run, "claude", args);
 }
 
 export const claudeVendor: Vendor = makeClaudeVendor(join(homedir(), ".claude"));

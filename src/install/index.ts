@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 
 import { applyConfigLinks, formatPlannedLink, planConfigLinks } from "./links.js";
 import { discoverPluginsForVendor, readMarketplaceName } from "./discovery.js";
+import { type InstallMode } from "./mode.js";
 import { defaultRunner, type CommandRunner } from "./runner.js";
 import type { Vendor, VendorInstallContext } from "../vendor/schema.js";
 
@@ -9,6 +10,7 @@ export interface InstallOptions {
   readonly distRoot?: string;
   readonly repoRoot?: string;
   readonly vendors: readonly Vendor[];
+  readonly mode?: InstallMode;
   readonly silent?: boolean;
   readonly dryRun?: boolean;
   readonly log?: (msg: string) => void;
@@ -58,6 +60,7 @@ interface ResolvedContext {
   readonly repoRoot: string;
   readonly vendors: readonly Vendor[];
   readonly marketplace: string;
+  readonly mode: InstallMode;
   readonly run: CommandRunner;
   readonly log: (msg: string) => void;
 }
@@ -78,7 +81,8 @@ async function resolveContext(
       if (!silent) console.log(msg);
     });
   const marketplace = await resolveMarketplaceName(distRoot, options.vendors);
-  return { distRoot, repoRoot, vendors: options.vendors, marketplace, run: runner, log };
+  const mode = options.mode ?? "remote";
+  return { distRoot, repoRoot, vendors: options.vendors, marketplace, mode, run: runner, log };
 }
 
 async function resolveMarketplaceName(
@@ -103,6 +107,7 @@ function buildVendorContext(
     distRoot: ctx.distRoot,
     marketplace: ctx.marketplace,
     plugins,
+    mode: ctx.mode,
     run: ctx.run,
     log: ctx.log,
   };

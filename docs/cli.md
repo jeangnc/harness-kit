@@ -56,6 +56,7 @@ Links config files into each vendor's home and registers compiled plugins throug
 
 - `--dist <path>` (default `./dist`).
 - `--repo <path>` (default `.`).
+- `--mode <remote|local>` (default `remote`) — install source. `remote` resolves Claude plugins from the published marketplace; `local` registers the compiled `dist/claude` tree as a local-scoped marketplace, installing uncommitted builds without publishing. Codex is local-only and ignores this flag.
 - `--dry-run` — print the plan without touching the filesystem.
 - `--silent`.
 

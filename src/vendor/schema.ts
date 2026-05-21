@@ -1,3 +1,4 @@
+import type { InstallMode } from "../install/mode.js";
 import type { CommandRunner } from "../install/runner.js";
 import type { Marketplace } from "../marketplace/index.js";
 import type { Plugin } from "../plugin/index.js";
@@ -19,6 +20,7 @@ export interface VendorInstallContext {
   readonly distRoot: string;
   readonly marketplace: string;
   readonly plugins: readonly DiscoveredVendorPlugin[];
+  readonly mode: InstallMode;
   readonly run: CommandRunner;
   readonly log: (msg: string) => void;
 }

@@ -72,6 +72,8 @@ Plus `src/.claude-plugin/marketplace.json` at the root, listing the plugins to c
 1. Applies links from `dist/configs.json`. Existing symlinks are replaced. Regular files are renamed to `<dest>.backup` (incrementing to `.backup.2`, `.backup.3`, …) before the symlink is created. Orphan symlinks pointing back into the repo are swept before applying.
 2. For each declared vendor, discovers compiled plugins under `dist/plugins/<vendor>/` and calls the vendor's `install` hook.
 
+`--mode` selects where Claude resolves plugins from: `remote` (default) pulls from the published marketplace; `local` registers the freshly compiled `dist/claude` tree as a local-scoped marketplace, so uncommitted builds install without publishing. Codex is local-only and ignores the flag.
+
 `--dry-run` prints the plan without touching the filesystem.
 
 ## Authoring a skill
@@ -177,7 +179,7 @@ harness init      # scaffold harness.yaml + src/configs/{common,<vendor>}/ + src
 harness build     # compile src/ → dist/ per declared vendors
 harness lint      # lint compiled markdown under dist/
 harness check     # validate plugin references against local + installed sources
-harness install   # link configs + register plugins per declared vendor
+harness install   # link configs + register plugins per declared vendor (--mode=remote|local)
 harness uninstall # remove installed plugins per declared vendor
 ```
 

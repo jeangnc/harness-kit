@@ -9,6 +9,7 @@ import { build } from "./build.js";
 import { CHECK_MODES, check, type CheckMode, type ReferenceViolation } from "./check/index.js";
 import { initHarness } from "./init/index.js";
 import { install, uninstall } from "./install/index.js";
+import { parseInstallMode } from "./install/mode.js";
 import { lint } from "./lint.js";
 import { builtinVendors } from "./vendor/builtins.js";
 import { resolveVendors, resolveVendorsForRepo } from "./vendor/registry.js";
@@ -54,13 +55,18 @@ const installArgs = {
 
 const installCmd = defineCommand({
   meta: { name: "install", description: "Link configs + register plugins per declared vendor" },
-  args: installArgs,
+  args: {
+    ...installArgs,
+    mode: { type: "string", default: "remote", description: "install source: local | remote" },
+  },
   run: async ({ args }) => {
+    const mode = parseInstallMode(args.mode);
     const vendors = await resolveVendorsForRepo(args.repo);
     await install({
       distRoot: args.dist,
       repoRoot: args.repo,
       vendors,
+      mode,
       silent: args.silent,
       dryRun: args["dry-run"],
     });

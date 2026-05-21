@@ -28,6 +28,7 @@ function ctx(over: Partial<VendorInstallContext> = {}): VendorInstallContext {
     distRoot: "/tmp/dist",
     marketplace: "test-market",
     plugins: [],
+    mode: "remote",
     run,
     log: () => undefined,
     ...over,
@@ -124,6 +125,24 @@ test("claudeVendor.install uninstalls + installs each plugin via claude CLI", as
     "claude plugin marketplace update test-market",
     "claude plugin install alpha@test-market",
     "claude plugin install beta@test-market",
+  ]);
+});
+
+test("claudeVendor.install in local mode adds the dist marketplace instead of updating", async () => {
+  const { run, calls } = recordingRunner();
+  await claudeVendor.install(
+    ctx({
+      run,
+      mode: "local",
+      distRoot: "/tmp/dist",
+      plugins: [{ name: "alpha", path: "/tmp/dist/claude/alpha", version: "1.0.0" }],
+    }),
+  );
+  const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
+  assert.deepEqual(cmds, [
+    "claude plugin uninstall alpha@test-market",
+    "claude plugin marketplace add /tmp/dist/claude --scope local",
+    "claude plugin install alpha@test-market",
   ]);
 });
 
