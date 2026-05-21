@@ -6,7 +6,7 @@ import { defineCommand, runMain } from "citty";
 import { z } from "zod";
 
 import { build } from "./build.js";
-import { CHECK_MODES, check, type CheckMode, type ExtViolation } from "./check/index.js";
+import { CHECK_MODES, check, type CheckMode, type ReferenceViolation } from "./check/index.js";
 import { initHarness } from "./init/index.js";
 import { install, uninstall } from "./install/index.js";
 import { lint } from "./lint.js";
@@ -118,7 +118,7 @@ const initCmd = defineCommand({
 const checkCmd = defineCommand({
   meta: {
     name: "check",
-    description: "Validate plugin references — local, installed (ext:), or both",
+    description: "Validate plugin references against local, installed, or both",
   },
   args: {
     src: { type: "string", default: "./src", description: "source root" },
@@ -154,7 +154,7 @@ const checkCmd = defineCommand({
   },
 });
 
-function formatViolation(v: ExtViolation): string {
+function formatViolation(v: ReferenceViolation): string {
   return `${v.file}:${v.line}:${v.column}  \`${v.token}\` — ${v.message}`;
 }
 

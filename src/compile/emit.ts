@@ -19,6 +19,7 @@ import {
 } from "./frontmatter.js";
 import { buildRegistry, type OwningPlugin } from "./validators.js";
 import type { LocalIds } from "../layout/index.js";
+import type { InstalledIndex } from "../installed.js";
 
 const SKILL_SOURCE_FILENAMES: ReadonlySet<string> = new Set(["SKILL.ts", "SKILL.md"]);
 
@@ -27,18 +28,35 @@ export type { OwningPlugin } from "./validators.js";
 
 export type BodyInvariant = (body: string) => string[];
 
+export type WarningSink = (filePath: string, warnings: readonly string[]) => void;
+
 export interface CompileTreeOptions {
   readonly srcRoot: string;
   readonly outRoot: string;
   readonly localIds: LocalIds;
+  readonly installedIndex: InstalledIndex;
   readonly bodyInvariants: readonly BodyInvariant[];
   readonly contextFiles?: ReadonlySet<string>;
   readonly owner: OwningPlugin;
   readonly skipRelPaths?: ReadonlySet<string>;
+  readonly onWarnings?: WarningSink;
+}
+
+interface CompileContext {
+  readonly localIds: LocalIds;
+  readonly installedIndex: InstalledIndex;
+  readonly owner: OwningPlugin;
+  readonly onWarnings?: WarningSink;
 }
 
 export async function compileTree(options: CompileTreeOptions): Promise<void> {
-  const { srcRoot, outRoot, localIds, bodyInvariants, owner } = options;
+  const { srcRoot, outRoot, bodyInvariants } = options;
+  const ctx: CompileContext = {
+    localIds: options.localIds,
+    installedIndex: options.installedIndex,
+    owner: options.owner,
+    ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
+  };
   const contextFiles = options.contextFiles ?? new Set<string>();
   const skipRelPaths = options.skipRelPaths ?? new Set<string>();
   const skillFolders = await collectSkillFolders(srcRoot);
@@ -52,9 +70,8 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
       absPath,
       join(dirname(target), "SKILL.md"),
       companions,
-      localIds,
       bodyInvariants,
-      owner,
+      ctx,
     );
     for (const p of result.resolvedIncludes) handledAbsPaths.add(p);
     for (const p of result.emittedCompanions) handledAbsPaths.add(p);
@@ -62,7 +79,7 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
 
   for (const absPath of contextFiles) {
     const target = join(outRoot, relative(srcRoot, absPath));
-    await emitContextFile(absPath, target, localIds, owner);
+    await emitSubstitutedFile(absPath, target, dirname(absPath), ctx);
     handledAbsPaths.add(absPath);
   }
 
@@ -91,15 +108,6 @@ function isUnderAnySkipDir(rel: string, skipRelPaths: ReadonlySet<string>): bool
   return false;
 }
 
-async function emitContextFile(
-  srcPath: string,
-  outPath: string,
-  localIds: LocalIds,
-  owner: OwningPlugin,
-): Promise<void> {
-  await emitSubstitutedFile(srcPath, outPath, dirname(srcPath), localIds, owner);
-}
-
 async function collectSkillFolders(srcRoot: string): Promise<Map<string, string[]>> {
   const result = new Map<string, string[]>();
   for await (const absPath of walk(srcRoot)) {
@@ -125,9 +133,8 @@ async function emitSkill(
   srcPath: string,
   outPath: string,
   siblings: readonly string[],
-  localIds: LocalIds,
   bodyInvariants: readonly BodyInvariant[],
-  owner: OwningPlugin,
+  ctx: CompileContext,
 ): Promise<EmitResult> {
   const skillDir = dirname(srcPath);
   const loaded = await loadSkill(skillDir);
@@ -162,7 +169,14 @@ async function emitSkill(
   }
 
   const existingRefs = await precomputeExistingRefs(expandedBody, skillDir);
-  const registry = buildRegistry(skill.companions, localIds, existingRefs, skillDir, owner);
+  const registry = buildRegistry(
+    skill.companions,
+    ctx.localIds,
+    ctx.installedIndex,
+    existingRefs,
+    skillDir,
+    ctx.owner,
+  );
   const result = substitute(expandedBody, registry);
   if (!result.ok) {
     throwInvariantViolations(srcPath, result.errors);
@@ -173,6 +187,8 @@ async function emitSkill(
     throwInvariantViolations(srcPath, descriptionResult.errors);
   }
 
+  reportWarnings(ctx, srcPath, [...result.warnings, ...descriptionResult.warnings]);
+
   await mkdir(dirname(outPath), { recursive: true });
   await writeFile(outPath, renderFrontmatter(skill, descriptionResult.rendered) + result.rendered);
 
@@ -181,7 +197,7 @@ async function emitSkill(
     const companionSrc = join(skillDir, companion.file);
     if (expanded.value.resolvedIncludes.has(companionSrc)) continue;
     const companionOut = join(dirname(outPath), companion.file);
-    await emitSubstitutedFile(companionSrc, companionOut, skillDir, localIds, owner);
+    await emitSubstitutedFile(companionSrc, companionOut, skillDir, ctx);
     emittedCompanions.add(companionSrc);
   }
 
@@ -192,8 +208,7 @@ async function emitSubstitutedFile(
   srcPath: string,
   outPath: string,
   baseDir: string,
-  localIds: LocalIds,
-  owner: OwningPlugin,
+  ctx: CompileContext,
 ): Promise<void> {
   const raw = await readFile(srcPath, "utf8");
   const expanded = await expandIncludes(raw, srcPath, baseDir);
@@ -202,13 +217,25 @@ async function emitSubstitutedFile(
   }
   const body = expanded.value.body;
   const existingRefs = await precomputeExistingRefs(body, baseDir);
-  const registry = buildRegistry(undefined, localIds, existingRefs, baseDir, owner);
+  const registry = buildRegistry(
+    undefined,
+    ctx.localIds,
+    ctx.installedIndex,
+    existingRefs,
+    baseDir,
+    ctx.owner,
+  );
   const result = substitute(body, registry);
   if (!result.ok) {
     throwInvariantViolations(srcPath, result.errors);
   }
+  reportWarnings(ctx, srcPath, result.warnings);
   await mkdir(dirname(outPath), { recursive: true });
   await writeFile(outPath, result.rendered);
+}
+
+function reportWarnings(ctx: CompileContext, filePath: string, warnings: readonly string[]): void {
+  if (warnings.length > 0) ctx.onWarnings?.(filePath, warnings);
 }
 
 async function* walk(dir: string): AsyncGenerator<string> {

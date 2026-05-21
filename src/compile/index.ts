@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { compileTree, type BodyInvariant, type OwningPlugin } from "./emit.js";
+import { compileTree, type BodyInvariant, type OwningPlugin, type WarningSink } from "./emit.js";
 import { pathExists } from "../fs.js";
 import { throwInvariantViolations } from "./discovery.js";
 import { SOURCE_PLUGIN_MANIFEST_JSON, SOURCE_PLUGIN_MANIFEST_TS } from "../layout/conventions.js";
@@ -12,16 +12,26 @@ import {
   type LocalIds,
   type ResolvedPlugin,
 } from "../layout/index.js";
+import {
+  defaultSources,
+  discoverInstalled,
+  indexInstalled,
+  type InstalledIndex,
+  type PluginSource,
+} from "../installed.js";
 import type { DependencyEntry, HookRequirement } from "../plugin/index.js";
 import type { Vendor } from "../vendor/schema.js";
 
 export type { BodyInvariant } from "./emit.js";
+export type { WarningSink } from "./emit.js";
 
 export interface CompileOptions {
   readonly srcRoot: string;
   readonly outRoot: string;
   readonly vendors: readonly Vendor[];
   readonly bodyInvariants?: readonly BodyInvariant[];
+  readonly onWarnings?: WarningSink;
+  readonly sources?: readonly PluginSource[];
 }
 
 export async function compile(options: CompileOptions): Promise<void> {
@@ -31,6 +41,7 @@ export async function compile(options: CompileOptions): Promise<void> {
   }
   const adapter = await loadAdapter(srcRoot);
   const localIds = await collectLocalIds(adapter);
+  const installedIndex = await loadInstalledIndex(options.sources ?? defaultSources(vendors));
   await checkContextFiles(adapter);
   checkHookRequires(adapter, localIds);
 
@@ -40,16 +51,21 @@ export async function compile(options: CompileOptions): Promise<void> {
   }
   for (const plugin of adapter.plugins) {
     for (const vendor of vendors) {
-      await emitPluginForVendor(
-        plugin,
-        vendor,
+      await emitPluginForVendor(plugin, vendor, {
         outRoot,
         localIds,
+        installedIndex,
         skipRelPaths,
-        options.bodyInvariants ?? [],
-      );
+        bodyInvariants: options.bodyInvariants ?? [],
+        ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
+      });
     }
   }
+}
+
+async function loadInstalledIndex(sources: readonly PluginSource[]): Promise<InstalledIndex> {
+  const artifacts = await discoverInstalled(sources);
+  return indexInstalled(artifacts);
 }
 
 async function loadAdapter(srcRoot: string): Promise<LayoutAdapter> {
@@ -80,15 +96,21 @@ async function loadAdapter(srcRoot: string): Promise<LayoutAdapter> {
   }
 }
 
+interface EmitPluginOptions {
+  readonly outRoot: string;
+  readonly localIds: LocalIds;
+  readonly installedIndex: InstalledIndex;
+  readonly skipRelPaths: ReadonlySet<string>;
+  readonly bodyInvariants: readonly BodyInvariant[];
+  readonly onWarnings?: WarningSink;
+}
+
 async function emitPluginForVendor(
   plugin: ResolvedPlugin,
   vendor: Vendor,
-  outRoot: string,
-  localIds: LocalIds,
-  skipRelPaths: ReadonlySet<string>,
-  bodyInvariants: readonly BodyInvariant[],
+  options: EmitPluginOptions,
 ): Promise<void> {
-  const pluginOutDir = vendor.pluginOutDir(outRoot, plugin.name);
+  const pluginOutDir = vendor.pluginOutDir(options.outRoot, plugin.name);
   await vendor.emitPluginManifest({ manifest: plugin.manifest, pluginOutDir });
   const contextFiles = await collectSubstitutableFiles(plugin);
   const owner: OwningPlugin = {
@@ -98,11 +120,13 @@ async function emitPluginForVendor(
   await compileTree({
     srcRoot: plugin.pluginDir,
     outRoot: pluginOutDir,
-    localIds,
-    bodyInvariants,
+    localIds: options.localIds,
+    installedIndex: options.installedIndex,
+    bodyInvariants: options.bodyInvariants,
     contextFiles,
     owner,
-    skipRelPaths,
+    skipRelPaths: options.skipRelPaths,
+    ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   });
 }
 

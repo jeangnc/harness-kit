@@ -33,6 +33,7 @@ export async function build(options: BuildOptions = {}): Promise<void> {
     outRoot,
     vendors,
     ...(options.bodyInvariants ? { bodyInvariants: options.bodyInvariants } : {}),
+    ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
   });
   await emitConfigsManifest({
     srcRoot,
@@ -41,5 +42,11 @@ export async function build(options: BuildOptions = {}): Promise<void> {
   });
   if (!options.silent) {
     console.log(`compiled → ${outRoot}`);
+  }
+}
+
+function reportWarningsToStderr(filePath: string, warnings: readonly string[]): void {
+  for (const warning of warnings) {
+    console.warn(`warning: ${filePath}: ${warning}`);
   }
 }

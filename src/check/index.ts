@@ -9,17 +9,31 @@ import {
   collectLocalIds,
   loadLayout,
   type LayoutAdapter,
+  type LocalIds,
   type ResolvedPlugin,
 } from "../layout/index.js";
 import {
   defaultSources,
   discoverInstalled,
   indexInstalled,
+  type InstalledIndex,
   type PluginSource,
 } from "../installed.js";
 
-import { installedKindConfigs, localKindConfigs, type KindConfig } from "./kinds.js";
+import { unifiedKindConfigs, type HaystackScope, type KindConfig } from "./kinds.js";
 import { closestMatch } from "./suggest.js";
+
+const EMPTY_LOCAL_IDS: LocalIds = {
+  skills: new Set(),
+  commands: new Set(),
+  agents: new Set(),
+};
+
+const EMPTY_INSTALLED_INDEX: InstalledIndex = {
+  skills: new Map(),
+  commands: new Map(),
+  agents: new Map(),
+};
 
 export const CHECK_MODES = ["local", "installed", "all"] as const;
 export type CheckMode = (typeof CHECK_MODES)[number];
@@ -30,10 +44,10 @@ export interface CheckOptions {
   readonly sources?: readonly PluginSource[];
 }
 
-export type ExtViolationKind = "malformed" | "unresolved";
+export type ReferenceViolationKind = "malformed" | "unresolved";
 
-export interface ExtViolation {
-  readonly kind: ExtViolationKind;
+export interface ReferenceViolation {
+  readonly kind: ReferenceViolationKind;
   readonly token: string;
   readonly file: string;
   readonly line: number;
@@ -47,7 +61,7 @@ export interface SourceSummary {
 }
 
 export interface CheckResult {
-  readonly violations: readonly ExtViolation[];
+  readonly violations: readonly ReferenceViolation[];
   readonly checkedFiles: number;
   readonly indexedSources: readonly SourceSummary[];
 }
@@ -61,35 +75,36 @@ interface BodySource {
 
 export async function check(options: CheckOptions): Promise<CheckResult> {
   const mode: CheckMode = options.mode ?? "installed";
-  const kinds = new Map<string, KindConfig>();
   let indexedSources: readonly SourceSummary[] = [];
   let localAdapter: LayoutAdapter | null = null;
+  let installedIndex: InstalledIndex = EMPTY_INSTALLED_INDEX;
+  let localIds: LocalIds = EMPTY_LOCAL_IDS;
 
   if (mode === "installed" || mode === "all") {
     const sources = options.sources ?? defaultSources();
     const artifacts = await discoverInstalled(sources);
-    const index = indexInstalled(artifacts);
+    installedIndex = indexInstalled(artifacts);
     indexedSources = sources.map<SourceSummary>((s) => ({
       source: s.name,
       skillCount: artifacts.skills.filter((i) => i.source === s.name).length,
     }));
-    for (const [prefix, cfg] of installedKindConfigs(index)) kinds.set(prefix, cfg);
   }
 
   if (mode === "local" || mode === "all") {
     const loaded = await loadLayout(options.srcRoot);
     if (!loaded.ok) throw new Error(`failed to load layout: ${loaded.error.kind}`);
     localAdapter = loaded.value;
-    const ids = await collectLocalIds(localAdapter);
-    for (const [prefix, cfg] of localKindConfigs(ids)) kinds.set(prefix, cfg);
+    localIds = await collectLocalIds(localAdapter);
   }
+
+  const kinds = unifiedKindConfigs(localIds, installedIndex, mode satisfies HaystackScope);
 
   const sources = await collectBodySources({
     srcRoot: options.srcRoot,
     mode,
     adapter: localAdapter,
   });
-  const violations: ExtViolation[] = [];
+  const violations: ReferenceViolation[] = [];
   for (const source of sources) {
     for (const violation of validateBody(source, kinds)) {
       violations.push(violation);
@@ -180,8 +195,8 @@ async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly Plu
 function validateBody(
   source: BodySource,
   kinds: ReadonlyMap<string, KindConfig>,
-): readonly ExtViolation[] {
-  const violations: ExtViolation[] = [];
+): readonly ReferenceViolation[] {
+  const violations: ReferenceViolation[] = [];
   for (const token of parsePlaceholders(source.body)) {
     const kind = kinds.get(token.prefix);
     if (!kind) continue;

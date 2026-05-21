@@ -8,69 +8,67 @@ export interface KindConfig {
   readonly haystack: ReadonlySet<string>;
 }
 
-const INSTALLED_MISSING = "not installed";
-const LOCAL_MISSING = "not found in this marketplace";
+export const REFERENCE_PREFIXES = ["skill", "command", "agent"] as const;
+export type ReferencePrefix = (typeof REFERENCE_PREFIXES)[number];
 
-export function installedKindConfigs(index: InstalledIndex): ReadonlyMap<string, KindConfig> {
-  return new Map<string, KindConfig>([
-    [
-      "ext",
-      {
-        noun: "skill",
-        missingHint: INSTALLED_MISSING,
-        malformedHint: "expected `{{ext:<plugin>:<skill>}}` in kebab-case",
-        haystack: new Set(index.skills.keys()),
-      },
-    ],
-    [
-      "ext-command",
-      {
-        noun: "command",
-        missingHint: INSTALLED_MISSING,
-        malformedHint: "expected `{{ext-command:<plugin>:<command>}}` in kebab-case",
-        haystack: new Set(index.commands.keys()),
-      },
-    ],
-    [
-      "ext-agent",
-      {
-        noun: "agent",
-        missingHint: INSTALLED_MISSING,
-        malformedHint: "expected `{{ext-agent:<plugin>:<agent>}}` in kebab-case",
-        haystack: new Set(index.agents.keys()),
-      },
-    ],
-  ]);
+interface KindShape {
+  readonly local: (ids: LocalIds) => ReadonlySet<string>;
+  readonly installed: (index: InstalledIndex) => ReadonlySet<string>;
 }
 
-export function localKindConfigs(ids: LocalIds): ReadonlyMap<string, KindConfig> {
-  return new Map<string, KindConfig>([
-    [
-      "skill",
-      {
-        noun: "skill",
-        missingHint: LOCAL_MISSING,
-        malformedHint: "expected `{{skill:<plugin>:<skill>}}` in kebab-case",
-        haystack: ids.skills,
-      },
-    ],
-    [
-      "command",
-      {
-        noun: "command",
-        missingHint: LOCAL_MISSING,
-        malformedHint: "expected `{{command:<plugin>:<command>}}` in kebab-case",
-        haystack: ids.commands,
-      },
-    ],
-    [
-      "agent",
-      {
-        noun: "agent",
-        missingHint: LOCAL_MISSING,
-        malformedHint: "expected `{{agent:<plugin>:<agent>}}` in kebab-case",
-        haystack: ids.agents,
-      },
-    ],
-  ]);
+const KIND_SHAPES: Readonly<Record<ReferencePrefix, KindShape>> = {
+  skill: {
+    local: (ids) => ids.skills,
+    installed: (index) => new Set(index.skills.keys()),
+  },
+  command: {
+    local: (ids) => ids.commands,
+    installed: (index) => new Set(index.commands.keys()),
+  },
+  agent: {
+    local: (ids) => ids.agents,
+    installed: (index) => new Set(index.agents.keys()),
+  },
+};
+
+function malformedHint(prefix: ReferencePrefix): string {
+  return `expected \`{{${prefix}:<plugin>:<${prefix}>}}\` in kebab-case`;
+}
+
+function missingHint(scope: HaystackScope): string {
+  switch (scope) {
+    case "local":
+      return "not found in this marketplace";
+    case "installed":
+      return "not found among any installed plugin";
+    case "all":
+      return "not found in this marketplace or any installed plugin";
+  }
+}
+
+export type HaystackScope = "local" | "installed" | "all";
+
+export function unifiedKindConfigs(
+  local: LocalIds,
+  installed: InstalledIndex,
+  scope: HaystackScope = "all",
+): ReadonlyMap<string, KindConfig> {
+  const configs = new Map<string, KindConfig>();
+  for (const prefix of REFERENCE_PREFIXES) {
+    const shape = KIND_SHAPES[prefix];
+    const haystack = new Set<string>();
+    if (scope === "local" || scope === "all") {
+      for (const id of shape.local(local)) haystack.add(id);
+    }
+    if (scope === "installed" || scope === "all") {
+      for (const id of shape.installed(installed)) haystack.add(id);
+    }
+    configs.set(prefix, {
+      noun: prefix,
+      missingHint: missingHint(scope),
+      malformedHint: malformedHint(prefix),
+      haystack,
+    });
+  }
+  return configs;
 }

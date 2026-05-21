@@ -172,10 +172,10 @@ async function withInstalledFixture<T>(
   );
 }
 
-test("check returns no violations when all ext: refs resolve", async () => {
+test("check returns no violations when an installed skill ref resolves", async () => {
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "see {{ext:superpowers:tdd}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "see {{skill:superpowers:tdd}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.deepEqual([...result.violations], []);
@@ -186,25 +186,25 @@ test("check returns no violations when all ext: refs resolve", async () => {
   });
 });
 
-test("check reports an unresolved ext: when no installed source has the referenced skill", async () => {
+test("check reports an unresolved skill ref when no installed source has the referenced skill", async () => {
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "see {{ext:nope:missing}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "see {{skill:nope:missing}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
         assert.equal(result.violations[0]!.kind, "unresolved");
-        assert.match(result.violations[0]!.message, /not installed/i);
+        assert.match(result.violations[0]!.message, /not found/i);
         assert.match(result.violations[0]!.token, /nope:missing/);
       },
     );
   });
 });
 
-test("check reports a malformed ext: when value does not match <plugin>:<skill>", async () => {
+test("check reports a malformed skill ref when value does not match <plugin>:<skill>", async () => {
   await withInstalledFixture([], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "see {{ext:lonelyid}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "see {{skill:lonelyid}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
@@ -214,10 +214,10 @@ test("check reports a malformed ext: when value does not match <plugin>:<skill>"
   });
 });
 
-test("check suggests the closest match when an unresolved ext: id is a near-miss", async () => {
+test("check suggests the closest match when an unresolved skill id is a near-miss", async () => {
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "see {{ext:supperpowers:tdd}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "see {{skill:supperpowers:tdd}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
@@ -234,7 +234,7 @@ test("check reports line:col into the source file", async () => {
         {
           plugin: "foo",
           skill: "bar",
-          body: "line one\nline two with {{ext:nope:miss}} ref\n",
+          body: "line one\nline two with {{skill:nope:miss}} ref\n",
         },
       ],
       async (srcRoot) => {
@@ -252,7 +252,7 @@ test("check counts each scanned skill body as a checked file", async () => {
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withSrcFixture(
       [
-        { plugin: "foo", skill: "bar", body: "{{ext:superpowers:tdd}}\n" },
+        { plugin: "foo", skill: "bar", body: "{{skill:superpowers:tdd}}\n" },
         { plugin: "foo", skill: "baz", body: "no refs\n" },
       ],
       async (srcRoot) => {
@@ -273,7 +273,7 @@ test("check works with TS-authored skills (body in body.md)", async () => {
     join(skillDir, "SKILL.ts"),
     `import { defineSkill } from "#harness-kit";\nexport default defineSkill({ name: "bar", description: "x" });\n`,
   );
-  writeFileSync(join(skillDir, "body.md"), "see {{ext:nope:missing}}\n");
+  writeFileSync(join(skillDir, "body.md"), "see {{skill:nope:missing}}\n");
   try {
     await withInstalledFixture([], async (sources) => {
       const result = await check({ srcRoot, sources });
@@ -285,10 +285,10 @@ test("check works with TS-authored skills (body in body.md)", async () => {
   }
 });
 
-test("check returns no violations when an ext-command resolves to an installed command", async () => {
+test("check returns no violations when a command ref resolves to an installed command", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", command: "open-pr" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "run {{ext-command:dev-tools:open-pr}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "run {{command:dev-tools:open-pr}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.deepEqual([...result.violations], []);
@@ -297,24 +297,24 @@ test("check returns no violations when an ext-command resolves to an installed c
   });
 });
 
-test("check reports an unresolved ext-command when no installed plugin has the command", async () => {
+test("check reports an unresolved command ref when no installed plugin has the command", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", command: "open-pr" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "run {{ext-command:dev-tools:ghost}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "run {{command:dev-tools:ghost}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
         assert.equal(result.violations[0]!.kind, "unresolved");
-        assert.match(result.violations[0]!.token, /ext-command:dev-tools:ghost/);
+        assert.match(result.violations[0]!.token, /command:dev-tools:ghost/);
       },
     );
   });
 });
 
-test("check suggests the closest command match when an ext-command id is a near-miss", async () => {
+test("check suggests the closest command match when a command id is a near-miss", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", command: "open-pr" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "run {{ext-command:dev-tools:open-prs}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "run {{command:dev-tools:open-prs}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
@@ -324,10 +324,10 @@ test("check suggests the closest command match when an ext-command id is a near-
   });
 });
 
-test("check does not cross-suggest a skill id for an unresolved ext-command", async () => {
+test("check does not cross-suggest a skill id for an unresolved command ref", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", skill: "open-pr" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "run {{ext-command:dev-tools:open-pr}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "run {{command:dev-tools:open-pr}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
@@ -338,10 +338,10 @@ test("check does not cross-suggest a skill id for an unresolved ext-command", as
   });
 });
 
-test("check returns no violations when an ext-agent resolves to an installed agent", async () => {
+test("check returns no violations when an agent ref resolves to an installed agent", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", agent: "code-reviewer" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "dispatch {{ext-agent:dev-tools:code-reviewer}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "dispatch {{agent:dev-tools:code-reviewer}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.deepEqual([...result.violations], []);
@@ -350,24 +350,24 @@ test("check returns no violations when an ext-agent resolves to an installed age
   });
 });
 
-test("check reports an unresolved ext-agent when no installed plugin has the agent", async () => {
+test("check reports an unresolved agent ref when no installed plugin has the agent", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", agent: "code-reviewer" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "dispatch {{ext-agent:dev-tools:ghost}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "dispatch {{agent:dev-tools:ghost}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
         assert.equal(result.violations[0]!.kind, "unresolved");
-        assert.match(result.violations[0]!.token, /ext-agent:dev-tools:ghost/);
+        assert.match(result.violations[0]!.token, /agent:dev-tools:ghost/);
       },
     );
   });
 });
 
-test("check reports a malformed ext-command when value does not match <plugin>:<command>", async () => {
+test("check reports a malformed command ref when value does not match <plugin>:<command>", async () => {
   await withInstalledFixture([], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "{{ext-command:lonely}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "{{command:lonely}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
@@ -377,10 +377,10 @@ test("check reports a malformed ext-command when value does not match <plugin>:<
   });
 });
 
-test("check reports a malformed ext-agent when value does not match <plugin>:<agent>", async () => {
+test("check reports a malformed agent ref when value does not match <plugin>:<agent>", async () => {
   await withInstalledFixture([], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "{{ext-agent:lonely}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "{{agent:lonely}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.equal(result.violations.length, 1);
@@ -546,10 +546,10 @@ test("check, in local mode, does not perform any installed-cache reads", async (
   );
 });
 
-test("check, in installed mode (default), ignores {{skill:}}/{{command:}}/{{agent:}} placeholders", async () => {
+test("check, in installed mode (default), resolves {{skill:}} placeholders against the installed index", async () => {
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withSrcFixture(
-      [{ plugin: "foo", skill: "bar", body: "see {{skill:foo:bar}} {{command:foo:x}}\n" }],
+      [{ plugin: "foo", skill: "bar", body: "see {{skill:superpowers:tdd}}\n" }],
       async (srcRoot) => {
         const result = await check({ srcRoot, sources });
         assert.deepEqual([...result.violations], []);
@@ -558,20 +558,33 @@ test("check, in installed mode (default), ignores {{skill:}}/{{command:}}/{{agen
   });
 });
 
-test("check, in all mode, validates both ext: (installed) and skill: (local)", async () => {
+test("check, in installed mode (default), reports an unresolved {{skill:}} not in the installed index", async () => {
+  await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
+    await withSrcFixture(
+      [{ plugin: "foo", skill: "bar", body: "see {{skill:foo:bar}}\n" }],
+      async (srcRoot) => {
+        const result = await check({ srcRoot, sources });
+        assert.equal(result.violations.length, 1);
+        assert.equal(result.violations[0]!.kind, "unresolved");
+      },
+    );
+  });
+});
+
+test("check, in all mode, validates skill refs against the union of local and installed", async () => {
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withLocalSrcFixture(
       {
         skills: [
-          { plugin: "foo", skill: "bar", body: "{{ext:nope:missing}} {{skill:foo:ghost}}\n" },
+          { plugin: "foo", skill: "bar", body: "{{skill:nope:missing}} {{skill:foo:ghost}}\n" },
         ],
       },
       async (srcRoot) => {
         const result = await check({ srcRoot, mode: "all", sources });
         assert.equal(result.violations.length, 2);
         const tokens = result.violations.map((v) => v.token).sort();
-        assert.match(tokens[0]!, /ext:nope:missing|skill:foo:ghost/);
-        assert.match(tokens[1]!, /ext:nope:missing|skill:foo:ghost/);
+        assert.match(tokens[0]!, /skill:foo:ghost|skill:nope:missing/);
+        assert.match(tokens[1]!, /skill:foo:ghost|skill:nope:missing/);
       },
     );
   });

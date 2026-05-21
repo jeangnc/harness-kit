@@ -1,7 +1,9 @@
 import { FQ_ID } from "../ids.js";
-import type { ValidatorRegistry } from "../placeholders/index.js";
+import type { Validator, ValidatorRegistry } from "../placeholders/index.js";
 import type { Companion } from "../skill/index.js";
+import type { InstalledIndex } from "../installed.js";
 import type { LocalIds } from "../layout/index.js";
+import { REFERENCE_PREFIXES, type ReferencePrefix } from "../check/kinds.js";
 
 import { COMPANIONS_PREFIX, renderCompanions } from "./frontmatter.js";
 
@@ -10,88 +12,21 @@ export interface OwningPlugin {
   readonly dependencies: ReadonlySet<string>;
 }
 
+interface KindResolution {
+  readonly local: ReadonlySet<string>;
+  readonly installed: ReadonlySet<string>;
+  readonly render: (id: string) => string;
+}
+
 export function buildRegistry(
   companions: readonly Companion[] | undefined,
   localIds: LocalIds,
+  installedIndex: InstalledIndex,
   existingRefs: ReadonlySet<string>,
   skillDir: string,
   owner: OwningPlugin,
 ): ValidatorRegistry {
-  return {
-    skill: (value) => {
-      if (value === null) return { ok: false, error: "expected `{{skill:<plugin>:<name>}}`" };
-      if (!FQ_ID.test(value)) {
-        return {
-          ok: false,
-          error: `skill id "${value}" must match <plugin>:<skill> (kebab-case)`,
-        };
-      }
-      if (!localIds.skills.has(value)) {
-        return { ok: false, error: `unknown skill id "${value}" — not a local skill` };
-      }
-      const crossPlugin = crossPluginViolation(value, owner);
-      if (crossPlugin) return { ok: false, error: crossPlugin };
-      return { ok: true, rendered: `\`${value}\`` };
-    },
-    command: (value) => {
-      if (value === null) return { ok: false, error: "expected `{{command:<plugin>:<command>}}`" };
-      if (!FQ_ID.test(value)) {
-        return {
-          ok: false,
-          error: `command id "${value}" must match <plugin>:<command> (kebab-case)`,
-        };
-      }
-      if (!localIds.commands.has(value)) {
-        return { ok: false, error: `unknown command id "${value}" — not a local command` };
-      }
-      const crossPlugin = crossPluginViolation(value, owner);
-      if (crossPlugin) return { ok: false, error: crossPlugin };
-      return { ok: true, rendered: `\`/${value}\`` };
-    },
-    agent: (value) => {
-      if (value === null) return { ok: false, error: "expected `{{agent:<plugin>:<agent>}}`" };
-      if (!FQ_ID.test(value)) {
-        return {
-          ok: false,
-          error: `agent id "${value}" must match <plugin>:<agent> (kebab-case)`,
-        };
-      }
-      if (!localIds.agents.has(value)) {
-        return { ok: false, error: `unknown agent id "${value}" — not a local agent` };
-      }
-      const crossPlugin = crossPluginViolation(value, owner);
-      if (crossPlugin) return { ok: false, error: crossPlugin };
-      return { ok: true, rendered: `\`${bareName(value)}\`` };
-    },
-    ext: (value) => {
-      if (value === null) return { ok: false, error: "expected `{{ext:<plugin>:<skill>}}`" };
-      if (!FQ_ID.test(value)) {
-        return { ok: false, error: `ext id "${value}" must match <plugin>:<skill> (kebab-case)` };
-      }
-      return { ok: true, rendered: `\`${value}\`` };
-    },
-    "ext-command": (value) => {
-      if (value === null) {
-        return { ok: false, error: "expected `{{ext-command:<plugin>:<command>}}`" };
-      }
-      if (!FQ_ID.test(value)) {
-        return {
-          ok: false,
-          error: `ext-command id "${value}" must match <plugin>:<command> (kebab-case)`,
-        };
-      }
-      return { ok: true, rendered: `\`/${value}\`` };
-    },
-    "ext-agent": (value) => {
-      if (value === null) return { ok: false, error: "expected `{{ext-agent:<plugin>:<agent>}}`" };
-      if (!FQ_ID.test(value)) {
-        return {
-          ok: false,
-          error: `ext-agent id "${value}" must match <plugin>:<agent> (kebab-case)`,
-        };
-      }
-      return { ok: true, rendered: `\`${bareName(value)}\`` };
-    },
+  const registry: Record<string, Validator> = {
     ref: (value) => {
       if (value === null) return { ok: false, error: "expected `{{ref:<relative-path>}}`" };
       if (!existingRefs.has(value)) {
@@ -106,11 +41,74 @@ export function buildRegistry(
       return { ok: true, rendered: renderCompanions(companions) };
     },
   };
+  for (const prefix of REFERENCE_PREFIXES) {
+    registry[prefix] = referenceValidator(
+      prefix,
+      resolutionFor(prefix, localIds, installedIndex),
+      owner,
+    );
+  }
+  return registry;
 }
 
-function bareName(id: string): string {
-  const idx = id.indexOf(":");
-  return idx === -1 ? id : id.slice(idx + 1);
+function resolutionFor(
+  prefix: ReferencePrefix,
+  localIds: LocalIds,
+  installedIndex: InstalledIndex,
+): KindResolution {
+  switch (prefix) {
+    case "skill":
+      return {
+        render: (id) => `\`${id}\``,
+        local: localIds.skills,
+        installed: new Set(installedIndex.skills.keys()),
+      };
+    case "command":
+      return {
+        render: (id) => `\`/${id}\``,
+        local: localIds.commands,
+        installed: new Set(installedIndex.commands.keys()),
+      };
+    case "agent":
+      return {
+        render: (id) => `\`${id}\``,
+        local: localIds.agents,
+        installed: new Set(installedIndex.agents.keys()),
+      };
+  }
+}
+
+function referenceValidator(
+  prefix: ReferencePrefix,
+  kind: KindResolution,
+  owner: OwningPlugin,
+): Validator {
+  return (value) => {
+    if (value === null) {
+      return { ok: false, error: `expected \`{{${prefix}:<plugin>:<${prefix}>}}\`` };
+    }
+    if (!FQ_ID.test(value)) {
+      return {
+        ok: false,
+        error: `${prefix} id "${value}" must match <plugin>:<${prefix}> (kebab-case)`,
+      };
+    }
+    if (kind.local.has(value)) {
+      const crossPlugin = crossPluginViolation(value, owner);
+      if (crossPlugin) return { ok: false, error: crossPlugin };
+      return { ok: true, rendered: kind.render(value) };
+    }
+    if (kind.installed.has(value)) {
+      return { ok: true, rendered: kind.render(value) };
+    }
+    return {
+      ok: true,
+      rendered: kind.render(value),
+      warnings: [
+        `${prefix} id "${value}" — not a local ${prefix} and not found among installed plugins`,
+      ],
+    };
+  };
 }
 
 function crossPluginViolation(id: string, owner: OwningPlugin): string | null {

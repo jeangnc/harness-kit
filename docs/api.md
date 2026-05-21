@@ -112,7 +112,7 @@ for (const v of result.violations) {
 }
 ```
 
-`mode` is `"local"` | `"installed"` | `"all"`. `local` validates `{{skill:...}}` against local discovery; `installed` validates `{{ext:...}}` against the installed-plugin index; `all` does both.
+`mode` is `"local"` | `"installed"` | `"all"`. `local` resolves references against local discovery; `installed` resolves against the installed-plugin index; `all` resolves against the union and is the hard gate that fails on any unresolved reference.
 
 ## Installed index
 

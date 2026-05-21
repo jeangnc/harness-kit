@@ -37,7 +37,7 @@ export type {
 } from "./placeholders/index.js";
 
 export { compile } from "./compile/index.js";
-export type { BodyInvariant, CompileOptions } from "./compile/index.js";
+export type { BodyInvariant, CompileOptions, WarningSink } from "./compile/index.js";
 
 export { build } from "./build.js";
 export type { BuildOptions } from "./build.js";
@@ -68,8 +68,8 @@ export { check } from "./check/index.js";
 export type {
   CheckOptions,
   CheckResult,
-  ExtViolation,
-  ExtViolationKind,
+  ReferenceViolation,
+  ReferenceViolationKind,
   SourceSummary,
 } from "./check/index.js";
 

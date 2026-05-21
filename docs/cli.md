@@ -41,13 +41,13 @@ Runs against `plugins/**/*.md` with these overrides:
 
 ## `harness check`
 
-Validates `{{skill:...}}` and `{{ext:...}}` references.
+Validates `{{skill:...}}`, `{{command:...}}`, and `{{agent:...}}` references.
 
 - `--src <path>` (default `./src`).
 - `--mode <local | installed | all>` (default `installed`).
-  - `local` — validates `{{skill:...}}` against locally discovered skills only.
-  - `installed` — validates `{{ext:...}}` against plugins in the vendor's installed index.
-  - `all` — both.
+  - `local` — resolves references against locally discovered artifacts only.
+  - `installed` — resolves references against plugins in the vendor's installed index.
+  - `all` — resolves against the union; the hard gate that fails on any unresolved reference.
 - `--silent`.
 
 ## `harness install`

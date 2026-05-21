@@ -91,7 +91,7 @@ companions:
 # My Skill
 
 For type safety conventions, see {{skill:dev-tools:typescript}}.
-For TDD discipline, see {{ext:superpowers:test-driven-development}}.
+For TDD discipline, see {{skill:superpowers:test-driven-development}}.
 For details, see {{ref:details.md}}.
 
 {{companions}}
@@ -157,12 +157,15 @@ A skill folder must contain exactly one of `SKILL.md` or `SKILL.ts`. Both forms 
 
 ### Placeholder reference
 
-Local skills are auto-discovered by walking `<srcRoot>/plugins/<plugin>/skills/<name>/`. Use `{{skill:...}}` for local references (build fails on typos) and `{{ext:...}}` for cross-plugin references (rendered as-is, no validation).
+Three reference kinds — `skill`, `command`, `agent` — each resolve against the **local marketplace ∪ installed plugins** and render the scoped `<plugin>:<name>` handle. The author never picks a prefix based on where a target lives; a single kind covers both local and cross-plugin references.
+
+Resolution is two-tier: `harness build` resolves strictly against local artifacts and **warns** (without failing) on a reference found in neither the local marketplace nor an installed plugin — so the build stays green on a machine without those plugins installed. `harness check --mode=all` is the hard gate: the same unresolved reference fails the check. A malformed value (not `<plugin>:<name>` shape) is always a hard error. A local reference into another local plugin must declare that plugin as a dependency.
 
 | Placeholder | Renders to | Validation |
 | --- | --- | --- |
-| `{{skill:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Must be a discovered local skill |
-| `{{ext:<plugin>:<skill>}}` | `` `<plugin>:<skill>` `` | None — opaque external reference |
+| `{{skill:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |
+| `{{command:<plugin>:<name>}}` | `` `/<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |
+| `{{agent:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |
 | `{{ref:<relative-path>}}` | `` `<relative-path>` `` | Must be a file under the skill directory |
 | `{{include:<relative-path.md>}}` | Inlined content of the target file | Must be a `.md` file inside the skill, no cycles |
 | `{{companions}}` | Companion files section | Required iff companions are declared |

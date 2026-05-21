@@ -117,12 +117,12 @@ test("expandIncludes returns include-empty when the token has no value", async (
 
 test("expandIncludes preserves non-include placeholders for the next pass", async () => {
   await withSkill(
-    { "shared.md": "see {{ext:foo:bar}} and {{ref:./other.md}}\n" },
+    { "shared.md": "see {{skill:foo:bar}} and {{ref:./other.md}}\n" },
     async (skillDir) => {
       const body = "{{include:./shared.md}}";
       const result = await expandIncludes(body, join(skillDir, "SKILL.md"), skillDir);
       if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
-      assert.ok(result.value.body.includes("{{ext:foo:bar}}"));
+      assert.ok(result.value.body.includes("{{skill:foo:bar}}"));
       assert.ok(result.value.body.includes("{{ref:./other.md}}"));
     },
   );
