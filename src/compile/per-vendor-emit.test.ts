@@ -102,3 +102,38 @@ test("compile mirrors skills inside each vendor subtree", async () => {
     assert.equal(existsSync(join(outRoot, "codex/delta/skills/widget/SKILL.md")), true);
   });
 });
+
+const plainMdPlaceholderCases = [
+  { placeholder: "include", directive: "{{include:./sibling.md}}", resolved: /shared body/ },
+  { placeholder: "ref", directive: "{{ref:./sibling.md}}", resolved: /sibling\.md/ },
+] as const;
+
+for (const { placeholder, directive, resolved } of plainMdPlaceholderCases) {
+  test(`compile resolves {{${placeholder}}} in a plain plugin-root .md file`, async () => {
+    await withSandbox(async (root) => {
+      const srcRoot = join(root, "src");
+      const outRoot = join(root, "dist");
+      seedMinimalPlugin(srcRoot, "epsilon");
+      const pluginDir = join(srcRoot, "epsilon");
+      writeFileSync(join(pluginDir, "sibling.md"), "shared body\n");
+      writeFileSync(join(pluginDir, "doc.md"), `# Doc\n\n${directive}\n`);
+
+      await compile({ srcRoot, outRoot, vendors: [claudeVendor] });
+
+      const rendered = readFileSync(join(outRoot, "claude/epsilon/doc.md"), "utf8");
+      assert.match(rendered, resolved);
+      assert.doesNotMatch(rendered, /\{\{/);
+    });
+  });
+}
+
+test("compile fails when a plain .md file has an unknown placeholder prefix", async () => {
+  await withSandbox(async (root) => {
+    const srcRoot = join(root, "src");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(srcRoot, "zeta");
+    writeFileSync(join(srcRoot, "zeta", "doc.md"), "see {{ghost:./x.md}}\n");
+
+    await assert.rejects(compile({ srcRoot, outRoot, vendors: [claudeVendor] }));
+  });
+});

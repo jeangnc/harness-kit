@@ -1476,20 +1476,22 @@ export default definePlugin({
   );
 });
 
-test("compile leaves an undeclared .md file untouched (no substitution)", async () => {
+test("compile substitutes placeholders in an undeclared .md file", async () => {
   await withPluginFixture(
     {
       pluginSource: `import { definePlugin } from "#harness-kit";
 export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
 `,
       extraFiles: {
-        "notes/scratch.md": "raw {{skill:foo:ghost}} unchanged\n",
+        "notes/part.md": "shared body\n",
+        "notes/scratch.md": "doc {{include:./part.md}} end\n",
       },
     },
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
       const out = readFileSync(join(distRoot, "claude/foo/notes/scratch.md"), "utf8");
-      assert.equal(out, "raw {{skill:foo:ghost}} unchanged\n");
+      assert.match(out, /shared body/);
+      assert.doesNotMatch(out, /\{\{include/);
     },
   );
 });

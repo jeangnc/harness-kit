@@ -94,8 +94,12 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
     if (isUnderAnySkipDir(rel, skipRelPaths)) continue;
 
     const target = join(outRoot, relative(srcRoot, absPath));
-    await mkdir(dirname(target), { recursive: true });
-    await copyFile(absPath, target);
+    if (file.endsWith(".md")) {
+      await emitSubstitutedFile(absPath, target, dirname(absPath), ctx);
+    } else {
+      await mkdir(dirname(target), { recursive: true });
+      await copyFile(absPath, target);
+    }
   }
 }
 
