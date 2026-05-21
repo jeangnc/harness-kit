@@ -838,7 +838,7 @@ test("compile expands {{include:./path.md}} in a SKILL.md body", async () => {
     async (srcRoot, distRoot) => {
       await compile({ srcRoot, outRoot: distRoot, vendors });
       const out = readFileSync(join(distRoot, "claude/foo/skills/bar/SKILL.md"), "utf8");
-      assert.match(out, /before\nINLINED-CONTENT\n\nafter/);
+      assert.match(out, /before\nINLINED-CONTENT\nafter/);
       assert.ok(!out.includes("{{include:"), `raw include token survived in:\n${out}`);
     },
   );

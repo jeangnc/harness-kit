@@ -27,8 +27,17 @@ test("expandIncludes inlines a sibling .md file verbatim", async () => {
     const body = "before\n{{include:./fragment.md}}\nafter\n";
     const result = await expandIncludes(body, join(skillDir, "SKILL.md"), skillDir);
     if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
-    assert.equal(result.value.body, "before\nhello world\n\nafter\n");
+    assert.equal(result.value.body, "before\nhello world\nafter\n");
     assert.deepEqual([...result.value.resolvedIncludes], [join(skillDir, "fragment.md")]);
+  });
+});
+
+test("expandIncludes strips the included file's single trailing newline", async () => {
+  await withSkill({ "fragment.md": "hello world\n" }, async (skillDir) => {
+    const body = "before\n\n{{include:./fragment.md}}\n\nafter\n";
+    const result = await expandIncludes(body, join(skillDir, "SKILL.md"), skillDir);
+    if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
+    assert.equal(result.value.body, "before\n\nhello world\n\nafter\n");
   });
 });
 
@@ -43,7 +52,7 @@ test("expandIncludes recurses through nested includes", async () => {
       const body = "{{include:./a.md}}";
       const result = await expandIncludes(body, join(skillDir, "SKILL.md"), skillDir);
       if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
-      assert.equal(result.value.body, "A:\nB:\nC\n\n\n");
+      assert.equal(result.value.body, "A:\nB:\nC");
       assert.equal(result.value.resolvedIncludes.size, 3);
     },
   );
@@ -133,7 +142,7 @@ test("expandIncludes accepts whitespace inside the token value", async () => {
     const body = "{{include: ./fragment.md }}";
     const result = await expandIncludes(body, join(skillDir, "SKILL.md"), skillDir);
     if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
-    assert.equal(result.value.body, "trim-me\n");
+    assert.equal(result.value.body, "trim-me");
   });
 });
 

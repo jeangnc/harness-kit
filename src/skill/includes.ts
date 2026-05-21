@@ -100,7 +100,8 @@ async function expand(
       continue;
     }
     resolved.add(target);
-    out += await expand(raw, target, skillDir, [...chain, target], errors, resolved);
+    const expanded = await expand(raw, target, skillDir, [...chain, target], errors, resolved);
+    out += expanded.endsWith("\n") ? expanded.slice(0, -1) : expanded;
   }
   out += body.slice(cursor);
   return out;
