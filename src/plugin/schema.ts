@@ -1,14 +1,7 @@
 import { z } from "zod";
 
 import { FQ_ID } from "../ids.js";
-import { description, kebabName, singleLineString } from "../schema-primitives.js";
-
-export const ContextEntrySchema = z.object({
-  file: z.string().min(1).regex(/\.md$/, "file must be a .md path"),
-  summary: singleLineString("summary"),
-});
-
-export type ContextEntry = z.infer<typeof ContextEntrySchema>;
+import { description, kebabName } from "../schema-primitives.js";
 
 const AuthorSchema = z
   .object({
@@ -30,14 +23,6 @@ const DependencyEntrySchema = z.union([
 ]);
 
 export type DependencyEntry = z.infer<typeof DependencyEntrySchema>;
-
-const contextListSchema = z
-  .array(ContextEntrySchema)
-  .optional()
-  .refine(
-    (arr) => !arr || new Set(arr.map((e) => e.file)).size === arr.length,
-    "context files must be unique",
-  );
 
 const SLUG_REF = z.string().min(1).regex(FQ_ID, "must match <plugin>:<name> kebab-case");
 
@@ -72,7 +57,6 @@ export const PluginSchema = z
     license: z.string().min(1).optional(),
     keywords: z.array(z.string().min(1)).optional(),
     dependencies: z.array(DependencyEntrySchema).optional(),
-    context: contextListSchema,
     commands: z.string().min(1).optional(),
     agents: z.string().min(1).optional(),
     hooks: z.string().min(1).optional(),

@@ -235,7 +235,9 @@ test("defaultSources derives one source per supplied vendor", () => {
       pluginManifestPath: ".alpha-plugin/plugin.json",
       marketplaceManifestPath: "alpha/.alpha-plugin/marketplace.json",
       vendorOutDir: (outRoot: string) => join(outRoot, "alpha"),
-      pluginOutDir: (outRoot: string, pluginName: string) => join(outRoot, "alpha", pluginName),
+      pluginOutDir: (outRoot: string, pluginName: string) =>
+        join(outRoot, "alpha", "plugins", pluginName),
+      configsOutDir: (outRoot: string) => join(outRoot, "alpha", "configs"),
       emitPluginManifest: async () => undefined,
       emitMarketplaceManifest: async () => undefined,
       install: async () => undefined,
@@ -247,7 +249,9 @@ test("defaultSources derives one source per supplied vendor", () => {
       pluginManifestPath: ".beta-plugin/plugin.json",
       marketplaceManifestPath: "beta/.beta-plugin/marketplace.json",
       vendorOutDir: (outRoot: string) => join(outRoot, "beta"),
-      pluginOutDir: (outRoot: string, pluginName: string) => join(outRoot, "beta", pluginName),
+      pluginOutDir: (outRoot: string, pluginName: string) =>
+        join(outRoot, "beta", "plugins", pluginName),
+      configsOutDir: (outRoot: string) => join(outRoot, "beta", "configs"),
       emitPluginManifest: async () => undefined,
       emitMarketplaceManifest: async () => undefined,
       install: async () => undefined,

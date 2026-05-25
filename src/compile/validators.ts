@@ -7,10 +7,9 @@ import { REFERENCE_PREFIXES, type ReferencePrefix } from "../check/kinds.js";
 
 import { COMPANIONS_PREFIX, renderCompanions } from "./frontmatter.js";
 
-export interface OwningPlugin {
-  readonly name: string;
-  readonly dependencies: ReadonlySet<string>;
-}
+export type ReferenceOwner =
+  | { readonly kind: "plugin"; readonly name: string; readonly dependencies: ReadonlySet<string> }
+  | { readonly kind: "unrestricted"; readonly label: string };
 
 interface KindResolution {
   readonly local: ReadonlySet<string>;
@@ -24,7 +23,7 @@ export function buildRegistry(
   installedIndex: InstalledIndex,
   existingRefs: ReadonlySet<string>,
   skillDir: string,
-  owner: OwningPlugin,
+  owner: ReferenceOwner,
 ): ValidatorRegistry {
   const registry: Record<string, Validator> = {
     ref: (value) => {
@@ -81,7 +80,7 @@ function resolutionFor(
 function referenceValidator(
   prefix: ReferencePrefix,
   kind: KindResolution,
-  owner: OwningPlugin,
+  owner: ReferenceOwner,
 ): Validator {
   return (value) => {
     if (value === null) {
@@ -111,7 +110,8 @@ function referenceValidator(
   };
 }
 
-function crossPluginViolation(id: string, owner: OwningPlugin): string | null {
+function crossPluginViolation(id: string, owner: ReferenceOwner): string | null {
+  if (owner.kind === "unrestricted") return null;
   const idx = id.indexOf(":");
   if (idx === -1) return null;
   const otherPlugin = id.slice(0, idx);

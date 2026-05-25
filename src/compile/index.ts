@@ -1,12 +1,10 @@
 import { join } from "node:path";
 
-import { compileTree, type BodyInvariant, type OwningPlugin, type WarningSink } from "./emit.js";
-import { pathExists } from "../fs.js";
+import { compileTree, type ReferenceOwner, type WarningSink } from "./emit.js";
 import { throwInvariantViolations } from "./discovery.js";
 import { SOURCE_PLUGIN_MANIFEST_JSON, SOURCE_PLUGIN_MANIFEST_TS } from "../layout/conventions.js";
 import {
   collectLocalIds,
-  listMarkdownNames,
   loadLayout,
   type LayoutAdapter,
   type LocalIds,
@@ -22,27 +20,30 @@ import {
 import type { DependencyEntry, HookRequirement } from "../plugin/index.js";
 import type { Vendor } from "../vendor/schema.js";
 
-export type { BodyInvariant } from "./emit.js";
 export type { WarningSink } from "./emit.js";
+export { loadAdapter };
 
-export interface CompileOptions {
+export interface CompilePluginsOptions {
   readonly srcRoot: string;
   readonly outRoot: string;
   readonly vendors: readonly Vendor[];
-  readonly bodyInvariants?: readonly BodyInvariant[];
   readonly onWarnings?: WarningSink;
   readonly sources?: readonly PluginSource[];
+  readonly adapter?: LayoutAdapter;
+  readonly localIds?: LocalIds;
+  readonly installedIndex?: InstalledIndex;
 }
 
-export async function compile(options: CompileOptions): Promise<void> {
+export async function compilePlugins(options: CompilePluginsOptions): Promise<void> {
   const { srcRoot, outRoot, vendors } = options;
   if (vendors.length === 0) {
-    throw new Error("compile requires at least one vendor");
+    throw new Error("compilePlugins requires at least one vendor");
   }
-  const adapter = await loadAdapter(srcRoot);
-  const localIds = await collectLocalIds(adapter);
-  const installedIndex = await loadInstalledIndex(options.sources ?? defaultSources(vendors));
-  await checkContextFiles(adapter);
+  const adapter = options.adapter ?? (await loadAdapter(srcRoot));
+  const localIds = options.localIds ?? (await collectLocalIds(adapter));
+  const installedIndex =
+    options.installedIndex ??
+    (await loadInstalledIndex(options.sources ?? defaultSources(vendors)));
   checkHookRequires(adapter, localIds);
 
   const skipRelPaths: ReadonlySet<string> = new Set(vendors.map((v) => v.pluginManifestPath));
@@ -56,7 +57,6 @@ export async function compile(options: CompileOptions): Promise<void> {
         localIds,
         installedIndex,
         skipRelPaths,
-        bodyInvariants: options.bodyInvariants ?? [],
         ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
       });
     }
@@ -101,7 +101,6 @@ interface EmitPluginOptions {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
   readonly skipRelPaths: ReadonlySet<string>;
-  readonly bodyInvariants: readonly BodyInvariant[];
   readonly onWarnings?: WarningSink;
 }
 
@@ -112,8 +111,8 @@ async function emitPluginForVendor(
 ): Promise<void> {
   const pluginOutDir = vendor.pluginOutDir(options.outRoot, plugin.name);
   await vendor.emitPluginManifest({ manifest: plugin.manifest, pluginOutDir });
-  const contextFiles = await collectSubstitutableFiles(plugin);
-  const owner: OwningPlugin = {
+  const owner: ReferenceOwner = {
+    kind: "plugin",
     name: plugin.name,
     dependencies: new Set((plugin.manifest.dependencies ?? []).map(dependencyName)),
   };
@@ -122,39 +121,10 @@ async function emitPluginForVendor(
     outRoot: pluginOutDir,
     localIds: options.localIds,
     installedIndex: options.installedIndex,
-    bodyInvariants: options.bodyInvariants,
-    contextFiles,
     owner,
     skipRelPaths: options.skipRelPaths,
     ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   });
-}
-
-async function collectSubstitutableFiles(plugin: ResolvedPlugin): Promise<ReadonlySet<string>> {
-  const result = new Set<string>();
-  for (const entry of plugin.manifest.context ?? []) {
-    result.add(join(plugin.pluginDir, entry.file));
-  }
-  for (const dir of [plugin.agentsDir, plugin.commandsDir]) {
-    for (const name of await listMarkdownNames(dir)) {
-      result.add(join(dir, `${name}.md`));
-    }
-  }
-  return result;
-}
-
-async function checkContextFiles(adapter: LayoutAdapter): Promise<void> {
-  for (const plugin of adapter.plugins) {
-    const errors: string[] = [];
-    for (const entry of plugin.manifest.context ?? []) {
-      if (!(await pathExists(join(plugin.pluginDir, entry.file)))) {
-        errors.push(`context entry: file not found: ${entry.file}`);
-      }
-    }
-    if (errors.length > 0) {
-      throwInvariantViolations(join(plugin.pluginDir, SOURCE_PLUGIN_MANIFEST_TS), errors);
-    }
-  }
 }
 
 function checkHookRequires(adapter: LayoutAdapter, localIds: LocalIds): void {

@@ -29,7 +29,7 @@ test("init writes harness.yaml with marketplace and vendors", async () => {
   });
 });
 
-test("init scaffolds src/configs/<vendor>/.gitkeep for every vendor plus common", async () => {
+test("init scaffolds src/<vendor>/configs/.gitkeep for every vendor (no common)", async () => {
   await withSandbox(async (root) => {
     await initHarness({
       repoRoot: root,
@@ -37,9 +37,9 @@ test("init scaffolds src/configs/<vendor>/.gitkeep for every vendor plus common"
       vendors: ["claude", "codex"],
       silent: true,
     });
-    assert.ok(existsSync(join(root, "src/configs/common/.gitkeep")));
-    assert.ok(existsSync(join(root, "src/configs/claude/.gitkeep")));
-    assert.ok(existsSync(join(root, "src/configs/codex/.gitkeep")));
+    assert.ok(existsSync(join(root, "src/claude/configs/.gitkeep")));
+    assert.ok(existsSync(join(root, "src/codex/configs/.gitkeep")));
+    assert.ok(!existsSync(join(root, "src/configs")));
   });
 });
 

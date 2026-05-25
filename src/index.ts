@@ -18,8 +18,8 @@ export type {
   SkillSource,
 } from "./skill/index.js";
 
-export { ContextEntrySchema, PluginSchema, definePlugin } from "./plugin/index.js";
-export type { ContextEntry, Plugin } from "./plugin/index.js";
+export { PluginSchema, definePlugin } from "./plugin/index.js";
+export type { Plugin } from "./plugin/index.js";
 
 export { formatFrontmatterError, parseFrontmatter } from "./parsing/index.js";
 export type { FrontmatterError, ParsedFrontmatter } from "./parsing/index.js";
@@ -36,11 +36,11 @@ export type {
   ValidatorResult,
 } from "./placeholders/index.js";
 
-export { compile } from "./compile/index.js";
-export type { BodyInvariant, CompileOptions, WarningSink } from "./compile/index.js";
+export { compilePlugins } from "./compile/index.js";
+export type { CompilePluginsOptions, WarningSink } from "./compile/index.js";
 
-export { build } from "./build.js";
-export type { BuildOptions } from "./build.js";
+export { compile } from "./compile.js";
+export type { CompileOptions } from "./compile.js";
 
 export { lint } from "./lint.js";
 export type { LintOptions, LintResult } from "./lint.js";

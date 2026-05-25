@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { defineCommand, runMain } from "citty";
 import { z } from "zod";
 
-import { build } from "./build.js";
+import { compile } from "./compile.js";
 import { CHECK_MODES, check, type CheckMode, type ReferenceViolation } from "./check/index.js";
 import { initHarness } from "./init/index.js";
 import { install, uninstall } from "./install/index.js";
@@ -28,8 +28,8 @@ function parseCheckMode(value: string): CheckMode {
   throw new Error(`Unknown check mode "${value}". Valid: ${CHECK_MODES.join(", ")}`);
 }
 
-const buildCmd = defineCommand({
-  meta: { name: "build", description: "Compile harness sources to dist/" },
+const compileCmd = defineCommand({
+  meta: { name: "compile", description: "Compile harness sources to dist/" },
   args: {
     src: { type: "string", default: "./src", description: "source root" },
     out: { type: "string", default: "./dist", description: "output root" },
@@ -37,7 +37,7 @@ const buildCmd = defineCommand({
     silent: { type: "boolean", default: false, description: "suppress success log" },
   },
   run: async ({ args }) => {
-    await build({
+    await compile({
       srcRoot: args.src,
       outRoot: args.out,
       repoRoot: args.repo,
@@ -91,7 +91,7 @@ const uninstallCmd = defineCommand({
 const initCmd = defineCommand({
   meta: {
     name: "init",
-    description: "Scaffold a harness repo (harness.yaml, src/configs, src/plugins)",
+    description: "Scaffold a harness repo (harness.yaml, src/<vendor>/configs, src/plugins)",
   },
   args: {
     repo: { type: "string", default: ".", description: "repo root to scaffold into" },
@@ -187,8 +187,8 @@ const main = defineCommand({
       "Build your own multi-agent harness: author plugins once, ship to every declared vendor.",
   },
   subCommands: {
-    build: buildCmd,
     check: checkCmd,
+    compile: compileCmd,
     init: initCmd,
     install: installCmd,
     lint: lintCmd,

@@ -1,44 +1,56 @@
 import { rm } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 
-import { compile, type BodyInvariant } from "./compile/index.js";
+import { compilePlugins, loadAdapter } from "./compile/index.js";
+import { compileConfigs } from "./configs/compile.js";
 import { emitConfigsManifest } from "./configs/emit.js";
+import { defaultSources, discoverInstalled, indexInstalled } from "./installed.js";
+import { collectLocalIds } from "./layout/index.js";
 import { resolveVendorsForRepo } from "./vendor/registry.js";
 import type { Vendor } from "./vendor/schema.js";
 
-export interface BuildOptions {
+export interface CompileOptions {
   readonly srcRoot?: string;
   readonly outRoot?: string;
-  readonly bodyInvariants?: readonly BodyInvariant[];
   readonly silent?: boolean;
   readonly vendors?: readonly Vendor[];
   readonly repoRoot?: string;
 }
 
-export async function build(options: BuildOptions = {}): Promise<void> {
+export async function compile(options: CompileOptions = {}): Promise<void> {
   const srcRoot = resolve(options.srcRoot ?? "./src");
   const outRoot = resolve(options.outRoot ?? "./dist");
   const repoRoot = resolve(options.repoRoot ?? dirname(srcRoot));
   const vendors = options.vendors ?? (await resolveVendorsForRepo(repoRoot));
+  const adapter = await loadAdapter(srcRoot);
+  const localIds = await collectLocalIds(adapter);
+  const installedIndex = indexInstalled(await discoverInstalled(defaultSources(vendors)));
+
   for (const vendor of vendors) {
     await rm(vendor.vendorOutDir(outRoot), { recursive: true, force: true });
-    await rm(join(outRoot, dirname(vendor.marketplaceManifestPath)), {
-      recursive: true,
-      force: true,
-    });
   }
   await rm(join(outRoot, "configs.json"), { force: true });
-  await compile({
+
+  await compilePlugins({
     srcRoot,
     outRoot,
     vendors,
-    ...(options.bodyInvariants ? { bodyInvariants: options.bodyInvariants } : {}),
+    adapter,
+    localIds,
+    installedIndex,
+    ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
+  });
+  await compileConfigs({
+    srcRoot,
+    outRoot,
+    vendors,
+    localIds,
+    installedIndex,
     ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
   });
   await emitConfigsManifest({
-    srcRoot,
     outRoot,
-    vendors: vendors.map((v) => v.name),
+    vendors,
   });
   if (!options.silent) {
     console.log(`compiled → ${outRoot}`);

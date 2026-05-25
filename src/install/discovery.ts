@@ -34,9 +34,9 @@ export async function discoverPluginsForVendor(
   distRoot: string,
   vendor: Vendor,
 ): Promise<readonly DiscoveredVendorPlugin[]> {
-  const vendorDir = vendor.vendorOutDir(distRoot);
-  if (!(await pathExists(vendorDir))) return [];
-  const entries = await readdir(vendorDir, { withFileTypes: true });
+  const pluginsDir = join(vendor.vendorOutDir(distRoot), "plugins");
+  if (!(await pathExists(pluginsDir))) return [];
+  const entries = await readdir(pluginsDir, { withFileTypes: true });
   const result: DiscoveredVendorPlugin[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;

@@ -13,8 +13,13 @@ interface Vendor {
   readonly name: string;
   readonly home: string;
   readonly pluginManifestPath: string;
+  readonly marketplaceManifestPath: string;
+  readonly vendorOutDir: (outRoot: string) => string;
+  readonly pluginOutDir: (outRoot: string, pluginName: string) => string;
+  readonly configsOutDir: (outRoot: string) => string;
   readonly aliases?: (linkedFile: LinkedFile) => readonly string[];
   readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;
+  readonly emitMarketplaceManifest: (ctx: VendorMarketplaceContext) => Promise<void>;
   readonly install: (ctx: VendorInstallContext) => Promise<void>;
   readonly uninstall: (ctx: VendorInstallContext) => Promise<void>;
 }
@@ -48,11 +53,16 @@ interface VendorEmitContext {
 
 ### Field responsibilities
 
-- **`name`** — identifier used in `harness.yaml` `vendors:` list and in the `dist/plugins/<name>/` subtree.
+- **`name`** — identifier used in `harness.yaml` `vendors:` list and as the top-level segment of the per-vendor dist subtree (`dist/<name>/`).
 - **`home`** — absolute path to the vendor's user-level home (e.g. `~/.claude`, `~/.codex`). Config links and aliases are anchored here.
 - **`pluginManifestPath`** — relative path inside each compiled plugin where the vendor manifest is written (e.g. `.claude-plugin/plugin.json`).
+- **`marketplaceManifestPath`** — path relative to `outRoot` where the per-vendor marketplace manifest is written (e.g. `claude/.claude-plugin/marketplace.json`).
+- **`vendorOutDir(outRoot)`** — root of this vendor's dist subtree (typically `<outRoot>/<name>`).
+- **`pluginOutDir(outRoot, pluginName)`** — destination for a compiled plugin (typically `<outRoot>/<name>/plugins/<pluginName>`).
+- **`configsOutDir(outRoot)`** — destination for vendor-specific configs (typically `<outRoot>/<name>/configs`).
 - **`aliases`** *(optional)* — given a linked config file, return additional symlink destinations. Claude uses this to add a `CLAUDE.md` alias whenever an `AGENTS.md` config is linked.
 - **`emitPluginManifest`** — write the per-vendor manifest into `ctx.pluginOutDir` during compile. The shared `Plugin` shape is provided; the vendor decides how (or whether) to translate it.
+- **`emitMarketplaceManifest`** — write the per-vendor marketplace manifest. Relative `source` values are rewritten to `./plugins/<name>` so they resolve under the new dist layout.
 - **`install`** — register the discovered plugins with the vendor (CLI commands, cache priming, whatever the vendor needs). `ctx.run` is a recordable command runner so test code can intercept shell calls.
 - **`uninstall`** — reverse of `install`. Should be idempotent.
 
@@ -75,17 +85,25 @@ interface VendorEmitContext {
 
 ## Writing a custom vendor
 
-Implement the interface and pass your vendor to `install` / `uninstall` / `build` directly:
+Implement the interface and pass your vendor to `install` / `uninstall` / `compile` directly:
 
 ```ts
-import { build, install, type Vendor } from "@jean.gnc/harness-kit";
+import { compile, install, type Vendor } from "@jean.gnc/harness-kit";
+import { join } from "node:path";
 
 const myVendor: Vendor = {
   name: "myagent",
   home: `${process.env.HOME}/.myagent`,
   pluginManifestPath: ".myagent/plugin.json",
+  marketplaceManifestPath: "myagent/.myagent/marketplace.json",
+  vendorOutDir: (outRoot) => join(outRoot, "myagent"),
+  pluginOutDir: (outRoot, name) => join(outRoot, "myagent", "plugins", name),
+  configsOutDir: (outRoot) => join(outRoot, "myagent", "configs"),
   async emitPluginManifest(ctx) {
     /* write ctx.manifest into ctx.pluginOutDir / pluginManifestPath */
+  },
+  async emitMarketplaceManifest(ctx) {
+    /* write ctx.manifest into outRoot / marketplaceManifestPath */
   },
   async install(ctx) {
     /* register plugins with the vendor */
@@ -95,7 +113,7 @@ const myVendor: Vendor = {
   },
 };
 
-await build({ srcRoot: "./src", outRoot: "./dist", vendors: [myVendor] });
+await compile({ srcRoot: "./src", outRoot: "./dist", vendors: [myVendor] });
 await install({ vendors: [myVendor] });
 ```
 

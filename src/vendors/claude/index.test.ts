@@ -41,8 +41,12 @@ test("claudeVendor default home is ~/.claude", () => {
   assert.equal(claudeVendor.pluginManifestPath, ".claude-plugin/plugin.json");
 });
 
-test("claudeVendor.pluginOutDir places plugins under <outRoot>/claude/<plugin>", () => {
-  assert.equal(claudeVendor.pluginOutDir("/tmp/dist", "alpha"), "/tmp/dist/claude/alpha");
+test("claudeVendor.pluginOutDir places plugins under <outRoot>/claude/plugins/<plugin>", () => {
+  assert.equal(claudeVendor.pluginOutDir("/tmp/dist", "alpha"), "/tmp/dist/claude/plugins/alpha");
+});
+
+test("claudeVendor.configsOutDir places configs under <outRoot>/claude/configs", () => {
+  assert.equal(claudeVendor.configsOutDir("/tmp/dist"), "/tmp/dist/claude/configs");
 });
 
 test("claudeVendor.marketplaceManifestPath is claude/.claude-plugin/marketplace.json", () => {
@@ -74,8 +78,8 @@ test("claudeVendor.emitMarketplaceManifest writes per-vendor manifest with relat
     };
     assert.equal(parsed.name, "shop");
     assert.equal(parsed.metadata?.pluginRoot, undefined);
-    assert.deepEqual(parsed.plugins[0], { name: "alpha", source: "./alpha" });
-    assert.deepEqual(parsed.plugins[1], { name: "beta", source: "./beta" });
+    assert.deepEqual(parsed.plugins[0], { name: "alpha", source: "./plugins/alpha" });
+    assert.deepEqual(parsed.plugins[1], { name: "beta", source: "./plugins/beta" });
     assert.deepEqual(parsed.plugins[2], {
       name: "gh",
       source: { source: "github", repo: "acme/gh" },

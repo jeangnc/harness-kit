@@ -26,7 +26,10 @@ export function makeClaudeVendor(home: string): Vendor {
       return join(outRoot, VENDOR_DIR);
     },
     pluginOutDir(outRoot, pluginName) {
-      return join(outRoot, VENDOR_DIR, pluginName);
+      return join(outRoot, VENDOR_DIR, "plugins", pluginName);
+    },
+    configsOutDir(outRoot) {
+      return join(outRoot, VENDOR_DIR, "configs");
     },
     aliases(file: LinkedFile): readonly string[] {
       return file.basename === "AGENTS.md" ? [join(home, "CLAUDE.md")] : [];

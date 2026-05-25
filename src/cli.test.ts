@@ -17,8 +17,8 @@ function runCli(args: readonly string[]): {
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-test("cli build --help exits 0 and mentions --src", () => {
-  const { status, stdout } = runCli(["build", "--help"]);
+test("cli compile --help exits 0 and mentions --src", () => {
+  const { status, stdout } = runCli(["compile", "--help"]);
   assert.equal(status, 0);
   assert.match(stdout, /--src/);
 });

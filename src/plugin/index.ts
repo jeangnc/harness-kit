@@ -1,2 +1,2 @@
-export { ContextEntrySchema, HookRequirementSchema, PluginSchema, definePlugin } from "./schema.js";
-export type { ContextEntry, DependencyEntry, HookRequirement, Plugin } from "./schema.js";
+export { HookRequirementSchema, PluginSchema, definePlugin } from "./schema.js";
+export type { DependencyEntry, HookRequirement, Plugin } from "./schema.js";

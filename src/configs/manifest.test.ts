@@ -5,66 +5,67 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildConfigsManifest } from "./manifest.js";
+import type { Vendor } from "../vendor/schema.js";
+
+function fakeVendor(name: string): Vendor {
+  return {
+    name,
+    home: `/tmp/.${name}`,
+    pluginManifestPath: `.${name}-plugin/plugin.json`,
+    marketplaceManifestPath: `${name}/.${name}-plugin/marketplace.json`,
+    vendorOutDir: (outRoot) => join(outRoot, name),
+    pluginOutDir: (outRoot, pluginName) => join(outRoot, name, "plugins", pluginName),
+    configsOutDir: (outRoot) => join(outRoot, name, "configs"),
+    emitPluginManifest: async () => undefined,
+    emitMarketplaceManifest: async () => undefined,
+    install: async () => undefined,
+    uninstall: async () => undefined,
+  };
+}
+
+const claude = fakeVendor("claude");
+const codex = fakeVendor("codex");
 
 interface Sandbox {
-  readonly srcRoot: string;
-  readonly configsRoot: string;
+  readonly outRoot: string;
 }
 
 async function withSandbox(fn: (s: Sandbox) => Promise<void> | void): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), "harness-configs-test-"));
-  const srcRoot = join(root, "src");
-  const configsRoot = join(srcRoot, "configs");
-  mkdirSync(configsRoot, { recursive: true });
+  const outRoot = join(root, "dist");
+  mkdirSync(outRoot, { recursive: true });
   try {
-    await fn({ srcRoot, configsRoot });
+    await fn({ outRoot });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
 
-test("buildConfigsManifest returns empty links when src/configs is missing", async () => {
-  await withSandbox(async ({ srcRoot, configsRoot }) => {
-    rmSync(configsRoot, { recursive: true, force: true });
-    const m = await buildConfigsManifest({ srcRoot, vendors: ["claude", "codex"] });
+test("buildConfigsManifest returns empty links when no vendor has a configs/ dir", async () => {
+  await withSandbox(async ({ outRoot }) => {
+    const m = await buildConfigsManifest({ outRoot, vendors: [claude, codex] });
     assert.deepEqual(m, { links: [] });
   });
 });
 
-test("buildConfigsManifest emits common files for every declared vendor", async () => {
-  await withSandbox(async ({ srcRoot, configsRoot }) => {
-    mkdirSync(join(configsRoot, "common"));
-    writeFileSync(join(configsRoot, "common", "AGENTS.md"), "x");
-    const m = await buildConfigsManifest({ srcRoot, vendors: ["claude", "codex"] });
-    assert.deepEqual(m.links, [
-      {
-        src: "configs/common/AGENTS.md",
-        vendors: ["claude", "codex"],
-        destRel: "AGENTS.md",
-        kind: "file",
-      },
-    ]);
-  });
-});
-
-test("buildConfigsManifest emits per-vendor entries scoped to that vendor only", async () => {
-  await withSandbox(async ({ srcRoot, configsRoot }) => {
-    mkdirSync(join(configsRoot, "claude"));
-    writeFileSync(join(configsRoot, "claude", "settings.json"), "{}");
-    mkdirSync(join(configsRoot, "codex"));
-    writeFileSync(join(configsRoot, "codex", "config.toml"), "");
-    const m = await buildConfigsManifest({ srcRoot, vendors: ["claude", "codex"] });
+test("buildConfigsManifest emits one link per vendor file under <vendor>/configs/", async () => {
+  await withSandbox(async ({ outRoot }) => {
+    mkdirSync(join(outRoot, "claude/configs"), { recursive: true });
+    writeFileSync(join(outRoot, "claude/configs/settings.json"), "{}");
+    mkdirSync(join(outRoot, "codex/configs"), { recursive: true });
+    writeFileSync(join(outRoot, "codex/configs/config.toml"), "");
+    const m = await buildConfigsManifest({ outRoot, vendors: [claude, codex] });
     assert.deepEqual(
       m.links.toSorted((a, b) => a.src.localeCompare(b.src)),
       [
         {
-          src: "configs/claude/settings.json",
+          src: "claude/configs/settings.json",
           vendors: ["claude"],
           destRel: "settings.json",
           kind: "file",
         },
         {
-          src: "configs/codex/config.toml",
+          src: "codex/configs/config.toml",
           vendors: ["codex"],
           destRel: "config.toml",
           kind: "file",
@@ -74,28 +75,42 @@ test("buildConfigsManifest emits per-vendor entries scoped to that vendor only",
   });
 });
 
-test("buildConfigsManifest emits directory entries with kind: dir (no recursion)", async () => {
-  await withSandbox(async ({ srcRoot, configsRoot }) => {
-    mkdirSync(join(configsRoot, "claude", "hooks"), { recursive: true });
-    writeFileSync(join(configsRoot, "claude", "hooks", "pre.sh"), "");
-    writeFileSync(join(configsRoot, "claude", "hooks", "post.sh"), "");
-    const m = await buildConfigsManifest({ srcRoot, vendors: ["claude"] });
+test("buildConfigsManifest emits one link per (vendor, file) even when filenames overlap", async () => {
+  await withSandbox(async ({ outRoot }) => {
+    mkdirSync(join(outRoot, "claude/configs"), { recursive: true });
+    writeFileSync(join(outRoot, "claude/configs/AGENTS.md"), "x");
+    mkdirSync(join(outRoot, "codex/configs"), { recursive: true });
+    writeFileSync(join(outRoot, "codex/configs/AGENTS.md"), "x");
+    const m = await buildConfigsManifest({ outRoot, vendors: [claude, codex] });
     assert.deepEqual(m.links, [
-      { src: "configs/claude/hooks", vendors: ["claude"], destRel: "hooks", kind: "dir" },
+      { src: "claude/configs/AGENTS.md", vendors: ["claude"], destRel: "AGENTS.md", kind: "file" },
+      { src: "codex/configs/AGENTS.md", vendors: ["codex"], destRel: "AGENTS.md", kind: "file" },
     ]);
   });
 });
 
-test("buildConfigsManifest skips per-vendor dirs not in the declared vendor list", async () => {
-  await withSandbox(async ({ srcRoot, configsRoot }) => {
-    mkdirSync(join(configsRoot, "claude"));
-    writeFileSync(join(configsRoot, "claude", "settings.json"), "{}");
-    mkdirSync(join(configsRoot, "gemini"));
-    writeFileSync(join(configsRoot, "gemini", "config.json"), "{}");
-    const m = await buildConfigsManifest({ srcRoot, vendors: ["claude"] });
+test("buildConfigsManifest emits directory entries with kind: dir (no recursion)", async () => {
+  await withSandbox(async ({ outRoot }) => {
+    mkdirSync(join(outRoot, "claude/configs/hooks"), { recursive: true });
+    writeFileSync(join(outRoot, "claude/configs/hooks/pre.sh"), "");
+    writeFileSync(join(outRoot, "claude/configs/hooks/post.sh"), "");
+    const m = await buildConfigsManifest({ outRoot, vendors: [claude] });
+    assert.deepEqual(m.links, [
+      { src: "claude/configs/hooks", vendors: ["claude"], destRel: "hooks", kind: "dir" },
+    ]);
+  });
+});
+
+test("buildConfigsManifest skips vendor configs dirs not in the declared vendor list", async () => {
+  await withSandbox(async ({ outRoot }) => {
+    mkdirSync(join(outRoot, "claude/configs"), { recursive: true });
+    writeFileSync(join(outRoot, "claude/configs/settings.json"), "{}");
+    mkdirSync(join(outRoot, "gemini/configs"), { recursive: true });
+    writeFileSync(join(outRoot, "gemini/configs/config.json"), "{}");
+    const m = await buildConfigsManifest({ outRoot, vendors: [claude] });
     assert.deepEqual(m.links, [
       {
-        src: "configs/claude/settings.json",
+        src: "claude/configs/settings.json",
         vendors: ["claude"],
         destRel: "settings.json",
         kind: "file",
@@ -104,36 +119,30 @@ test("buildConfigsManifest skips per-vendor dirs not in the declared vendor list
   });
 });
 
-test("buildConfigsManifest ignores dotfiles at the top level (e.g. .gitkeep)", async () => {
-  await withSandbox(async ({ srcRoot, configsRoot }) => {
-    mkdirSync(join(configsRoot, "common"));
-    writeFileSync(join(configsRoot, "common", ".gitkeep"), "");
-    writeFileSync(join(configsRoot, "common", "AGENTS.md"), "x");
-    const m = await buildConfigsManifest({ srcRoot, vendors: ["claude"] });
+test("buildConfigsManifest ignores dotfiles at the top level (e.g. .gitkeep, .fragments/)", async () => {
+  await withSandbox(async ({ outRoot }) => {
+    mkdirSync(join(outRoot, "claude/configs/.fragments"), { recursive: true });
+    writeFileSync(join(outRoot, "claude/configs/.fragments/x.md"), "");
+    writeFileSync(join(outRoot, "claude/configs/.gitkeep"), "");
+    writeFileSync(join(outRoot, "claude/configs/AGENTS.md"), "x");
+    const m = await buildConfigsManifest({ outRoot, vendors: [claude] });
     assert.deepEqual(m.links, [
-      { src: "configs/common/AGENTS.md", vendors: ["claude"], destRel: "AGENTS.md", kind: "file" },
+      { src: "claude/configs/AGENTS.md", vendors: ["claude"], destRel: "AGENTS.md", kind: "file" },
     ]);
   });
 });
 
-test("buildConfigsManifest emits stable order: scope (common, then vendors in declared order), then name", async () => {
-  await withSandbox(async ({ srcRoot, configsRoot }) => {
-    mkdirSync(join(configsRoot, "common"));
-    writeFileSync(join(configsRoot, "common", "zeta.md"), "");
-    writeFileSync(join(configsRoot, "common", "alpha.md"), "");
-    mkdirSync(join(configsRoot, "codex"));
-    writeFileSync(join(configsRoot, "codex", "config.toml"), "");
-    mkdirSync(join(configsRoot, "claude"));
-    writeFileSync(join(configsRoot, "claude", "settings.json"), "{}");
-    const m = await buildConfigsManifest({ srcRoot, vendors: ["claude", "codex"] });
+test("buildConfigsManifest emits stable order: vendor in declared order, then name", async () => {
+  await withSandbox(async ({ outRoot }) => {
+    mkdirSync(join(outRoot, "claude/configs"), { recursive: true });
+    writeFileSync(join(outRoot, "claude/configs/zeta.md"), "");
+    writeFileSync(join(outRoot, "claude/configs/alpha.md"), "");
+    mkdirSync(join(outRoot, "codex/configs"), { recursive: true });
+    writeFileSync(join(outRoot, "codex/configs/config.toml"), "");
+    const m = await buildConfigsManifest({ outRoot, vendors: [claude, codex] });
     assert.deepEqual(
       m.links.map((l) => l.src),
-      [
-        "configs/common/alpha.md",
-        "configs/common/zeta.md",
-        "configs/claude/settings.json",
-        "configs/codex/config.toml",
-      ],
+      ["claude/configs/alpha.md", "claude/configs/zeta.md", "codex/configs/config.toml"],
     );
   });
 });

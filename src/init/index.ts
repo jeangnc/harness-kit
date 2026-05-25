@@ -22,9 +22,8 @@ export async function initHarness(options: InitOptions): Promise<void> {
     { lineWidth: 120 },
   );
   await writeFile(configPath, doc);
-  await scaffoldKeep(join(options.repoRoot, "src/configs/common"));
   for (const vendor of options.vendors) {
-    await scaffoldKeep(join(options.repoRoot, "src/configs", vendor));
+    await scaffoldKeep(join(options.repoRoot, "src", vendor, "configs"));
   }
   await scaffoldKeep(join(options.repoRoot, "src/plugins"));
   await ensureGitignore(options.repoRoot);

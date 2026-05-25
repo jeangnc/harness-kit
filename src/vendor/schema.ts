@@ -42,6 +42,7 @@ export interface Vendor {
   readonly marketplaceManifestPath: string;
   readonly vendorOutDir: (outRoot: string) => string;
   readonly pluginOutDir: (outRoot: string, pluginName: string) => string;
+  readonly configsOutDir: (outRoot: string) => string;
   readonly aliases?: (linkedFile: LinkedFile) => readonly string[];
   readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;
   readonly emitMarketplaceManifest: (ctx: VendorMarketplaceEmitContext) => Promise<void>;

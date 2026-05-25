@@ -5,10 +5,10 @@ import type { Marketplace, PluginEntry, PluginSource } from "../marketplace/inde
 import type { Plugin } from "../plugin/index.js";
 import type { VendorEmitContext, VendorMarketplaceEmitContext } from "../vendor/schema.js";
 
-type VendorPluginManifest = Omit<Plugin, "context" | "hookRequires">;
+type VendorPluginManifest = Omit<Plugin, "hookRequires">;
 
 function toVendorPluginManifest(plugin: Plugin): VendorPluginManifest {
-  const { context: _ctx, hookRequires: _hr, ...rest } = plugin;
+  const { hookRequires: _hr, ...rest } = plugin;
   return rest;
 }
 
@@ -61,7 +61,7 @@ function projectPluginEntry(entry: PluginEntry): ProjectedPluginEntry {
 }
 
 function projectSource(pluginName: string, source: PluginSource): ProjectedSource {
-  if (source.kind === "relative") return `./${pluginName}`;
+  if (source.kind === "relative") return `./plugins/${pluginName}`;
   const { kind: _kind, ...rest } = source;
   return rest;
 }

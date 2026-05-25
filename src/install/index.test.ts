@@ -40,7 +40,8 @@ function makeRecordingVendor(
     pluginManifestPath: `.${name}-plugin/plugin.json`,
     marketplaceManifestPath: `${name}/.${name}-plugin/marketplace.json`,
     vendorOutDir: (outRoot) => join(outRoot, name),
-    pluginOutDir: (outRoot, pluginName) => join(outRoot, name, pluginName),
+    pluginOutDir: (outRoot, pluginName) => join(outRoot, name, "plugins", pluginName),
+    configsOutDir: (outRoot) => join(outRoot, name, "configs"),
     emitPluginManifest: async () => undefined,
     emitMarketplaceManifest: async () => undefined,
     install: async (ctx) => {
@@ -78,7 +79,7 @@ async function withInstallFixture<T>(
     );
   }
   for (const plugin of options.plugins) {
-    const pluginPath = join(distRoot, plugin.vendor, plugin.name);
+    const pluginPath = join(distRoot, plugin.vendor, "plugins", plugin.name);
     const manifestDir = join(pluginPath, `.${plugin.vendor}-plugin`);
     mkdirSync(manifestDir, { recursive: true });
     writeFileSync(
@@ -131,15 +132,15 @@ test("install applies config links before invoking vendors", async () => {
     },
     async ({ distRoot, sandbox }) => {
       const repoRoot = sandbox;
-      const srcDir = join(repoRoot, "src/configs/claude");
-      mkdirSync(srcDir, { recursive: true });
-      writeFileSync(join(srcDir, "settings.json"), "{}");
+      const distConfigsDir = join(distRoot, "claude/configs");
+      mkdirSync(distConfigsDir, { recursive: true });
+      writeFileSync(join(distConfigsDir, "settings.json"), "{}");
       writeFileSync(
         join(distRoot, "configs.json"),
         JSON.stringify({
           links: [
             {
-              src: "configs/claude/settings.json",
+              src: "claude/configs/settings.json",
               vendors: ["claude"],
               destRel: "settings.json",
               kind: "file",
@@ -171,15 +172,15 @@ test("install --dry-run reports plan without touching disk or invoking vendors",
     },
     async ({ distRoot, sandbox }) => {
       const repoRoot = sandbox;
-      const srcDir = join(repoRoot, "src/configs/claude");
-      mkdirSync(srcDir, { recursive: true });
-      writeFileSync(join(srcDir, "settings.json"), "{}");
+      const distConfigsDir = join(distRoot, "claude/configs");
+      mkdirSync(distConfigsDir, { recursive: true });
+      writeFileSync(join(distConfigsDir, "settings.json"), "{}");
       writeFileSync(
         join(distRoot, "configs.json"),
         JSON.stringify({
           links: [
             {
-              src: "configs/claude/settings.json",
+              src: "claude/configs/settings.json",
               vendors: ["claude"],
               destRel: "settings.json",
               kind: "file",
@@ -262,7 +263,7 @@ test("install rejects a plugin.json missing the required `version` field", async
     join(distRoot, "claude/.claude-plugin/marketplace.json"),
     JSON.stringify({ name: "shop" }),
   );
-  const pluginPath = join(distRoot, "claude/alpha");
+  const pluginPath = join(distRoot, "claude/plugins/alpha");
   mkdirSync(join(pluginPath, ".claude-plugin"), { recursive: true });
   writeFileSync(join(pluginPath, ".claude-plugin/plugin.json"), JSON.stringify({ name: "alpha" }));
   try {

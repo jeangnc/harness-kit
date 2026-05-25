@@ -25,7 +25,10 @@ export function makeCodexVendor(home: string): Vendor {
       return join(outRoot, VENDOR_DIR);
     },
     pluginOutDir(outRoot, pluginName) {
-      return join(outRoot, VENDOR_DIR, pluginName);
+      return join(outRoot, VENDOR_DIR, "plugins", pluginName);
+    },
+    configsOutDir(outRoot) {
+      return join(outRoot, VENDOR_DIR, "configs");
     },
     async emitPluginManifest(ctx: VendorEmitContext): Promise<void> {
       await defaultEmitPluginManifest(PLUGIN_MANIFEST_REL, ctx);

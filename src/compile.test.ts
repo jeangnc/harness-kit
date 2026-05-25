@@ -4,15 +4,15 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "node:
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { build } from "./build.js";
+import { compile } from "./compile.js";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
 async function withSandbox<T>(fn: (srcRoot: string, outRoot: string) => Promise<T>): Promise<T> {
-  const sandbox = mkdtempSync(join(repoRoot, ".test-tmp-build-"));
+  const sandbox = mkdtempSync(join(repoRoot, ".test-tmp-compile-"));
   const srcRoot = join(sandbox, "src");
   const outRoot = join(sandbox, "out");
-  writeFileSync(join(sandbox, "harness.yaml"), "marketplace: build-test\nvendors:\n  - claude\n");
+  writeFileSync(join(sandbox, "harness.yaml"), "marketplace: compile-test\nvendors:\n  - claude\n");
   const skillDir = join(srcRoot, "plugins/foo/skills/bar");
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(
@@ -32,7 +32,7 @@ async function withSandbox<T>(fn: (srcRoot: string, outRoot: string) => Promise<
     join(marketplaceDir, "marketplace.json"),
     JSON.stringify(
       {
-        name: "build-test",
+        name: "compile-test",
         owner: { name: "harness-kit-tests" },
         plugins: [{ name: "foo", source: "./plugins/foo" }],
       },
@@ -43,41 +43,31 @@ async function withSandbox<T>(fn: (srcRoot: string, outRoot: string) => Promise<
   return fn(srcRoot, outRoot).finally(() => rmSync(sandbox, { recursive: true, force: true }));
 }
 
-test("build emits SKILL.md to outRoot when given explicit paths", async () => {
+test("compile emits SKILL.md to outRoot when given explicit paths", async () => {
   await withSandbox(async (srcRoot, outRoot) => {
-    await build({ srcRoot, outRoot, silent: true });
-    assert.ok(existsSync(join(outRoot, "claude/foo/skills/bar/SKILL.md")));
+    await compile({ srcRoot, outRoot, silent: true });
+    assert.ok(existsSync(join(outRoot, "claude/plugins/foo/skills/bar/SKILL.md")));
   });
 });
 
-test("build cleans each vendor's dist subtree before compiling", async () => {
+test("compile cleans each vendor's dist subtree before compiling", async () => {
   await withSandbox(async (srcRoot, outRoot) => {
-    const stalePath = join(outRoot, "claude/old/skills/gone/SKILL.md");
-    mkdirSync(join(outRoot, "claude/old/skills/gone"), { recursive: true });
+    const stalePath = join(outRoot, "claude/plugins/old/skills/gone/SKILL.md");
+    mkdirSync(join(outRoot, "claude/plugins/old/skills/gone"), { recursive: true });
     writeFileSync(stalePath, "stale\n");
-    await build({ srcRoot, outRoot, silent: true });
+    await compile({ srcRoot, outRoot, silent: true });
     assert.ok(!existsSync(stalePath), "stale plugin should be removed");
-    assert.ok(existsSync(join(outRoot, "claude/foo/skills/bar/SKILL.md")));
+    assert.ok(existsSync(join(outRoot, "claude/plugins/foo/skills/bar/SKILL.md")));
   });
 });
 
-test("build forwards bodyInvariants to compile", async () => {
-  await withSandbox(async (srcRoot, outRoot) => {
-    const flagFOO = (body: string): string[] => (body.includes("Bar") ? ["found Bar"] : []);
-    await assert.rejects(
-      build({ srcRoot, outRoot, silent: true, bodyInvariants: [flagFOO] }),
-      /found Bar/,
-    );
-  });
-});
-
-test("build writes a success line to stdout when not silent", async () => {
+test("compile writes a success line to stdout when not silent", async () => {
   await withSandbox(async (srcRoot, outRoot) => {
     const original = console.log;
     const lines: string[] = [];
     console.log = (msg: string) => lines.push(msg);
     try {
-      await build({ srcRoot, outRoot });
+      await compile({ srcRoot, outRoot });
     } finally {
       console.log = original;
     }

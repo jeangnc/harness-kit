@@ -49,6 +49,14 @@ test("codexVendor default home is ~/.codex", () => {
   assert.equal(codexVendor.pluginManifestPath, ".codex-plugin/plugin.json");
 });
 
+test("codexVendor.pluginOutDir places plugins under <outRoot>/codex/plugins/<plugin>", () => {
+  assert.equal(codexVendor.pluginOutDir("/tmp/dist", "alpha"), "/tmp/dist/codex/plugins/alpha");
+});
+
+test("codexVendor.configsOutDir places configs under <outRoot>/codex/configs", () => {
+  assert.equal(codexVendor.configsOutDir("/tmp/dist"), "/tmp/dist/codex/configs");
+});
+
 test("codexVendor declares no aliases hook", () => {
   const v = makeCodexVendor("/home/test/.codex");
   assert.equal(v.aliases, undefined);

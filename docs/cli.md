@@ -11,9 +11,9 @@ Scaffolds a new harness repo.
 - `--repo <path>` (default `.`) — repo root to scaffold into.
 - `--silent` — suppress success log.
 
-Creates `harness.yaml`, `src/configs/common/`, `src/configs/<vendor>/` for each declared vendor, `src/plugins/`, and ensures `dist/` is in `.gitignore`. Fails if `harness.yaml` already exists.
+Creates `harness.yaml`, `src/<vendor>/configs/` for each declared vendor, `src/plugins/`, and ensures `dist/` is in `.gitignore`. Fails if `harness.yaml` already exists.
 
-## `harness build`
+## `harness compile`
 
 Compiles `src/` to `dist/` for every vendor declared in `harness.yaml`.
 
@@ -56,7 +56,7 @@ Links config files into each vendor's home and registers compiled plugins throug
 
 - `--dist <path>` (default `./dist`).
 - `--repo <path>` (default `.`).
-- `--mode <local|remote>` (default `local`) — install source. `local` registers the compiled `dist/claude` tree as a local-scoped marketplace, installing uncommitted builds without publishing; `remote` resolves Claude plugins from the published marketplace. Codex is local-only and ignores this flag.
+- `--mode <local|remote>` (default `local`) — install source. `local` registers the compiled `dist/claude/` tree as a local-scoped marketplace, installing uncommitted builds without publishing; `remote` resolves Claude plugins from the published marketplace. Codex is local-only and ignores this flag.
 - `--dry-run` — print the plan without touching the filesystem.
 - `--silent`.
 
@@ -72,8 +72,8 @@ Same flags as `install`. Reverses each vendor's `install` hook.
 {
   "scripts": {
     "init:harness": "harness init",
-    "build": "harness build",
-    "lint": "harness build && harness lint",
+    "build": "harness compile",
+    "lint": "harness compile && harness lint",
     "install:plugins": "harness install",
     "uninstall:plugins": "harness uninstall"
   },

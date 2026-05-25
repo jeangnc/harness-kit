@@ -47,7 +47,7 @@ export async function planConfigLinks(
   const vendorsByName = new Map(options.vendors.map((v) => [v.name, v]));
   const plan: PlannedLink[] = [];
   for (const link of parsed.data.links) {
-    const srcAbs = join(options.repoRoot, "src", link.src);
+    const srcAbs = join(options.distRoot, link.src);
     for (const vendorName of link.vendors) {
       const vendor = vendorsByName.get(vendorName);
       if (!vendor) continue;
@@ -80,7 +80,7 @@ async function sweepOrphanLinks(
   plan: readonly PlannedLink[],
   options: ApplyConfigLinksOptions,
 ): Promise<void> {
-  const managedRoot = options.repoRoot + "/";
+  const managedRoot = options.distRoot + "/";
   const planned = new Set(plan.map((p) => p.destAbs));
   const scanDirs = new Set<string>([
     ...options.vendors.map((v) => v.home),

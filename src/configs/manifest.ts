@@ -1,7 +1,8 @@
 import { readdir, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { relative } from "node:path";
 
 import { pathExists } from "../fs.js";
+import type { Vendor } from "../vendor/schema.js";
 
 export type LinkKind = "file" | "dir";
 
@@ -16,47 +17,29 @@ export interface ConfigsManifest {
   readonly links: readonly ConfigLink[];
 }
 
-export interface BuildConfigsManifestOptions {
-  readonly srcRoot: string;
-  readonly vendors: readonly string[];
+export interface ConfigsManifestOptions {
+  readonly outRoot: string;
+  readonly vendors: readonly Vendor[];
 }
 
-const COMMON_SCOPE = "common";
-
 export async function buildConfigsManifest(
-  options: BuildConfigsManifestOptions,
+  options: ConfigsManifestOptions,
 ): Promise<ConfigsManifest> {
-  const configsRoot = join(options.srcRoot, "configs");
-  if (!(await pathExists(configsRoot))) return { links: [] };
-
   const links: ConfigLink[] = [];
-  const commonDir = join(configsRoot, COMMON_SCOPE);
-  if (await pathExists(commonDir)) {
-    for (const entry of await listEntries(commonDir)) {
-      const kind = await kindOf(join(commonDir, entry));
-      links.push({
-        src: `configs/${COMMON_SCOPE}/${entry}`,
-        vendors: options.vendors,
-        destRel: entry,
-        kind,
-      });
-    }
-  }
-
   for (const vendor of options.vendors) {
-    const vendorDir = join(configsRoot, vendor);
-    if (!(await pathExists(vendorDir))) continue;
-    for (const entry of await listEntries(vendorDir)) {
-      const kind = await kindOf(join(vendorDir, entry));
+    const configsOut = vendor.configsOutDir(options.outRoot);
+    if (!(await pathExists(configsOut))) continue;
+    for (const entry of await listEntries(configsOut)) {
+      const absPath = `${configsOut}/${entry}`;
+      const kind = await kindOf(absPath);
       links.push({
-        src: `configs/${vendor}/${entry}`,
-        vendors: [vendor],
+        src: relative(options.outRoot, absPath),
+        vendors: [vendor.name],
         destRel: entry,
         kind,
       });
     }
   }
-
   return { links };
 }
 

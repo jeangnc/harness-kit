@@ -17,16 +17,14 @@ import {
   precomputeExistingRefs,
   renderFrontmatter,
 } from "./frontmatter.js";
-import { buildRegistry, type OwningPlugin } from "./validators.js";
+import { buildRegistry, type ReferenceOwner } from "./validators.js";
 import type { LocalIds } from "../layout/index.js";
 import type { InstalledIndex } from "../installed.js";
 
 const SKILL_SOURCE_FILENAMES: ReadonlySet<string> = new Set(["SKILL.ts", "SKILL.md"]);
 
 export type { LocalIds } from "../layout/index.js";
-export type { OwningPlugin } from "./validators.js";
-
-export type BodyInvariant = (body: string) => string[];
+export type { ReferenceOwner } from "./validators.js";
 
 export type WarningSink = (filePath: string, warnings: readonly string[]) => void;
 
@@ -35,9 +33,7 @@ export interface CompileTreeOptions {
   readonly outRoot: string;
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
-  readonly bodyInvariants: readonly BodyInvariant[];
-  readonly contextFiles?: ReadonlySet<string>;
-  readonly owner: OwningPlugin;
+  readonly owner: ReferenceOwner;
   readonly skipRelPaths?: ReadonlySet<string>;
   readonly onWarnings?: WarningSink;
 }
@@ -45,19 +41,18 @@ export interface CompileTreeOptions {
 interface CompileContext {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
-  readonly owner: OwningPlugin;
+  readonly owner: ReferenceOwner;
   readonly onWarnings?: WarningSink;
 }
 
 export async function compileTree(options: CompileTreeOptions): Promise<void> {
-  const { srcRoot, outRoot, bodyInvariants } = options;
+  const { srcRoot, outRoot } = options;
   const ctx: CompileContext = {
     localIds: options.localIds,
     installedIndex: options.installedIndex,
     owner: options.owner,
     ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   };
-  const contextFiles = options.contextFiles ?? new Set<string>();
   const skipRelPaths = options.skipRelPaths ?? new Set<string>();
   const skillFolders = await collectSkillFolders(srcRoot);
   const handledAbsPaths = new Set<string>();
@@ -66,21 +61,9 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
     if (!SKILL_SOURCE_FILENAMES.has(basename(absPath))) continue;
     const target = join(outRoot, relative(srcRoot, absPath));
     const companions = skillFolders.get(dirname(absPath)) ?? [];
-    const result = await emitSkill(
-      absPath,
-      join(dirname(target), "SKILL.md"),
-      companions,
-      bodyInvariants,
-      ctx,
-    );
+    const result = await emitSkill(absPath, join(dirname(target), "SKILL.md"), companions, ctx);
     for (const p of result.resolvedIncludes) handledAbsPaths.add(p);
     for (const p of result.emittedCompanions) handledAbsPaths.add(p);
-  }
-
-  for (const absPath of contextFiles) {
-    const target = join(outRoot, relative(srcRoot, absPath));
-    await emitSubstitutedFile(absPath, target, dirname(absPath), ctx);
-    handledAbsPaths.add(absPath);
   }
 
   for await (const absPath of walk(srcRoot)) {
@@ -137,7 +120,6 @@ async function emitSkill(
   srcPath: string,
   outPath: string,
   siblings: readonly string[],
-  bodyInvariants: readonly BodyInvariant[],
   ctx: CompileContext,
 ): Promise<EmitResult> {
   const skillDir = dirname(srcPath);
@@ -161,9 +143,6 @@ async function emitSkill(
   const errors: string[] = [];
   if (skill.name !== expectedName) {
     errors.push(`name "${skill.name}" does not match folder "${expectedName}"`);
-  }
-  for (const check of bodyInvariants) {
-    errors.push(...check(expandedBody));
   }
   errors.push(...checkCompanionFiles(skill.companions, filteredSiblings));
   errors.push(...checkCompanionsTokenParity(expandedBody, skill.companions));
@@ -245,6 +224,7 @@ function reportWarnings(ctx: CompileContext, filePath: string, warnings: readonl
 async function* walk(dir: string): AsyncGenerator<string> {
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
     const full = join(dir, entry.name);
     if (entry.isDirectory()) yield* walk(full);
     else if (entry.isFile()) yield full;

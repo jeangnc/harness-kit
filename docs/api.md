@@ -1,10 +1,11 @@
 # Programmatic API
 
-Everything the `harness` CLI does is also available as a typed module API. Use this when scripting a multi-step pipeline, embedding harness-kit into a larger build system, or wiring a custom [`Vendor`](./vendors.md).
+Everything the `harness` CLI does is also available as a typed module API. Use this when scripting a multi-step pipeline, embedding harness-kit into a larger compile system, or wiring a custom [`Vendor`](./vendors.md).
 
 ```ts
 import {
-  build,
+  compile,
+  compilePlugins,
   install,
   uninstall,
   initHarness,
@@ -20,26 +21,21 @@ All exports are re-exported from the package root; see [`src/index.ts`](../src/i
 
 ## Compile
 
-### `build(options: BuildOptions): Promise<void>`
+### `compile(options: CompileOptions): Promise<void>`
 
-Compiles `src/` to `dist/`. Reads `harness.yaml` at `repoRoot` to determine vendors when none are passed explicitly.
+Compiles `src/` to `dist/`. Reads `harness.yaml` at `repoRoot` to determine vendors. Emits per-vendor subtrees under `dist/<vendor>/` (plugins, configs, and the vendor marketplace manifest) plus a top-level `dist/configs.json` link manifest.
 
 ```ts
-await build({
+await compile({
   srcRoot: "./src",
   outRoot: "./dist",
   repoRoot: ".",
-  bodyInvariants: [
-    /* (body: string) => string[] — extra checks per skill body */
-  ],
 });
 ```
 
-`bodyInvariants` run after `{{include:...}}` expansion and before placeholder substitution. Each returns a list of violation messages; any non-empty result fails the build.
+### `compilePlugins(options: CompilePluginsOptions): Promise<void>`
 
-### `compile(options: CompileOptions): Promise<void>`
-
-Lower-level compile entry. `build` is `compile` with vendor resolution wired up — prefer `build` unless you need to inject vendors or skip `harness.yaml` reads.
+Lower-level entry. `compile` is `compilePlugins` with vendor resolution wired up plus configs handling — prefer `compile` unless you need to inject vendors or skip `harness.yaml` reads and configs.
 
 ## Lint
 
@@ -89,7 +85,7 @@ await initHarness({
 });
 ```
 
-Writes `harness.yaml`, scaffolds `src/configs/common/`, `src/configs/<vendor>/` for each vendor, `src/plugins/`, and adds `dist/` to `.gitignore`. Fails if `harness.yaml` already exists.
+Writes `harness.yaml`, scaffolds `src/<vendor>/configs/` for each vendor, `src/plugins/`, and adds `dist/` to `.gitignore`. Fails if `harness.yaml` already exists.
 
 ## Vendor interface
 
@@ -141,7 +137,7 @@ export default defineSkill({
 });
 ```
 
-Also exported: `parsePlaceholders`, `substitute`, `loadSkill`, `findSkillFile`, `checkCompanionFiles`, plus all related schemas (`SkillSchema`, `PluginSchema`, `CompanionSchema`, `ContextEntrySchema`) and types (`Skill`, `Plugin`, `LoadedSkill`, `Companion`, `ContextEntry`, …).
+Also exported: `parsePlaceholders`, `substitute`, `loadSkill`, `findSkillFile`, `checkCompanionFiles`, plus all related schemas (`SkillSchema`, `PluginSchema`, `CompanionSchema`) and types (`Skill`, `Plugin`, `LoadedSkill`, `Companion`, …).
 
 ## Result type
 

@@ -2,16 +2,16 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { buildConfigsManifest } from "./manifest.js";
+import type { Vendor } from "../vendor/schema.js";
 
 export interface EmitConfigsManifestOptions {
-  readonly srcRoot: string;
   readonly outRoot: string;
-  readonly vendors: readonly string[];
+  readonly vendors: readonly Vendor[];
 }
 
 export async function emitConfigsManifest(options: EmitConfigsManifestOptions): Promise<void> {
   const manifest = await buildConfigsManifest({
-    srcRoot: options.srcRoot,
+    outRoot: options.outRoot,
     vendors: options.vendors,
   });
   await mkdir(options.outRoot, { recursive: true });

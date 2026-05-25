@@ -8,7 +8,7 @@
 pnpm add @jean.gnc/harness-kit
 harness init --marketplace my-harness --vendors claude,codex
 # author src/plugins/<plugin>/... (see Authoring below)
-harness build
+harness compile
 harness install
 ```
 
@@ -27,7 +27,7 @@ vendors:
   - codex
 ```
 
-Created by `harness init`. Read automatically by `build`, `install`, and `uninstall` via `--repo` (default `.`).
+Created by `harness init`. Read automatically by `compile`, `install`, and `uninstall` via `--repo` (default `.`).
 
 ### Vendors
 
@@ -40,39 +40,39 @@ Writing your own vendor: see [docs/vendors.md](./docs/vendors.md).
 
 ### Source layout
 
-Two trees live under `src/`:
-
 ```text
-src/configs/
-  common/        # linked into every declared vendor's home
-  <vendor>/      # linked only into that vendor's home
+src/
+  <vendor>/configs/             # vendor-specific config files (e.g. AGENTS.md, settings.json)
+    .fragments/                 # source-only snippets; never emitted to dist (see Fragments vs companions)
+  plugins/<plugin>/             # shared across every declared vendor
+    .claude-plugin/plugin.json  # or PLUGIN.ts
+    skills/<name>/SKILL.md      # or SKILL.ts + body.md
+    agents/<agent>.md           # optional
+    commands/<command>.md       # optional
+    hooks/<hook>.json           # optional
+  .claude-plugin/marketplace.json  # lists the plugins to compile
 ```
-
-```text
-src/plugins/<plugin>/
-  .claude-plugin/plugin.json    # or PLUGIN.ts
-  skills/<name>/SKILL.md        # or SKILL.ts + body.md
-  agents/<agent>.md             # optional
-  commands/<command>.md         # optional
-  hooks/<hook>.json             # optional
-```
-
-Plus `src/.claude-plugin/marketplace.json` at the root, listing the plugins to compile.
 
 → Manifest fields, passthrough behavior, and plugin extensions: [docs/marketplace.md](./docs/marketplace.md).
 
 ### Compile pipeline
 
-`harness build` reads vendors from `harness.yaml`, validates the marketplace manifest, discovers plugins, checks every `context` file exists, and validates each `hookRequires` against the local artifact IDs. Then for each plugin × vendor pair it emits the per-vendor manifest and compiles skills/agents/commands into `dist/plugins/<vendor>/<plugin>/`. It also copies `dist/.claude-plugin/marketplace.json` and writes a vendor-agnostic `dist/configs.json` link manifest derived from `src/configs/`.
+`harness compile` reads vendors from `harness.yaml`, validates the marketplace manifest, discovers plugins, and validates each `hookRequires` against the local artifact IDs. For each declared vendor it emits everything under a single top-level `dist/<vendor>/` subtree:
+
+- `dist/<vendor>/.<vendor>-plugin/marketplace.json` — the per-vendor marketplace manifest.
+- `dist/<vendor>/plugins/<plugin>/` — compiled skills/agents/commands plus the per-vendor plugin manifest.
+- `dist/<vendor>/configs/` — vendor-specific config files (everything under `src/<vendor>/configs/` minus dot-prefixed entries).
+
+A top-level `dist/configs.json` link manifest enumerates the symlinks `harness install` will create.
 
 ### Install pipeline
 
 `harness install` reads `harness.yaml`, then:
 
 1. Applies links from `dist/configs.json`. Existing symlinks are replaced. Regular files are renamed to `<dest>.backup` (incrementing to `.backup.2`, `.backup.3`, …) before the symlink is created. Orphan symlinks pointing back into the repo are swept before applying.
-2. For each declared vendor, discovers compiled plugins under `dist/plugins/<vendor>/` and calls the vendor's `install` hook.
+2. For each declared vendor, discovers compiled plugins under `dist/<vendor>/plugins/` and calls the vendor's `install` hook.
 
-`--mode` selects where Claude resolves plugins from: `local` (default) registers the freshly compiled `dist/claude` tree as a local-scoped marketplace, so uncommitted builds install without publishing; `remote` pulls from the published marketplace. Codex is local-only and ignores the flag.
+`--mode` selects where Claude resolves plugins from: `local` (default) registers the freshly compiled `dist/claude/` tree as a local-scoped marketplace, so uncommitted builds install without publishing; `remote` pulls from the published marketplace. Codex is local-only and ignores the flag.
 
 `--dry-run` prints the plan without touching the filesystem.
 
@@ -102,7 +102,7 @@ For details, see {{ref:details.md}}.
 Compiles to (once per declared vendor):
 
 ```md
-<!-- dist/plugins/<vendor>/<plugin>/skills/my-skill/SKILL.md -->
+<!-- dist/<vendor>/plugins/<plugin>/skills/my-skill/SKILL.md -->
 ---
 name: my-skill
 description: What the skill does — single line.
@@ -124,14 +124,42 @@ For details, see `details.md`.
 
 ### Composing with includes
 
-Use `{{include:./fragment.md}}` to inline another Markdown file verbatim into the body. Includes expand recursively (an included file may itself contain `{{include:...}}`), and any other placeholders inside the inlined content are resolved against the **host skill**, not the include source.
+Use `{{include:./.fragments/foo.md}}` to inline another Markdown file verbatim into the body. Includes expand recursively (an included file may itself contain `{{include:...}}`), and any other placeholders inside the inlined content are resolved against the **host skill**, not the include source.
 
 Constraints:
 
 - Path must be relative and stay inside the skill directory.
 - Target must end in `.md`.
-- Cycles are detected and fail the build.
+- Cycles are detected and fail the compile.
 - Included files are not copied into `dist/` and are not flagged as undeclared companions.
+
+### Fragments vs companions
+
+Two kinds of secondary file appear next to skills, plugins, and configs. They have different lifecycles, so harness-kit gives them different conventions.
+
+| Kind | Lifecycle | Convention | Ships to `dist/`? |
+| --- | --- | --- | --- |
+| **Fragment** | Compile-time only — inlined via `{{include:...}}` | Leading-dot path (e.g. `.fragments/foo.md`) | No |
+| **Companion** | Runtime — read by the artifact (skill, hook, command, agent) at execution | No leading dot (e.g. `details.md`, `companions/foo.md`) | Yes |
+
+**The rule is one sentence: leading dot = source-only.** Any source file or directory whose basename starts with `.` is stripped from dist (the vendor manifest dirs like `.claude-plugin/` are still emitted because each vendor writes them separately). Everything else ships as-is.
+
+Example: a skill that inlines a shared snippet at compile time and ships a runtime companion alongside it.
+
+```text
+src/plugins/foo/skills/bar/
+  SKILL.md                  # uses {{include:./.fragments/snippet.md}} and references details.md
+  .fragments/snippet.md     # stripped from dist
+  details.md                # ships; consumed at runtime
+```
+
+After `harness compile`:
+
+```text
+dist/<vendor>/plugins/foo/skills/bar/
+  SKILL.md                  # snippet content inlined
+  details.md                # ships unchanged
+```
 
 ### Authoring with TypeScript (alternative)
 
@@ -161,7 +189,7 @@ A skill folder must contain exactly one of `SKILL.md` or `SKILL.ts`. Both forms 
 
 Three reference kinds — `skill`, `command`, `agent` — each resolve against the **local marketplace ∪ installed plugins** and render the scoped `<plugin>:<name>` handle. The author never picks a prefix based on where a target lives; a single kind covers both local and cross-plugin references.
 
-Resolution is two-tier: `harness build` resolves strictly against local artifacts and **warns** (without failing) on a reference found in neither the local marketplace nor an installed plugin — so the build stays green on a machine without those plugins installed. `harness check --mode=all` is the hard gate: the same unresolved reference fails the check. A malformed value (not `<plugin>:<name>` shape) is always a hard error. A local reference into another local plugin must declare that plugin as a dependency.
+Resolution is two-tier: `harness compile` resolves strictly against local artifacts and **warns** (without failing) on a reference found in neither the local marketplace nor an installed plugin — so the compile stays green on a machine without those plugins installed. `harness check --mode=all` is the hard gate: the same unresolved reference fails the check. A malformed value (not `<plugin>:<name>` shape) is always a hard error. A local reference into another local plugin must declare that plugin as a dependency.
 
 | Placeholder | Renders to | Validation |
 | --- | --- | --- |
@@ -175,8 +203,8 @@ Resolution is two-tier: `harness build` resolves strictly against local artifact
 ## CLI
 
 ```sh
-harness init      # scaffold harness.yaml + src/configs/{common,<vendor>}/ + src/plugins/
-harness build     # compile src/ → dist/ per declared vendors
+harness init      # scaffold harness.yaml + src/<vendor>/configs/ + src/plugins/
+harness compile   # compile src/ → dist/ per declared vendors
 harness lint      # lint compiled markdown under dist/
 harness check     # validate plugin references against local + installed sources
 harness install   # link configs + register plugins per declared vendor (--mode=local|remote)
