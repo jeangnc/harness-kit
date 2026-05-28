@@ -189,7 +189,7 @@ A skill folder must contain exactly one of `SKILL.md` or `SKILL.ts`. Both forms 
 
 Three reference kinds — `skill`, `command`, `agent` — each resolve against the **local marketplace ∪ installed plugins** and render the scoped `<plugin>:<name>` handle. The author never picks a prefix based on where a target lives; a single kind covers both local and cross-plugin references.
 
-Resolution is two-tier: `harness compile` resolves strictly against local artifacts and **warns** (without failing) on a reference found in neither the local marketplace nor an installed plugin — so the compile stays green on a machine without those plugins installed. `harness check --mode=all` is the hard gate: the same unresolved reference fails the check. A malformed value (not `<plugin>:<name>` shape) is always a hard error. A local reference into another local plugin must declare that plugin as a dependency.
+Resolution is two-tier: `harness compile` resolves strictly against local artifacts and **warns** (without failing) on a reference found in neither the local marketplace nor an installed plugin — so the compile stays green on a machine without those plugins installed. `harness check --mode=all` is the hard gate: the same unresolved reference fails the check. A malformed value (not `<plugin>:<name>` shape) is always a hard error.
 
 | Placeholder | Renders to | Validation |
 | --- | --- | --- |

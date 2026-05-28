@@ -1,6 +1,6 @@
 import { join } from "node:path";
 
-import { compileTree, type ReferenceOwner, type WarningSink } from "./emit.js";
+import { compileTree, type WarningSink } from "./emit.js";
 import { throwInvariantViolations } from "./discovery.js";
 import { SOURCE_PLUGIN_MANIFEST_JSON, SOURCE_PLUGIN_MANIFEST_TS } from "../layout/conventions.js";
 import {
@@ -17,7 +17,7 @@ import {
   type InstalledIndex,
   type PluginSource,
 } from "../installed.js";
-import type { DependencyEntry, HookRequirement } from "../plugin/index.js";
+import type { HookRequirement } from "../plugin/index.js";
 import type { Vendor } from "../vendor/schema.js";
 
 export type { WarningSink } from "./emit.js";
@@ -111,17 +111,11 @@ async function emitPluginForVendor(
 ): Promise<void> {
   const pluginOutDir = vendor.pluginOutDir(options.outRoot, plugin.name);
   await vendor.emitPluginManifest({ manifest: plugin.manifest, pluginOutDir });
-  const owner: ReferenceOwner = {
-    kind: "plugin",
-    name: plugin.name,
-    dependencies: new Set((plugin.manifest.dependencies ?? []).map(dependencyName)),
-  };
   await compileTree({
     srcRoot: plugin.pluginDir,
     outRoot: pluginOutDir,
     localIds: options.localIds,
     installedIndex: options.installedIndex,
-    owner,
     skipRelPaths: options.skipRelPaths,
     ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   });
@@ -138,10 +132,6 @@ function checkHookRequires(adapter: LayoutAdapter, localIds: LocalIds): void {
       throwInvariantViolations(join(plugin.pluginDir, SOURCE_PLUGIN_MANIFEST_TS), errors);
     }
   }
-}
-
-function dependencyName(entry: DependencyEntry): string {
-  return typeof entry === "string" ? entry : entry.name;
 }
 
 function hookRequireViolation(req: HookRequirement, localIds: LocalIds): string | null {

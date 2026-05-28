@@ -7,13 +7,8 @@ import { REFERENCE_PREFIXES, type ReferencePrefix } from "../check/kinds.js";
 
 import { COMPANIONS_PREFIX, renderCompanions } from "./frontmatter.js";
 
-export type ReferenceOwner =
-  | { readonly kind: "plugin"; readonly name: string; readonly dependencies: ReadonlySet<string> }
-  | { readonly kind: "unrestricted"; readonly label: string };
-
 interface KindResolution {
-  readonly local: ReadonlySet<string>;
-  readonly installed: ReadonlySet<string>;
+  readonly haystack: ReadonlySet<string>;
   readonly render: (id: string) => string;
 }
 
@@ -23,7 +18,6 @@ export function buildRegistry(
   installedIndex: InstalledIndex,
   existingRefs: ReadonlySet<string>,
   skillDir: string,
-  owner: ReferenceOwner,
 ): ValidatorRegistry {
   const registry: Record<string, Validator> = {
     ref: (value) => {
@@ -41,11 +35,7 @@ export function buildRegistry(
     },
   };
   for (const prefix of REFERENCE_PREFIXES) {
-    registry[prefix] = referenceValidator(
-      prefix,
-      resolutionFor(prefix, localIds, installedIndex),
-      owner,
-    );
+    registry[prefix] = referenceValidator(prefix, resolutionFor(prefix, localIds, installedIndex));
   }
   return registry;
 }
@@ -59,29 +49,28 @@ function resolutionFor(
     case "skill":
       return {
         render: (id) => `\`${id}\``,
-        local: localIds.skills,
-        installed: new Set(installedIndex.skills.keys()),
+        haystack: union(localIds.skills, installedIndex.skills.keys()),
       };
     case "command":
       return {
         render: (id) => `\`/${id}\``,
-        local: localIds.commands,
-        installed: new Set(installedIndex.commands.keys()),
+        haystack: union(localIds.commands, installedIndex.commands.keys()),
       };
     case "agent":
       return {
         render: (id) => `\`${id}\``,
-        local: localIds.agents,
-        installed: new Set(installedIndex.agents.keys()),
+        haystack: union(localIds.agents, installedIndex.agents.keys()),
       };
   }
 }
 
-function referenceValidator(
-  prefix: ReferencePrefix,
-  kind: KindResolution,
-  owner: ReferenceOwner,
-): Validator {
+function union(local: ReadonlySet<string>, installed: Iterable<string>): ReadonlySet<string> {
+  const merged = new Set(local);
+  for (const id of installed) merged.add(id);
+  return merged;
+}
+
+function referenceValidator(prefix: ReferencePrefix, kind: KindResolution): Validator {
   return (value) => {
     if (value === null) {
       return { ok: false, error: `expected \`{{${prefix}:<plugin>:<${prefix}>}}\`` };
@@ -92,12 +81,7 @@ function referenceValidator(
         error: `${prefix} id "${value}" must match <plugin>:<${prefix}> (kebab-case)`,
       };
     }
-    if (kind.local.has(value)) {
-      const crossPlugin = crossPluginViolation(value, owner);
-      if (crossPlugin) return { ok: false, error: crossPlugin };
-      return { ok: true, rendered: kind.render(value) };
-    }
-    if (kind.installed.has(value)) {
+    if (kind.haystack.has(value)) {
       return { ok: true, rendered: kind.render(value) };
     }
     return {
@@ -108,14 +92,4 @@ function referenceValidator(
       ],
     };
   };
-}
-
-function crossPluginViolation(id: string, owner: ReferenceOwner): string | null {
-  if (owner.kind === "unrestricted") return null;
-  const idx = id.indexOf(":");
-  if (idx === -1) return null;
-  const otherPlugin = id.slice(0, idx);
-  if (otherPlugin === owner.name) return null;
-  if (owner.dependencies.has(otherPlugin)) return null;
-  return `cross-plugin reference to "${otherPlugin}" requires "${otherPlugin}" in ${owner.name}'s dependencies`;
 }

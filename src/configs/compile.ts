@@ -3,7 +3,7 @@ import { dirname, join, relative } from "node:path";
 
 import { throwInvariantViolations } from "../compile/discovery.js";
 import { precomputeExistingRefs } from "../compile/frontmatter.js";
-import { buildRegistry, type ReferenceOwner } from "../compile/validators.js";
+import { buildRegistry } from "../compile/validators.js";
 import type { WarningSink } from "../compile/index.js";
 import { pathExists } from "../fs.js";
 import type { InstalledIndex } from "../installed.js";
@@ -11,8 +11,6 @@ import type { LocalIds } from "../layout/index.js";
 import { substitute } from "../placeholders/index.js";
 import { expandIncludes, formatIncludeError } from "../skill/index.js";
 import type { Vendor } from "../vendor/schema.js";
-
-const CONFIGS_OWNER: ReferenceOwner = { kind: "unrestricted", label: "<configs>" };
 
 export interface CompileConfigsOptions {
   readonly srcRoot: string;
@@ -47,7 +45,6 @@ export async function compileConfigs(options: CompileConfigsOptions): Promise<vo
       configsOut: vendor.configsOutDir(options.outRoot),
       localIds,
       installedIndex,
-      owner: CONFIGS_OWNER,
       ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
     });
   }
@@ -58,7 +55,6 @@ interface CompileVendorOptions {
   readonly configsOut: string;
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
-  readonly owner: ReferenceOwner;
   readonly onWarnings?: WarningSink;
 }
 
@@ -94,7 +90,6 @@ async function emitSubstituted(
     opts.installedIndex,
     existingRefs,
     baseDir,
-    opts.owner,
   );
   const result = substitute(body, registry);
   if (!result.ok) {

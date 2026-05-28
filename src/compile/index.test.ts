@@ -59,10 +59,6 @@ function ensurePluginInMarketplace(srcRoot: string, pluginName: string): void {
     if (existing.plugins.some((p) => p.name === pluginName)) return;
     existing.plugins.push({ name: pluginName, source: `./plugins/${pluginName}` });
     writeFileSync(marketplacePath, JSON.stringify(existing, null, 2) + "\n");
-    for (const peer of existing.plugins) {
-      if (peer.name === pluginName) continue;
-      addDependency(srcRoot, peer.name, pluginName);
-    }
     return;
   }
   writeFileSync(
@@ -76,21 +72,6 @@ function ensurePluginInMarketplace(srcRoot: string, pluginName: string): void {
       null,
       2,
     ) + "\n",
-  );
-}
-
-function addDependency(srcRoot: string, plugin: string, dependency: string): void {
-  const pluginJsonPath = join(srcRoot, "plugins", plugin, ".claude-plugin/plugin.json");
-  if (!existsSync(pluginJsonPath)) return;
-  const manifest = JSON.parse(readFileSync(pluginJsonPath, "utf8")) as {
-    dependencies?: string[];
-  };
-  const deps = new Set(manifest.dependencies ?? []);
-  if (deps.has(dependency)) return;
-  deps.add(dependency);
-  writeFileSync(
-    pluginJsonPath,
-    JSON.stringify({ ...manifest, dependencies: [...deps] }, null, 2) + "\n",
   );
 }
 
@@ -1444,7 +1425,7 @@ export default definePlugin({
   );
 });
 
-test("compile accepts a cross-plugin {{skill:other:bar}} reference when `other` is in dependencies", async () => {
+test("compile accepts a cross-plugin {{skill:other:bar}} reference when `other` is declared as a dependency (declaration remains supported as manifest metadata)", async () => {
   await withPluginFixture(
     {
       pluginSource: `import { definePlugin } from "#harness-kit";
@@ -1476,7 +1457,7 @@ export default defineSkill({ name: "bar", description: "demo" });
   );
 });
 
-test("compile fails on a cross-plugin {{skill:other:bar}} when `other` is not in dependencies", async () => {
+test("compile permits a cross-plugin {{skill:other:tdd}} reference between sibling local plugins without any dependencies declared", async () => {
   await withPluginFixture(
     {
       pluginSource: `import { definePlugin } from "#harness-kit";
@@ -1497,15 +1478,21 @@ export default defineSkill({ name: "bar", description: "demo" });
         `import { definePlugin } from "#harness-kit";\nexport default definePlugin({ name: "other", version: "1.0.0", description: "demo" });\n`,
       );
       makeStubSkill(srcRoot, "other", "tdd");
-      await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
-        /cross-plugin.*other.*dependencies/i,
-      );
+      const warnings: string[] = [];
+      await compilePlugins({
+        srcRoot,
+        outRoot: distRoot,
+        vendors,
+        onWarnings: (_file, ws) => warnings.push(...ws),
+      });
+      const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
+      assert.match(out, /see `other:tdd`/);
+      assert.deepEqual(warnings, [], "a sibling local skill ref should not warn");
     },
   );
 });
 
-test("compile fails on a cross-plugin {{command:other:open}} when `other` is not in dependencies", async () => {
+test("compile permits a cross-plugin {{command:other:open}} reference between sibling local plugins without any dependencies declared", async () => {
   await withPluginFixture(
     {
       pluginSource: `import { definePlugin } from "#harness-kit";
@@ -1526,10 +1513,51 @@ export default defineSkill({ name: "bar", description: "demo" });
         `import { definePlugin } from "#harness-kit";\nexport default definePlugin({ name: "other", version: "1.0.0", description: "demo" });\n`,
       );
       makeStubCommand(srcRoot, "other", "open");
-      await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
-        /cross-plugin.*other.*dependencies/i,
+      const warnings: string[] = [];
+      await compilePlugins({
+        srcRoot,
+        outRoot: distRoot,
+        vendors,
+        onWarnings: (_file, ws) => warnings.push(...ws),
+      });
+      const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
+      assert.match(out, /run `\/other:open`/);
+      assert.deepEqual(warnings, [], "a sibling local command ref should not warn");
+    },
+  );
+});
+
+test("compile permits a cross-plugin {{agent:other:reviewer}} reference between sibling local plugins without any dependencies declared", async () => {
+  await withPluginFixture(
+    {
+      pluginSource: `import { definePlugin } from "#harness-kit";
+export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
+`,
+      extraFiles: {
+        "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
+export default defineSkill({ name: "bar", description: "demo" });
+`,
+        "skills/bar/body.md": "dispatch {{agent:other:reviewer}}\n",
+      },
+    },
+    async (srcRoot, distRoot) => {
+      const otherDir = join(srcRoot, "plugins/other");
+      mkdirSync(otherDir, { recursive: true });
+      writeFileSync(
+        join(otherDir, "PLUGIN.ts"),
+        `import { definePlugin } from "#harness-kit";\nexport default definePlugin({ name: "other", version: "1.0.0", description: "demo" });\n`,
       );
+      makeStubAgent(srcRoot, "other", "reviewer");
+      const warnings: string[] = [];
+      await compilePlugins({
+        srcRoot,
+        outRoot: distRoot,
+        vendors,
+        onWarnings: (_file, ws) => warnings.push(...ws),
+      });
+      const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
+      assert.match(out, /dispatch `other:reviewer`/);
+      assert.deepEqual(warnings, [], "a sibling local agent ref should not warn");
     },
   );
 });
@@ -1636,7 +1664,7 @@ test("compile preserves upstream passthrough keys in emitted plugin.json", async
   );
 });
 
-test("compile accepts object-form dependencies and enforces cross-plugin invariant by name", async () => {
+test("compile accepts object-form dependencies on sibling cross-plugin references", async () => {
   const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_"));
   const srcRoot = join(sandbox, "src");
   const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));

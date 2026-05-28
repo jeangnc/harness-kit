@@ -17,7 +17,7 @@ import {
   precomputeExistingRefs,
   renderFrontmatter,
 } from "./frontmatter.js";
-import { buildRegistry, type ReferenceOwner } from "./validators.js";
+import { buildRegistry } from "./validators.js";
 import type { LocalIds } from "../layout/index.js";
 import type { InstalledIndex } from "../installed.js";
 
@@ -26,7 +26,6 @@ const SKILL_SOURCE_FILENAMES: ReadonlySet<string> = new Set(["SKILL.ts", "SKILL.
 const PASSTHROUGH_DOTFILES: ReadonlySet<string> = new Set([".mcp.json"]);
 
 export type { LocalIds } from "../layout/index.js";
-export type { ReferenceOwner } from "./validators.js";
 
 export type WarningSink = (filePath: string, warnings: readonly string[]) => void;
 
@@ -35,7 +34,6 @@ export interface CompileTreeOptions {
   readonly outRoot: string;
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
-  readonly owner: ReferenceOwner;
   readonly skipRelPaths?: ReadonlySet<string>;
   readonly onWarnings?: WarningSink;
 }
@@ -43,7 +41,6 @@ export interface CompileTreeOptions {
 interface CompileContext {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
-  readonly owner: ReferenceOwner;
   readonly onWarnings?: WarningSink;
 }
 
@@ -52,7 +49,6 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
   const ctx: CompileContext = {
     localIds: options.localIds,
     installedIndex: options.installedIndex,
-    owner: options.owner,
     ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   };
   const skipRelPaths = options.skipRelPaths ?? new Set<string>();
@@ -160,7 +156,6 @@ async function emitSkill(
     ctx.installedIndex,
     existingRefs,
     skillDir,
-    ctx.owner,
   );
   const result = substitute(expandedBody, registry);
   if (!result.ok) {
@@ -208,7 +203,6 @@ async function emitSubstitutedFile(
     ctx.installedIndex,
     existingRefs,
     baseDir,
-    ctx.owner,
   );
   const result = substitute(body, registry);
   if (!result.ok) {
