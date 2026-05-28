@@ -1,6 +1,6 @@
 {
   "name": "@jean.gnc/harness-kit",
-  "version": "0.11.2",
+  "version": "0.12.0",
   "type": "module",
   "description": "Build your own multi-agent harness: typed toolkit for authoring plugins (skills, agents, commands, hooks) and shipping them to Claude Code and Codex from a single source tree.",
   "license": "MIT",

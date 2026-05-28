@@ -5,8 +5,13 @@ import { fileURLToPath } from "node:url";
 import { defineCommand, runMain } from "citty";
 import { z } from "zod";
 
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
 import { compile } from "./compile.js";
 import { CHECK_MODES, check, type CheckMode, type ReferenceViolation } from "./check/index.js";
+import { formatConsole, runEval, toJson } from "./eval/index.js";
+import { TIERS, type Tier } from "./eval/schema.js";
 import { initHarness } from "./init/index.js";
 import { install, uninstall } from "./install/index.js";
 import { parseInstallMode } from "./install/mode.js";
@@ -179,6 +184,68 @@ const lintCmd = defineCommand({
   },
 });
 
+function parseTier(value: string): Tier {
+  if ((TIERS as readonly string[]).includes(value)) return value as Tier;
+  throw new Error(`Unknown tier "${value}". Valid: ${TIERS.join(", ")}`);
+}
+
+function parsePositiveInt(value: string, flag: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new Error(`--${flag} must be a positive integer, got "${value}"`);
+  }
+  return parsed;
+}
+
+const evalCmd = defineCommand({
+  meta: {
+    name: "eval",
+    description: "Run skill-routing evals against the installed harness",
+  },
+  args: {
+    cases: {
+      type: "string",
+      default: "./evals/cases",
+      description: "directory of eval case files",
+    },
+    cwd: { type: "string", default: ".", description: "working directory for claude -p sessions" },
+    suite: { type: "string", description: "only run cases from this suite" },
+    case: { type: "string", description: "only run the case with this id" },
+    tier: { type: "string", description: `only run this tier: ${TIERS.join(" | ")}` },
+    runs: { type: "string", description: "runs per case (overrides per-case default)" },
+    concurrency: { type: "string", default: "4", description: "max concurrent sessions" },
+    model: {
+      type: "string",
+      description: "model for claude -p (default: user's configured model)",
+    },
+    json: { type: "string", description: "write machine-readable results to this path" },
+  },
+  run: async ({ args }) => {
+    const result = await runEval({
+      casesDir: args.cases,
+      cwd: args.cwd,
+      concurrency: parsePositiveInt(args.concurrency, "concurrency"),
+      ...(args.suite !== undefined && { suite: args.suite }),
+      ...(args.case !== undefined && { caseId: args.case }),
+      ...(args.tier !== undefined && { tier: parseTier(args.tier) }),
+      ...(args.runs !== undefined && { runs: parsePositiveInt(args.runs, "runs") }),
+      ...(args.model !== undefined && { model: args.model }),
+    });
+
+    if (!result.ok) {
+      for (const e of result.error) console.error(`${e.file}: ${e.message}`);
+      process.exit(1);
+    }
+
+    console.log(formatConsole(result.value));
+    if (args.json) {
+      await mkdir(dirname(args.json), { recursive: true });
+      await writeFile(args.json, toJson(result.value) + "\n");
+    }
+    if (result.value.failed > 0) process.exit(1);
+  },
+});
+
 const main = defineCommand({
   meta: {
     name: "harness",
@@ -189,6 +256,7 @@ const main = defineCommand({
   subCommands: {
     check: checkCmd,
     compile: compileCmd,
+    eval: evalCmd,
     init: initCmd,
     install: installCmd,
     lint: lintCmd,

@@ -75,6 +75,17 @@ export type {
   SourceSummary,
 } from "./check/index.js";
 
+export { runEval, formatConsole, toJson } from "./eval/index.js";
+export type {
+  EvalOptions,
+  EvalReport,
+  CaseReport,
+  LoadedCase,
+  CaseLoadError,
+} from "./eval/index.js";
+export { CaseFileSchema, TIERS } from "./eval/schema.js";
+export type { CaseFile, EvalCase, Expectation, Tier } from "./eval/schema.js";
+
 export { defaultSources, discoverInstalled, indexInstalled } from "./installed.js";
 export type {
   InstalledAgent,
