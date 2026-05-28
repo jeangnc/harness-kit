@@ -23,6 +23,8 @@ import type { InstalledIndex } from "../installed.js";
 
 const SKILL_SOURCE_FILENAMES: ReadonlySet<string> = new Set(["SKILL.ts", "SKILL.md"]);
 
+const PASSTHROUGH_DOTFILES: ReadonlySet<string> = new Set([".mcp.json"]);
+
 export type { LocalIds } from "../layout/index.js";
 export type { ReferenceOwner } from "./validators.js";
 
@@ -224,7 +226,7 @@ function reportWarnings(ctx: CompileContext, filePath: string, warnings: readonl
 async function* walk(dir: string): AsyncGenerator<string> {
   const entries = await readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
+    if (entry.name.startsWith(".") && !PASSTHROUGH_DOTFILES.has(entry.name)) continue;
     const full = join(dir, entry.name);
     if (entry.isDirectory()) yield* walk(full);
     else if (entry.isFile()) yield full;

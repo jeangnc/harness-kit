@@ -106,6 +106,43 @@ test("compilePlugins mirrors skills inside each vendor subtree", async () => {
   });
 });
 
+test("compilePlugins copies plugin-root .mcp.json verbatim into each vendor subtree", async () => {
+  await withSandbox(async (root) => {
+    const srcRoot = join(root, "src");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(srcRoot, "zeta");
+    const mcpConfig = {
+      mcpServers: {
+        Example: { type: "stdio", command: "node", args: ["server.js"] },
+      },
+    };
+    writeFileSync(join(srcRoot, "plugins/zeta/.mcp.json"), JSON.stringify(mcpConfig, null, 2));
+
+    await compilePlugins({ srcRoot, outRoot, vendors: [claudeVendor, codexVendor] });
+
+    for (const vendorDir of ["claude", "codex"]) {
+      const emittedPath = join(outRoot, vendorDir, "plugins/zeta/.mcp.json");
+      assert.equal(existsSync(emittedPath), true, `${vendorDir}: .mcp.json missing`);
+      assert.deepEqual(JSON.parse(readFileSync(emittedPath, "utf8")), mcpConfig);
+    }
+  });
+});
+
+test("compilePlugins skips other plugin-root dotfiles (.DS_Store, editor noise)", async () => {
+  await withSandbox(async (root) => {
+    const srcRoot = join(root, "src");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(srcRoot, "eta");
+    writeFileSync(join(srcRoot, "plugins/eta/.DS_Store"), "noise");
+    writeFileSync(join(srcRoot, "plugins/eta/.env.local"), "SECRET=1");
+
+    await compilePlugins({ srcRoot, outRoot, vendors: [claudeVendor] });
+
+    assert.equal(existsSync(join(outRoot, "claude/plugins/eta/.DS_Store")), false);
+    assert.equal(existsSync(join(outRoot, "claude/plugins/eta/.env.local")), false);
+  });
+});
+
 const plainMdPlaceholderCases = [
   { placeholder: "include", directive: "{{include:./sibling.md}}", resolved: /shared body/ },
   { placeholder: "ref", directive: "{{ref:./sibling.md}}", resolved: /sibling\.md/ },
