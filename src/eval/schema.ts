@@ -55,11 +55,8 @@ export type CaseFile = z.infer<typeof CaseFileSchema>;
 
 export function expectedSkills(expectation: Expectation): readonly string[] {
   if ("noSkill" in expectation) return [];
-  const positive =
-    "first" in expectation
-      ? [expectation.first]
-      : "anyOf" in expectation
-        ? expectation.anyOf
-        : expectation.path;
-  return [...positive, ...(expectation.not ?? [])];
+  const forbidden = expectation.not ?? [];
+  if ("first" in expectation) return [expectation.first, ...forbidden];
+  if ("anyOf" in expectation) return [...expectation.anyOf, ...forbidden];
+  return [...expectation.path, ...forbidden];
 }

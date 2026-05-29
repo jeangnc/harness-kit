@@ -14,16 +14,23 @@ interface Detector {
   readonly result: (reason: ExitReason) => DetectionResult;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function isSkillToolUse(block: Record<string, unknown>): boolean {
+  return block["type"] === "tool_use" && block["name"] === "Skill";
+}
+
 function skillIdOf(input: unknown): string | null {
-  if (typeof input !== "object" || input === null) return null;
-  const record = input as Record<string, unknown>;
+  const record = asRecord(input);
   const value = record["skill"] ?? record["command"];
   return typeof value === "string" && FQ_ID.test(value) ? value : null;
 }
 
-function parseSkillInput(buffer: string): unknown {
+function skillIdInJson(buffer: string): string | null {
   try {
-    return JSON.parse(buffer);
+    return skillIdOf(JSON.parse(buffer));
   } catch {
     return null;
   }
@@ -42,7 +49,7 @@ export function createDetector(stopAfter = 1): Detector {
 
   function flushPending(): void {
     if (pendingSkillJson === null) return;
-    record(skillIdOf(parseSkillInput(pendingSkillJson)));
+    record(skillIdInJson(pendingSkillJson));
     pendingSkillJson = null;
   }
 
@@ -54,30 +61,27 @@ export function createDetector(stopAfter = 1): Detector {
       if (finished) return;
       const trimmed = line.trim();
       if (!trimmed) return;
-      let event: Record<string, unknown>;
+      let parsed: unknown;
       try {
-        event = JSON.parse(trimmed) as Record<string, unknown>;
+        parsed = JSON.parse(trimmed);
       } catch {
         return;
       }
-
+      const event = asRecord(parsed);
       const type = event["type"];
 
       if (type === "stream_event") {
-        const se = (event["event"] ?? {}) as Record<string, unknown>;
+        const se = asRecord(event["event"]);
         const seType = se["type"];
 
         if (seType === "content_block_start") {
-          const block = (se["content_block"] ?? {}) as Record<string, unknown>;
-          if (block["type"] === "tool_use" && block["name"] === "Skill") {
-            pendingSkillJson = "";
-          }
+          if (isSkillToolUse(asRecord(se["content_block"]))) pendingSkillJson = "";
         } else if (seType === "content_block_delta" && pendingSkillJson !== null) {
-          const delta = (se["delta"] ?? {}) as Record<string, unknown>;
+          const delta = asRecord(se["delta"]);
           if (delta["type"] === "input_json_delta") {
             const partial = delta["partial_json"];
             if (typeof partial === "string") pendingSkillJson += partial;
-            if (skillIdOf(parseSkillInput(pendingSkillJson)) !== null) flushPending();
+            if (skillIdInJson(pendingSkillJson) !== null) flushPending();
           }
         } else if (seType === "content_block_stop") {
           flushPending();
@@ -89,13 +93,10 @@ export function createDetector(stopAfter = 1): Detector {
       }
 
       if (type === "assistant") {
-        const message = (event["message"] ?? {}) as Record<string, unknown>;
-        const content = (message["content"] ?? []) as unknown[];
-        for (const item of content) {
-          const block = item as Record<string, unknown>;
-          if (block["type"] === "tool_use" && block["name"] === "Skill") {
-            if (record(skillIdOf(block["input"]))) return;
-          }
+        const content = asRecord(event["message"])["content"];
+        for (const item of Array.isArray(content) ? content : []) {
+          const block = asRecord(item);
+          if (isSkillToolUse(block) && record(skillIdOf(block["input"]))) return;
         }
         return;
       }

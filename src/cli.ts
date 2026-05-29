@@ -213,7 +213,11 @@ const evalCmd = defineCommand({
     case: { type: "string", description: "only run the case with this id" },
     tier: { type: "string", description: `only run this tier: ${TIERS.join(" | ")}` },
     runs: { type: "string", description: "runs per case (overrides per-case default)" },
-    concurrency: { type: "string", default: "4", description: "max concurrent sessions" },
+    concurrency: {
+      type: "string",
+      default: "1",
+      description: "max concurrent sessions (parallel sessions interfere with routing; default 1)",
+    },
     model: {
       type: "string",
       description: "model for claude -p (default: user's configured model)",

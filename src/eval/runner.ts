@@ -6,7 +6,7 @@ import { createDetector, type DetectionResult } from "./detect.js";
 import type { LoadedCase } from "./cases.js";
 
 const DEFAULT_RUNS = 5;
-const DEFAULT_CONCURRENCY = 4;
+const DEFAULT_CONCURRENCY = 1;
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 export interface RunnerOptions {
