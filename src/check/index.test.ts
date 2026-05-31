@@ -571,6 +571,37 @@ test("check, in installed mode (default), reports an unresolved {{skill:}} not i
   });
 });
 
+test("check warns about a slash reference to a known command written outside a placeholder", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [{ plugin: "foo", skill: "bar", body: "run /foo:ship directly\n" }],
+      commands: [{ plugin: "foo", command: "ship", body: "x\n" }],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      assert.deepEqual([...result.violations], []);
+      assert.equal(result.warnings.length, 1);
+      assert.equal(result.warnings[0]!.id, "foo:ship");
+      assert.equal(result.warnings[0]!.prefix, "command");
+    },
+  );
+});
+
+test("check does not warn when a known skill is referenced through a placeholder", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        { plugin: "foo", skill: "bar", body: "see {{skill:foo:baz}}\n" },
+        { plugin: "foo", skill: "baz", body: "x\n" },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      assert.deepEqual([...result.warnings], []);
+    },
+  );
+});
+
 test("check, in all mode, validates skill refs against the union of local and installed", async () => {
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withLocalSrcFixture(

@@ -50,6 +50,8 @@ Validates `{{skill:...}}`, `{{command:...}}`, and `{{agent:...}}` references.
   - `all` — resolves against the union; the hard gate that fails on any unresolved reference.
 - `--silent`.
 
+A malformed or unresolved reference is a violation and exits non-zero. Separately, `check` emits **warnings** (never affecting the exit code) when a body names a known artifact directly instead of through a placeholder — a command's rendered `/<plugin>:<name>`, an agent's `@<plugin>:<name>`, or a bare `<plugin>:<name>` for any kind. These raw references bypass the placeholder pipeline, so they go untracked and unrewritten when an id changes; the warning names the `{{…}}` form to use instead. A raw reference warns only when its id matches an artifact in the resolved scope, so ordinary prose is never flagged.
+
 ## `harness install`
 
 Links config files into each vendor's home and registers compiled plugins through the vendor's own CLI.

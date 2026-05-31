@@ -20,7 +20,13 @@ import {
   type PluginSource,
 } from "../installed.js";
 
-import { unifiedKindConfigs, type HaystackScope, type KindConfig } from "./kinds.js";
+import { detectBypasses, type BypassHaystacks } from "./bypass.js";
+import {
+  unifiedKindConfigs,
+  type HaystackScope,
+  type KindConfig,
+  type ReferencePrefix,
+} from "./kinds.js";
 import { closestMatch } from "./suggest.js";
 
 const EMPTY_LOCAL_IDS: LocalIds = {
@@ -60,8 +66,18 @@ export interface SourceSummary {
   readonly skillCount: number;
 }
 
+export interface BypassWarning {
+  readonly prefix: ReferencePrefix;
+  readonly id: string;
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  readonly message: string;
+}
+
 export interface CheckResult {
   readonly violations: readonly ReferenceViolation[];
+  readonly warnings: readonly BypassWarning[];
   readonly checkedFiles: number;
   readonly indexedSources: readonly SourceSummary[];
 }
@@ -98,6 +114,7 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
   }
 
   const kinds = unifiedKindConfigs(localIds, installedIndex, mode satisfies HaystackScope);
+  const haystacks = bypassHaystacks(kinds);
 
   const sources = await collectBodySources({
     srcRoot: options.srcRoot,
@@ -105,13 +122,41 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
     adapter: localAdapter,
   });
   const violations: ReferenceViolation[] = [];
+  const warnings: BypassWarning[] = [];
   for (const source of sources) {
     for (const violation of validateBody(source, kinds)) {
       violations.push(violation);
     }
+    for (const warning of findBypasses(source, haystacks)) {
+      warnings.push(warning);
+    }
   }
 
-  return { violations, checkedFiles: sources.length, indexedSources };
+  return { violations, warnings, checkedFiles: sources.length, indexedSources };
+}
+
+function bypassHaystacks(kinds: ReadonlyMap<string, KindConfig>): BypassHaystacks {
+  const haystackOf = (prefix: ReferencePrefix): ReadonlySet<string> =>
+    kinds.get(prefix)?.haystack ?? new Set<string>();
+  return {
+    skill: haystackOf("skill"),
+    command: haystackOf("command"),
+    agent: haystackOf("agent"),
+  };
+}
+
+function findBypasses(source: BodySource, haystacks: BypassHaystacks): readonly BypassWarning[] {
+  return detectBypasses(source.body, haystacks).map((bypass) => {
+    const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + bypass.offset);
+    return {
+      prefix: bypass.prefix,
+      id: bypass.id,
+      file: source.filePath,
+      line,
+      column,
+      message: `\`${bypass.id}\` ${bypass.prefix} referenced directly — use \`{{${bypass.prefix}:${bypass.id}}}\` so harness-kit can track it`,
+    };
+  });
 }
 
 interface CollectOptions {

@@ -9,7 +9,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { compile } from "./compile.js";
-import { CHECK_MODES, check, type CheckMode, type ReferenceViolation } from "./check/index.js";
+import {
+  CHECK_MODES,
+  check,
+  type BypassWarning,
+  type CheckMode,
+  type ReferenceViolation,
+} from "./check/index.js";
 import { formatConsole, runEval, toJson } from "./eval/index.js";
 import { TIERS, type Tier } from "./eval/schema.js";
 import { initHarness } from "./init/index.js";
@@ -150,8 +156,16 @@ const checkCmd = defineCommand({
         `indexed ${total} skills across ${result.indexedSources.length} sources (${breakdown})`,
       );
       console.log(`checked ${result.checkedFiles} source files`);
-      if (result.violations.length > 0) console.log("");
+      if (result.warnings.length > 0) console.log("");
     }
+    for (const w of result.warnings) {
+      console.log(formatWarning(w));
+    }
+    if (!args.silent && result.warnings.length > 0) {
+      console.log("");
+      console.log(`${result.warnings.length} warnings`);
+    }
+    if (!args.silent && result.violations.length > 0) console.log("");
     for (const v of result.violations) {
       console.log(formatViolation(v));
     }
@@ -167,6 +181,10 @@ const checkCmd = defineCommand({
 
 function formatViolation(v: ReferenceViolation): string {
   return `${v.file}:${v.line}:${v.column}  \`${v.token}\` — ${v.message}`;
+}
+
+function formatWarning(w: BypassWarning): string {
+  return `${w.file}:${w.line}:${w.column}  warning: ${w.message}`;
 }
 
 const lintCmd = defineCommand({

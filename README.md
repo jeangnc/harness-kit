@@ -191,6 +191,8 @@ Three reference kinds — `skill`, `command`, `agent` — each resolve against t
 
 Resolution is two-tier: `harness compile` resolves strictly against local artifacts and **warns** (without failing) on a reference found in neither the local marketplace nor an installed plugin — so the compile stays green on a machine without those plugins installed. `harness check --mode=all` is the hard gate: the same unresolved reference fails the check. A malformed value (not `<plugin>:<name>` shape) is always a hard error.
 
+Writing a reference raw — as the rendered `<plugin>:<name>` handle — instead of through its placeholder bypasses all of this; `harness check` warns (without failing) when it spots one. See [docs/cli.md](./docs/cli.md#harness-check).
+
 | Placeholder | Renders to | Validation |
 | --- | --- | --- |
 | `{{skill:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |

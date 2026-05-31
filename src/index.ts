@@ -68,6 +68,7 @@ export type {
 
 export { check } from "./check/index.js";
 export type {
+  BypassWarning,
   CheckOptions,
   CheckResult,
   ReferenceViolation,
