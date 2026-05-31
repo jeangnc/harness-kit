@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { pathExists } from "../fs.js";
 import { FQ_ID } from "../ids.js";
 import { offsetToLineCol, parsePlaceholders } from "../placeholders/index.js";
-import { findSkillFile, formatLoadSkillError, loadSkill } from "../skill/index.js";
+import {
+  checkCompanionFiles,
+  findSkillFile,
+  formatLoadSkillError,
+  loadSkill,
+} from "../skill/index.js";
 import {
   collectLocalIds,
   loadLayout,
@@ -177,13 +182,9 @@ async function collectBodySources(opts: CollectOptions): Promise<readonly BodySo
 
   if (opts.mode === "installed" || opts.mode === "all") {
     for await (const skillDir of findSkillDirs(opts.srcRoot)) {
-      const loaded = await loadSkill(skillDir);
-      if (!loaded.ok) {
-        throw new Error(
-          `failed to load skill at ${skillDir}:\n  - ${formatLoadSkillError(loaded.error).join("\n  - ")}`,
-        );
+      for (const file of await loadSkillBodies(skillDir)) {
+        await push(file.filePath, file.body, file.bodyOffset);
       }
-      await push(loaded.value.bodyFilePath, loaded.value.body, loaded.value.bodyOffset);
     }
   }
 
@@ -212,17 +213,7 @@ async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly Plu
       const skillDir = join(plugin.skillsDir, entry.name);
       const found = await findSkillFile(skillDir);
       if (!found.ok || !found.value) continue;
-      const loaded = await loadSkill(skillDir);
-      if (!loaded.ok) {
-        throw new Error(
-          `failed to load skill at ${skillDir}:\n  - ${formatLoadSkillError(loaded.error).join("\n  - ")}`,
-        );
-      }
-      out.push({
-        filePath: loaded.value.bodyFilePath,
-        body: loaded.value.body,
-        bodyOffset: loaded.value.bodyOffset,
-      });
+      out.push(...(await loadSkillBodies(skillDir)));
     }
   }
   for (const dir of [plugin.commandsDir, plugin.agentsDir]) {
@@ -235,6 +226,33 @@ async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly Plu
     }
   }
   return out;
+}
+
+async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]> {
+  const loaded = await loadSkill(skillDir);
+  if (!loaded.ok) {
+    throw new Error(
+      `failed to load skill at ${skillDir}:\n  - ${formatLoadSkillError(loaded.error).join("\n  - ")}`,
+    );
+  }
+  const { skill, body, bodyFilePath, bodyOffset, skillDir: dir } = loaded.value;
+  const primary: PluginBody = { filePath: bodyFilePath, body, bodyOffset };
+  const declared = skill.companions ?? [];
+  const present = await Promise.all(declared.map(async (c) => pathExists(join(dir, c.file))));
+  const missing = checkCompanionFiles(
+    declared,
+    declared.filter((_, i) => present[i]).map((c) => c.file),
+  );
+  if (missing.length > 0) {
+    throw new Error(`failed to load skill at ${dir}:\n  - ${missing.join("\n  - ")}`);
+  }
+  const companions = await Promise.all(
+    declared.map(async (companion): Promise<PluginBody> => {
+      const filePath = join(dir, companion.file);
+      return { filePath, body: await readFile(filePath, "utf8"), bodyOffset: 0 };
+    }),
+  );
+  return [primary, ...companions];
 }
 
 function validateBody(

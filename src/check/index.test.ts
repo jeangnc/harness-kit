@@ -33,10 +33,16 @@ async function withSrcFixture<T>(
   return fn(srcRoot).finally(() => rmSync(sandbox, { recursive: true, force: true }));
 }
 
+interface LocalCompanionFile {
+  readonly file: string;
+  readonly body: string;
+}
+
 interface LocalSkillFile {
   readonly plugin: string;
   readonly skill: string;
   readonly body: string;
+  readonly companions?: readonly LocalCompanionFile[];
 }
 
 interface LocalCommandFile {
@@ -85,10 +91,17 @@ async function withLocalSrcFixture<T>(
   for (const file of fixture.skills ?? []) {
     const skillDir = join(srcRoot, "plugins", file.plugin, "skills", file.skill);
     mkdirSync(skillDir, { recursive: true });
-    writeFileSync(
-      join(skillDir, "SKILL.md"),
-      `---\nname: ${file.skill}\ndescription: x\n---\n\n${file.body}`,
-    );
+    const companions = file.companions ?? [];
+    const lines = ["---", `name: ${file.skill}`, "description: x"];
+    if (companions.length > 0) {
+      lines.push("companions:");
+      for (const c of companions) lines.push(`  - file: ${c.file}`, `    summary: ${c.file}`);
+    }
+    lines.push("---", "", "");
+    writeFileSync(join(skillDir, "SKILL.md"), `${lines.join("\n")}${file.body}`);
+    for (const companion of companions) {
+      writeFileSync(join(skillDir, companion.file), companion.body);
+    }
   }
   for (const file of fixture.commands ?? []) {
     const dir = join(srcRoot, "plugins", file.plugin, "commands");
@@ -600,6 +613,71 @@ test("check does not warn when a known skill is referenced through a placeholder
       assert.deepEqual([...result.warnings], []);
     },
   );
+});
+
+test("check validates placeholder references inside a declared companion file", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "x\n",
+          companions: [{ file: "details.md", body: "see {{skill:foo:ghost}}\n" }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      assert.equal(result.violations.length, 1);
+      assert.equal(result.violations[0]!.kind, "unresolved");
+      assert.match(result.violations[0]!.file, /details\.md$/);
+    },
+  );
+});
+
+test("check warns about a bypass reference inside a declared companion file", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "x\n",
+          companions: [{ file: "details.md", body: "ask @foo:bar directly\n" }],
+        },
+      ],
+      agents: [{ plugin: "foo", agent: "bar", body: "y\n" }],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      assert.equal(result.warnings.length, 1);
+      assert.equal(result.warnings[0]!.id, "foo:bar");
+      assert.equal(result.warnings[0]!.prefix, "agent");
+      assert.match(result.warnings[0]!.file, /details\.md$/);
+    },
+  );
+});
+
+test("check fails with a clear error when a declared companion file is missing on disk", async () => {
+  const sandbox = mkdtempSync(join(repoRoot, ".test-tmp-check-missing-"));
+  const srcRoot = join(sandbox, "src");
+  const skillDir = join(srcRoot, "plugins/foo/skills/bar");
+  mkdirSync(skillDir, { recursive: true });
+  writeFileSync(
+    join(skillDir, "SKILL.md"),
+    "---\nname: bar\ndescription: x\ncompanions:\n  - file: gone.md\n    summary: gone\n---\n\nbody\n",
+  );
+  try {
+    await withInstalledFixture([], async (sources) => {
+      await assert.rejects(
+        check({ srcRoot, sources }),
+        /companion "gone\.md" declared but not present/,
+      );
+    });
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
 });
 
 test("check, in all mode, validates skill refs against the union of local and installed", async () => {
