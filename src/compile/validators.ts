@@ -6,6 +6,7 @@ import type { LocalIds } from "../layout/index.js";
 import { REFERENCE_PREFIXES, type ReferencePrefix } from "../check/kinds.js";
 
 import { COMPANIONS_PREFIX, renderCompanions } from "./frontmatter.js";
+import { unemittedSegment } from "./emit-paths.js";
 
 interface KindResolution {
   readonly haystack: ReadonlySet<string>;
@@ -22,6 +23,13 @@ export function buildRegistry(
   const registry: Record<string, Validator> = {
     ref: (value) => {
       if (value === null) return { ok: false, error: "expected `{{ref:<relative-path>}}`" };
+      const unemitted = unemittedSegment(value);
+      if (unemitted !== undefined) {
+        return {
+          ok: false,
+          error: `ref "${value}" targets "${unemitted}" which the compiler will not emit to dist — a {{ref:}} renders a runtime path/link, so its target must ship; use {{include:}} to inline build-time-only files instead`,
+        };
+      }
       if (!existingRefs.has(value)) {
         return { ok: false, error: `ref "${value}" not found relative to skill at ${skillDir}` };
       }

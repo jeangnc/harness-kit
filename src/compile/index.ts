@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
 import { compileTree, type WarningSink } from "./emit.js";
+import { checkHookRootReads } from "./hooks.js";
 import { throwInvariantViolations } from "./discovery.js";
 import { SOURCE_PLUGIN_MANIFEST_JSON, SOURCE_PLUGIN_MANIFEST_TS } from "../layout/conventions.js";
 import {
@@ -45,6 +46,7 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
     options.installedIndex ??
     (await loadInstalledIndex(options.sources ?? defaultSources(vendors)));
   checkHookRequires(adapter, localIds);
+  await checkHookRootReads(adapter);
 
   const skipRelPaths: ReadonlySet<string> = new Set(vendors.map((v) => v.pluginManifestPath));
   for (const vendor of vendors) {
