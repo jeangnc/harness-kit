@@ -73,7 +73,7 @@ interface VendorEmitContext {
 - **Home**: `~/.claude`
 - **Manifest path**: `.claude-plugin/plugin.json`
 - **Aliases**: a linked `AGENTS.md` also gets a `CLAUDE.md` symlink in the vendor home (one-way).
-- **Install**: for each discovered plugin, `claude plugin uninstall <name>@<marketplace>` (ignore-failure), remove `~/.claude/plugins/cache/<marketplace>/<name>`, then `claude plugin install <name>@<marketplace>`. The clean-reinstall cycle avoids stale-cache surprises.
+- **Install**: for each discovered plugin, `claude plugin uninstall <name>@<marketplace>` (ignore-failure), remove `~/.claude/plugins/cache/<marketplace>/<name>`, then `claude plugin install <name>@<marketplace>` — unless the plugin is set to `false` in the compiled `settings.json` `enabledPlugins`, in which case the marketplace is still refreshed but the install is skipped. The clean-reinstall cycle avoids stale-cache surprises.
 - **Uninstall**: `claude plugin uninstall <name>@<marketplace>` per plugin, then `claude plugin marketplace remove <marketplace>`.
 
 ### `codex`

@@ -64,6 +64,8 @@ Links config files into each vendor's home and registers compiled plugins throug
 
 Vendor scope comes from `harness.yaml`. Existing symlinks at a destination are replaced; existing regular files are renamed to `<dest>.backup` (incrementing to `.backup.2`, `.backup.3`, …) before the symlink is created. Orphan symlinks pointing back into the repo are swept before applying.
 
+A plugin set to `false` in the claude vendor's compiled `settings.json` `enabledPlugins` (keyed `<name>@<marketplace>`) is built and its marketplace refreshed, but not passed to `claude plugin install`. Absent from `enabledPlugins` means enabled. `--dry-run` marks skipped plugins.
+
 ## `harness uninstall`
 
 Same flags as `install`. Reverses each vendor's `install` hook.

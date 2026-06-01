@@ -16,6 +16,11 @@ export interface DiscoveredVendorPlugin {
   readonly version: string;
 }
 
+export interface PluginPartition {
+  readonly enabled: readonly DiscoveredVendorPlugin[];
+  readonly disabled: readonly DiscoveredVendorPlugin[];
+}
+
 export interface VendorInstallContext {
   readonly distRoot: string;
   readonly marketplace: string;
@@ -48,4 +53,5 @@ export interface Vendor {
   readonly emitMarketplaceManifest: (ctx: VendorMarketplaceEmitContext) => Promise<void>;
   readonly install: (ctx: VendorInstallContext) => Promise<void>;
   readonly uninstall: (ctx: VendorInstallContext) => Promise<void>;
+  readonly partitionPlugins?: (ctx: VendorInstallContext) => PluginPartition;
 }

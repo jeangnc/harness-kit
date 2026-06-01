@@ -61,6 +61,7 @@ export { resolveVendors } from "./vendor/registry.js";
 export type {
   DiscoveredVendorPlugin,
   LinkedFile,
+  PluginPartition,
   Vendor,
   VendorEmitContext,
   VendorInstallContext,
