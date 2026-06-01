@@ -141,10 +141,7 @@ async function runDryRun(ctx: ResolvedContext): Promise<void> {
       ctx.log(`[dry-run] ${vendor.name}: no plugins`);
       continue;
     }
-    const { enabled, disabled } = vendor.partitionPlugins?.(buildVendorContext(ctx, plugins)) ?? {
-      enabled: plugins,
-      disabled: [],
-    };
+    const { enabled, disabled } = vendor.partitionPlugins(buildVendorContext(ctx, plugins));
     ctx.log(`[dry-run] ${vendor.name}: would install ${enabled.length} plugin(s):`);
     for (const p of enabled) ctx.log(`  ${p.name}@${p.version}`);
     for (const p of disabled) ctx.log(`  ${p.name}@${p.version} (skipped — disabled in settings)`);

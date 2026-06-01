@@ -3,7 +3,16 @@ import { dirname, join } from "node:path";
 
 import type { Marketplace, PluginEntry, PluginSource } from "../marketplace/index.js";
 import type { Plugin } from "../plugin/index.js";
-import type { VendorEmitContext, VendorMarketplaceEmitContext } from "../vendor/schema.js";
+import type {
+  PluginPartition,
+  VendorEmitContext,
+  VendorInstallContext,
+  VendorMarketplaceEmitContext,
+} from "../vendor/schema.js";
+
+export function defaultPartition(ctx: VendorInstallContext): PluginPartition {
+  return { enabled: ctx.plugins, disabled: [] };
+}
 
 type VendorPluginManifest = Omit<Plugin, "hookRequires">;
 

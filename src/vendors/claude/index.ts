@@ -19,13 +19,18 @@ const VENDOR_DIR = "claude";
 const PLUGIN_MANIFEST_REL = ".claude-plugin/plugin.json";
 const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.claude-plugin/marketplace.json`;
 
-export function readEnabledPlugins(configsDir: string): Map<string, boolean> {
+function pluginKey(name: string, marketplace: string): string {
+  return `${name}@${marketplace}`;
+}
+
+export function readDisabledPluginKeys(configsDir: string): ReadonlySet<string> {
   const settingsPath = join(configsDir, "settings.json");
   let raw: string;
   try {
     raw = readFileSync(settingsPath, "utf8");
-  } catch {
-    return new Map();
+  } catch (cause) {
+    if (isErrno(cause) && cause.code === "ENOENT") return new Set();
+    throw new Error(`cannot read claude settings.json at ${settingsPath}`, { cause });
   }
   let parsed: unknown;
   try {
@@ -34,25 +39,37 @@ export function readEnabledPlugins(configsDir: string): Map<string, boolean> {
     throw new Error(`invalid claude settings.json at ${settingsPath}`, { cause });
   }
   const enabledPlugins = isRecord(parsed) ? parsed["enabledPlugins"] : undefined;
-  if (!isRecord(enabledPlugins)) return new Map();
-  const states = new Map<string, boolean>();
-  for (const [key, value] of Object.entries(enabledPlugins)) {
-    if (typeof value === "boolean") states.set(key, value);
+  if (enabledPlugins === undefined) return new Set();
+  if (!isRecord(enabledPlugins)) {
+    throw new Error(`claude settings.json "enabledPlugins" must be an object at ${settingsPath}`);
   }
-  return states;
+  const disabled = new Set<string>();
+  for (const [key, value] of Object.entries(enabledPlugins)) {
+    if (typeof value !== "boolean") {
+      throw new Error(
+        `claude settings.json enabledPlugins[${JSON.stringify(key)}] must be a boolean at ${settingsPath}`,
+      );
+    }
+    if (!value) disabled.add(key);
+  }
+  return disabled;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isErrno(value: unknown): value is NodeJS.ErrnoException {
+  return value instanceof Error && "code" in value;
+}
+
 function partitionByEnabled(ctx: VendorInstallContext): PluginPartition {
-  const states = readEnabledPlugins(join(ctx.distRoot, VENDOR_DIR, "configs"));
+  const disabledKeys = readDisabledPluginKeys(join(ctx.distRoot, VENDOR_DIR, "configs"));
   const enabled: DiscoveredVendorPlugin[] = [];
   const disabled: DiscoveredVendorPlugin[] = [];
   for (const plugin of ctx.plugins) {
-    const isDisabled = states.get(`${plugin.name}@${ctx.marketplace}`) === false;
-    (isDisabled ? disabled : enabled).push(plugin);
+    const bucket = disabledKeys.has(pluginKey(plugin.name, ctx.marketplace)) ? disabled : enabled;
+    bucket.push(plugin);
   }
   return { enabled, disabled };
 }
@@ -90,7 +107,7 @@ export function makeClaudeVendor(home: string): Vendor {
         await runIgnoreFailure(ctx.run, "claude", [
           "plugin",
           "uninstall",
-          `${plugin.name}@${ctx.marketplace}`,
+          pluginKey(plugin.name, ctx.marketplace),
         ]);
         await rm(join(home, "plugins/cache", ctx.marketplace, plugin.name), {
           recursive: true,
@@ -104,7 +121,7 @@ export function makeClaudeVendor(home: string): Vendor {
         ctx.log(`[claude] skipped ${plugin.name} (disabled in settings)`);
       }
       for (const plugin of enabled) {
-        await ctx.run("claude", ["plugin", "install", `${plugin.name}@${ctx.marketplace}`]);
+        await ctx.run("claude", ["plugin", "install", pluginKey(plugin.name, ctx.marketplace)]);
         ctx.log(`[claude] installed ${plugin.name}`);
       }
     },
@@ -113,7 +130,7 @@ export function makeClaudeVendor(home: string): Vendor {
         await runIgnoreFailure(ctx.run, "claude", [
           "plugin",
           "uninstall",
-          `${plugin.name}@${ctx.marketplace}`,
+          pluginKey(plugin.name, ctx.marketplace),
         ]);
         ctx.log(`[claude] uninstalled ${plugin.name}`);
       }
@@ -124,9 +141,7 @@ export function makeClaudeVendor(home: string): Vendor {
         ctx.marketplace,
       ]);
     },
-    partitionPlugins(ctx: VendorInstallContext): PluginPartition {
-      return partitionByEnabled(ctx);
-    },
+    partitionPlugins: partitionByEnabled,
   };
 }
 

@@ -10,6 +10,7 @@ import {
   indexInstalled,
   type PluginSource,
 } from "./installed.js";
+import { makeFakeVendor } from "./vendor/fakeVendor.testutil.js";
 
 async function withInstalledSourceFixture<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = mkdtempSync(join(tmpdir(), "harness-kit-sources-"));
@@ -229,34 +230,8 @@ test("indexInstalled groups installed skills by <plugin>:<skill> id", async () =
 
 test("defaultSources derives one source per supplied vendor", () => {
   const fakeVendors = [
-    {
-      name: "alpha",
-      home: "/tmp/alpha-home",
-      pluginManifestPath: ".alpha-plugin/plugin.json",
-      marketplaceManifestPath: "alpha/.alpha-plugin/marketplace.json",
-      vendorOutDir: (outRoot: string) => join(outRoot, "alpha"),
-      pluginOutDir: (outRoot: string, pluginName: string) =>
-        join(outRoot, "alpha", "plugins", pluginName),
-      configsOutDir: (outRoot: string) => join(outRoot, "alpha", "configs"),
-      emitPluginManifest: async () => undefined,
-      emitMarketplaceManifest: async () => undefined,
-      install: async () => undefined,
-      uninstall: async () => undefined,
-    },
-    {
-      name: "beta",
-      home: "/tmp/beta-home",
-      pluginManifestPath: ".beta-plugin/plugin.json",
-      marketplaceManifestPath: "beta/.beta-plugin/marketplace.json",
-      vendorOutDir: (outRoot: string) => join(outRoot, "beta"),
-      pluginOutDir: (outRoot: string, pluginName: string) =>
-        join(outRoot, "beta", "plugins", pluginName),
-      configsOutDir: (outRoot: string) => join(outRoot, "beta", "configs"),
-      emitPluginManifest: async () => undefined,
-      emitMarketplaceManifest: async () => undefined,
-      install: async () => undefined,
-      uninstall: async () => undefined,
-    },
+    makeFakeVendor("alpha", { home: "/tmp/alpha-home" }),
+    makeFakeVendor("beta", { home: "/tmp/beta-home" }),
   ];
   const sources = defaultSources(fakeVendors);
   assert.deepEqual(

@@ -50,6 +50,7 @@ function makeRecordingVendor(
     uninstall: async (ctx) => {
       record.uninstalls.push(ctx);
     },
+    partitionPlugins: (ctx) => ({ enabled: ctx.plugins, disabled: [] }),
     ...extra,
   };
 }
@@ -211,6 +212,38 @@ test("install --dry-run reports plan without touching disk or invoking vendors",
       const joined = logs.join("\n");
       assert.match(joined, /settings\.json/);
       assert.match(joined, /alpha/);
+    },
+  );
+});
+
+test("install --dry-run lists a vendor's disabled plugins under the skipped marker", async () => {
+  await withInstallFixture(
+    {
+      marketplaceName: "shop",
+      plugins: [
+        { name: "alpha", vendor: "claude", version: "1.0.0" },
+        { name: "beta", vendor: "claude", version: "2.0.0" },
+      ],
+    },
+    async ({ distRoot, sandbox }) => {
+      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const vendor = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
+        partitionPlugins: (ctx) => ({
+          enabled: ctx.plugins.filter((p) => p.name !== "beta"),
+          disabled: ctx.plugins.filter((p) => p.name === "beta"),
+        }),
+      });
+      const logs: string[] = [];
+
+      await installWithRunner(
+        { distRoot, repoRoot: sandbox, vendors: [vendor], dryRun: true, log: (m) => logs.push(m) },
+        recordingRunner().run,
+      );
+
+      const joined = logs.join("\n");
+      assert.match(joined, /would install 1 plugin\(s\)/);
+      assert.match(joined, /beta@2\.0\.0 \(skipped — disabled in settings\)/);
+      assert.doesNotMatch(joined, /alpha.*skipped/);
     },
   );
 });

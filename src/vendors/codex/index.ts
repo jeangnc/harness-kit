@@ -3,7 +3,11 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { runIgnoreFailure } from "../../install/runner.js";
-import { defaultEmitMarketplaceManifest, defaultEmitPluginManifest } from "../shared.js";
+import {
+  defaultEmitMarketplaceManifest,
+  defaultEmitPluginManifest,
+  defaultPartition,
+} from "../shared.js";
 import type {
   Vendor,
   VendorEmitContext,
@@ -58,6 +62,7 @@ export function makeCodexVendor(home: string): Vendor {
       await rm(join(home, "plugins/cache", ctx.marketplace), { recursive: true, force: true });
       ctx.log(`[codex] removed ${ctx.marketplace} cache`);
     },
+    partitionPlugins: defaultPartition,
   };
 }
 

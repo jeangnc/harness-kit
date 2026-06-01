@@ -15,24 +15,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { applyConfigLinks, planConfigLinks } from "./links.js";
+import { makeFakeVendor } from "../vendor/fakeVendor.testutil.js";
 import type { Vendor } from "../vendor/schema.js";
 
 function fakeVendor(name: string, home: string, opts: { aliasesFor?: string } = {}): Vendor {
-  return {
-    name,
+  return makeFakeVendor(name, {
     home,
-    pluginManifestPath: `.${name}-plugin/plugin.json`,
-    marketplaceManifestPath: `${name}/.${name}-plugin/marketplace.json`,
-    vendorOutDir: (outRoot) => join(outRoot, name),
-    pluginOutDir: (outRoot, pluginName) => join(outRoot, name, "plugins", pluginName),
-    configsOutDir: (outRoot) => join(outRoot, name, "configs"),
     aliases: (file) =>
       opts.aliasesFor && file.basename === opts.aliasesFor ? [join(home, "ALIASED.md")] : [],
-    emitPluginManifest: async () => undefined,
-    emitMarketplaceManifest: async () => undefined,
-    install: async () => undefined,
-    uninstall: async () => undefined,
-  };
+  });
 }
 
 async function withSandbox<T>(

@@ -5,23 +5,12 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { lint } from "./lint.js";
+import { makeFakeVendor } from "./vendor/fakeVendor.testutil.js";
 import type { Vendor } from "./vendor/schema.js";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
-const claudeVendor: Vendor = {
-  name: "claude",
-  home: "/tmp/.claude",
-  pluginManifestPath: ".claude-plugin/plugin.json",
-  marketplaceManifestPath: "claude/.claude-plugin/marketplace.json",
-  vendorOutDir: (outRoot) => join(outRoot, "claude"),
-  pluginOutDir: (outRoot, pluginName) => join(outRoot, "claude", "plugins", pluginName),
-  configsOutDir: (outRoot) => join(outRoot, "claude", "configs"),
-  emitPluginManifest: async () => undefined,
-  emitMarketplaceManifest: async () => undefined,
-  install: async () => undefined,
-  uninstall: async () => undefined,
-};
+const claudeVendor = makeFakeVendor("claude");
 const vendors: readonly Vendor[] = [claudeVendor];
 
 interface Sandbox {

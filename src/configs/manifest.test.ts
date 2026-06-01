@@ -5,23 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildConfigsManifest } from "./manifest.js";
-import type { Vendor } from "../vendor/schema.js";
-
-function fakeVendor(name: string): Vendor {
-  return {
-    name,
-    home: `/tmp/.${name}`,
-    pluginManifestPath: `.${name}-plugin/plugin.json`,
-    marketplaceManifestPath: `${name}/.${name}-plugin/marketplace.json`,
-    vendorOutDir: (outRoot) => join(outRoot, name),
-    pluginOutDir: (outRoot, pluginName) => join(outRoot, name, "plugins", pluginName),
-    configsOutDir: (outRoot) => join(outRoot, name, "configs"),
-    emitPluginManifest: async () => undefined,
-    emitMarketplaceManifest: async () => undefined,
-    install: async () => undefined,
-    uninstall: async () => undefined,
-  };
-}
+import { makeFakeVendor as fakeVendor } from "../vendor/fakeVendor.testutil.js";
 
 const claude = fakeVendor("claude");
 const codex = fakeVendor("codex");
