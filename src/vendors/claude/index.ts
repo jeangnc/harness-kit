@@ -100,6 +100,7 @@ export function makeClaudeVendor(home: string): Vendor {
     },
     async install(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;
+      const { enabled, disabled } = partitionByEnabled(ctx);
       ctx.log(
         `[claude] refreshing ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace} (${ctx.mode})`,
       );
@@ -116,7 +117,6 @@ export function makeClaudeVendor(home: string): Vendor {
       }
       await refreshMarketplace(ctx);
       ctx.log(`[claude] refreshed marketplace ${ctx.marketplace}`);
-      const { enabled, disabled } = partitionByEnabled(ctx);
       for (const plugin of disabled) {
         ctx.log(`[claude] skipped ${plugin.name} (disabled in settings)`);
       }

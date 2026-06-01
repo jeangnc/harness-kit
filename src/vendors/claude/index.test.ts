@@ -308,6 +308,34 @@ test("claudeVendor.install installs none when all plugins are disabled, still re
   );
 });
 
+test("claudeVendor.install reads disabled state before uninstall mutates settings.json", async () => {
+  await withSettings({ "beta@test-market": false }, async (dist) => {
+    const settingsPath = join(dist, "claude/configs/settings.json");
+    const run: CommandRunner = async (_cmd, args) => {
+      if (args[0] === "plugin" && args[1] === "uninstall") {
+        writeFileSync(settingsPath, JSON.stringify({ enabledPlugins: {} }));
+      }
+    };
+    const calls: string[] = [];
+    await claudeVendor.install(
+      ctx({
+        run: async (cmd, args) => {
+          calls.push([cmd, ...args].join(" "));
+          await run(cmd, args);
+        },
+        mode: "remote",
+        distRoot: dist,
+        plugins: [
+          { name: "alpha", path: join(dist, "claude/alpha"), version: "1.0.0" },
+          { name: "beta", path: join(dist, "claude/beta"), version: "0.2.0" },
+        ],
+      }),
+    );
+    assert.ok(calls.includes("claude plugin install alpha@test-market"));
+    assert.ok(!calls.includes("claude plugin install beta@test-market"));
+  });
+});
+
 test("claudeVendor.partitionPlugins splits discovered plugins by enabled state", async () => {
   await withSettings({ "off@test-market": false }, (dist) => {
     const result = claudeVendor.partitionPlugins(
