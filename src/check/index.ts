@@ -12,16 +12,15 @@ import {
 } from "../skill/index.js";
 import {
   collectLocalIds,
+  formatLayoutError,
   loadLayout,
   type LayoutAdapter,
-  type LocalIds,
   type ResolvedPlugin,
 } from "../layout/index.js";
 import {
   defaultSources,
   discoverInstalled,
   indexInstalled,
-  type InstalledIndex,
   type PluginSource,
 } from "../installed.js";
 
@@ -36,32 +35,11 @@ import {
   type LeafIndex,
   type Span,
 } from "./bypass.js";
-import {
-  unifiedKindConfigs,
-  type HaystackScope,
-  type KindConfig,
-  type ReferencePrefix,
-} from "./kinds.js";
+import { unifiedKindConfigs, type KindConfig, type ReferencePrefix } from "./kinds.js";
 import { closestMatch } from "./suggest.js";
-
-const EMPTY_LOCAL_IDS: LocalIds = {
-  skills: new Set(),
-  commands: new Set(),
-  agents: new Set(),
-};
-
-const EMPTY_INSTALLED_INDEX: InstalledIndex = {
-  skills: new Map(),
-  commands: new Map(),
-  agents: new Map(),
-};
-
-export const CHECK_MODES = ["local", "installed", "all"] as const;
-export type CheckMode = (typeof CHECK_MODES)[number];
 
 export interface CheckOptions {
   readonly srcRoot: string;
-  readonly mode?: CheckMode;
   readonly sources?: readonly PluginSource[];
 }
 
@@ -82,6 +60,7 @@ export interface SourceSummary {
 }
 
 export interface BypassWarning {
+  readonly kind: "bypass";
   readonly prefix: ReferencePrefix;
   readonly id: string;
   readonly file: string;
@@ -90,9 +69,20 @@ export interface BypassWarning {
   readonly message: string;
 }
 
+export interface UnresolvedExternalWarning {
+  readonly kind: "unresolved-external";
+  readonly token: string;
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  readonly message: string;
+}
+
+export type Warning = BypassWarning | UnresolvedExternalWarning;
+
 export interface CheckResult {
   readonly violations: readonly ReferenceViolation[];
-  readonly warnings: readonly BypassWarning[];
+  readonly warnings: readonly Warning[];
   readonly checkedFiles: number;
   readonly indexedSources: readonly SourceSummary[];
 }
@@ -111,45 +101,32 @@ interface BodySource {
 }
 
 export async function check(options: CheckOptions): Promise<CheckResult> {
-  const mode: CheckMode = options.mode ?? "installed";
-  let indexedSources: readonly SourceSummary[] = [];
-  let localAdapter: LayoutAdapter | null = null;
-  let installedIndex: InstalledIndex = EMPTY_INSTALLED_INDEX;
-  let localIds: LocalIds = EMPTY_LOCAL_IDS;
+  const sources = options.sources ?? defaultSources();
+  const artifacts = await discoverInstalled(sources);
+  const installedIndex = indexInstalled(artifacts);
+  const indexedSources = sources.map<SourceSummary>((s) => ({
+    source: s.name,
+    skillCount: artifacts.skills.filter((i) => i.source === s.name).length,
+  }));
 
-  if (mode === "installed" || mode === "all") {
-    const sources = options.sources ?? defaultSources();
-    const artifacts = await discoverInstalled(sources);
-    installedIndex = indexInstalled(artifacts);
-    indexedSources = sources.map<SourceSummary>((s) => ({
-      source: s.name,
-      skillCount: artifacts.skills.filter((i) => i.source === s.name).length,
-    }));
-  }
+  const loaded = await loadLayout(options.srcRoot);
+  if (!loaded.ok) throw new Error(`failed to load layout: ${formatLayoutError(loaded.error)}`);
+  const localAdapter = loaded.value;
+  const localIds = await collectLocalIds(localAdapter);
+  const localPlugins = new Set(localAdapter.plugins.map((p) => p.name));
 
-  if (mode === "local" || mode === "all") {
-    const loaded = await loadLayout(options.srcRoot);
-    if (!loaded.ok) throw new Error(`failed to load layout: ${loaded.error.kind}`);
-    localAdapter = loaded.value;
-    localIds = await collectLocalIds(localAdapter);
-  }
-
-  const kinds = unifiedKindConfigs(localIds, installedIndex, mode satisfies HaystackScope);
+  const kinds = unifiedKindConfigs(localIds, installedIndex, localPlugins);
   const haystacks = bypassHaystacks(kinds);
   const leafIndex = buildLeafIndex(haystacks);
 
-  const sources = await collectBodySources({
-    srcRoot: options.srcRoot,
-    mode,
-    adapter: localAdapter,
-  });
+  const bodies = await collectBodySources(localAdapter);
   const violations: ReferenceViolation[] = [];
-  const warnings: BypassWarning[] = [];
-  for (const source of sources) {
+  const warnings: Warning[] = [];
+  for (const source of bodies) {
     const skip = nonReferenceSpans(source.body);
-    for (const violation of validateBody(source, kinds)) {
-      violations.push(violation);
-    }
+    const { violations: refViolations, warnings: refWarnings } = validateBody(source, kinds);
+    violations.push(...refViolations);
+    warnings.push(...refWarnings);
     for (const violation of findBarewordBypasses(source, leafIndex, skip)) {
       violations.push(violation);
     }
@@ -161,7 +138,7 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
     }
   }
 
-  return { violations, warnings, checkedFiles: sources.length, indexedSources };
+  return { violations, warnings, checkedFiles: bodies.length, indexedSources };
 }
 
 function bypassHaystacks(kinds: ReadonlyMap<string, KindConfig>): BypassHaystacks {
@@ -178,6 +155,7 @@ function findBypasses(source: BodySource, haystacks: BypassHaystacks): readonly 
   return detectBypasses(source.body, haystacks).map((bypass) => {
     const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + bypass.offset);
     return {
+      kind: "bypass",
       prefix: bypass.prefix,
       id: bypass.id,
       file: source.filePath,
@@ -234,13 +212,7 @@ async function findRefBypasses(
   });
 }
 
-interface CollectOptions {
-  readonly srcRoot: string;
-  readonly mode: CheckMode;
-  readonly adapter: LayoutAdapter | null;
-}
-
-async function collectBodySources(opts: CollectOptions): Promise<readonly BodySource[]> {
+async function collectBodySources(adapter: LayoutAdapter): Promise<readonly BodySource[]> {
   const seen = new Set<string>();
   const out: BodySource[] = [];
   const push = async (file: PluginBody): Promise<void> => {
@@ -256,19 +228,9 @@ async function collectBodySources(opts: CollectOptions): Promise<readonly BodySo
     });
   };
 
-  if (opts.mode === "installed" || opts.mode === "all") {
-    for await (const skillDir of findSkillDirs(opts.srcRoot)) {
-      for (const file of await loadSkillBodies(skillDir)) {
-        await push(file);
-      }
-    }
-  }
-
-  if ((opts.mode === "local" || opts.mode === "all") && opts.adapter) {
-    for (const plugin of opts.adapter.plugins) {
-      for (const file of await collectPluginBodies(plugin)) {
-        await push(file);
-      }
+  for (const plugin of adapter.plugins) {
+    for (const file of await collectPluginBodies(plugin)) {
+      await push(file);
     }
   }
 
@@ -339,11 +301,14 @@ async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]>
   return [primary, ...companions];
 }
 
-function validateBody(
-  source: BodySource,
-  kinds: ReadonlyMap<string, KindConfig>,
-): readonly ReferenceViolation[] {
+interface ValidatedBody {
+  readonly violations: readonly ReferenceViolation[];
+  readonly warnings: readonly UnresolvedExternalWarning[];
+}
+
+function validateBody(source: BodySource, kinds: ReadonlyMap<string, KindConfig>): ValidatedBody {
   const violations: ReferenceViolation[] = [];
+  const warnings: UnresolvedExternalWarning[] = [];
   for (const token of parsePlaceholders(source.body)) {
     const kind = kinds.get(token.prefix);
     if (!kind) continue;
@@ -358,36 +323,25 @@ function validateBody(
     if (kind.haystack.has(token.value)) continue;
 
     const suggestion = closestMatch(token.value, [...kind.haystack]);
-    violations.push({
-      ...at,
-      kind: "unresolved",
-      message: suggestion
-        ? `\`${token.value}\` ${kind.noun} ${kind.missingHint} (did you mean \`${suggestion}\`?)`
-        : `\`${token.value}\` ${kind.noun} ${kind.missingHint}`,
-    });
-  }
-  return violations;
-}
-
-async function* findSkillDirs(srcRoot: string): AsyncGenerator<string> {
-  if (!(await pathExists(srcRoot))) return;
-  for await (const dir of walkDirs(srcRoot)) {
-    const found = await findSkillFile(dir);
-    if (!found.ok || found.value) yield dir;
-  }
-}
-
-async function* walkDirs(dir: string): AsyncGenerator<string> {
-  yield dir;
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.isDirectory() && !entry.isSymbolicLink()) {
-      yield* walkDirs(join(dir, entry.name));
+    const plugin = token.value.slice(0, token.value.indexOf(":"));
+    if (kind.localPlugins.has(plugin)) {
+      violations.push({
+        ...at,
+        kind: "unresolved",
+        message: withSuggestion(token.value, kind.noun, kind.internalMissingHint, suggestion),
+      });
+    } else {
+      warnings.push({
+        ...at,
+        kind: "unresolved-external",
+        message: withSuggestion(token.value, kind.noun, kind.externalMissingHint, suggestion),
+      });
     }
   }
+  return { violations, warnings };
+}
+
+function withSuggestion(id: string, noun: string, hint: string, suggestion: string | null): string {
+  const base = `\`${id}\` ${noun} ${hint}`;
+  return suggestion ? `${base} (did you mean \`${suggestion}\`?)` : base;
 }

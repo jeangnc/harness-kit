@@ -102,17 +102,17 @@ Helpers exported here:
 ### `check(options: CheckOptions): Promise<CheckResult>`
 
 ```ts
-const result = await check({ srcRoot: "./src", mode: "all" });
+const result = await check({ srcRoot: "./src" });
 for (const v of result.violations) {
   console.log(`${v.file}:${v.line}:${v.column} ${v.token} — ${v.message}`);
 }
 ```
 
-`mode` is `"local"` | `"installed"` | `"all"`. `local` resolves references against local discovery; `installed` resolves against the installed-plugin index; `all` resolves against the union and is the hard gate that fails on any unresolved reference.
+References resolve against the union of local artifacts and the installed-plugin index. An unresolved reference into a **local** plugin (artifact missing) is a `violation`; an unresolved reference into an **external** plugin is an `unresolved-external` entry in `warnings`. Pass `sources` to override the installed-plugin index (defaults to the vendor homes).
 
 ## Installed index
 
-Discover and index plugins already installed under a vendor home. Useful for `check --mode=installed` and for ad-hoc tooling that needs to enumerate installed skills/agents/commands.
+Discover and index plugins already installed under a vendor home. Useful for the `sources` override on `check` and for ad-hoc tooling that needs to enumerate installed skills/agents/commands.
 
 ```ts
 import { defaultSources, discoverInstalled, indexInstalled } from "@jean.gnc/harness-kit";

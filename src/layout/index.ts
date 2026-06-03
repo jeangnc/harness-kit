@@ -59,6 +59,25 @@ export type LayoutError =
       readonly path: string;
     };
 
+export function formatLayoutError(error: LayoutError): string {
+  switch (error.kind) {
+    case "marketplace-missing":
+      return `marketplace manifest not found at ${error.path}`;
+    case "marketplace-invalid":
+      return `marketplace manifest at ${error.path} is invalid: ${error.issues.join("; ")}`;
+    case "plugin-missing":
+      return `plugin "${error.name}" not found at ${error.path}`;
+    case "manifest-missing":
+      return `plugin "${error.name}" has no manifest at ${error.pluginDir}`;
+    case "manifest-collision":
+      return `plugin "${error.name}" has both PLUGIN.ts and plugin.json at ${error.pluginDir} — pick one`;
+    case "manifest-invalid":
+      return `plugin manifest at ${error.path} is invalid: ${error.issues.join("; ")}`;
+    case "plugin-name-mismatch":
+      return `plugin entry "${error.entryName}" does not match manifest name "${error.manifestName}" at ${error.path}`;
+  }
+}
+
 function resolvePluginDir(srcRoot: string, pluginRoot: string | undefined, source: string): string {
   if (source.startsWith("./") || source.startsWith("../") || source === ".") {
     return resolve(srcRoot, source);

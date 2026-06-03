@@ -44,13 +44,11 @@ Runs against `plugins/**/*.md` with these overrides:
 Validates `{{skill:...}}`, `{{command:...}}`, and `{{agent:...}}` references.
 
 - `--src <path>` (default `./src`).
-- `--mode <local | installed | all>` (default `installed`).
-  - `local` — resolves references against locally discovered artifacts only.
-  - `installed` — resolves references against plugins in the vendor's installed index.
-  - `all` — resolves against the union; the hard gate that fails on any unresolved reference.
 - `--silent`.
 
-A malformed or unresolved reference is a violation and exits non-zero. Separately, `check` emits **warnings** (never affecting the exit code) when a body names a known artifact directly instead of through a placeholder — a command's rendered `/<plugin>:<name>`, an agent's `@<plugin>:<name>`, or a bare `<plugin>:<name>` for any kind. These raw references bypass the placeholder pipeline, so they go untracked and unrewritten when an id changes; the warning names the `{{…}}` form to use instead. A raw reference warns only when its id matches an artifact in the resolved scope, so ordinary prose is never flagged.
+References resolve against the union of this marketplace's local artifacts and the installed plugins. A malformed reference (not `<plugin>:<name>` shape) is always a violation and exits non-zero. An unresolved reference is classified by who owns its plugin: if the plugin belongs to **this marketplace** (the artifact is just missing), it's a violation and exits non-zero; if the plugin is **external** (vendor, installed, or unknown), it's a warning that never affects the exit code.
+
+Separately, `check` emits **warnings** (never affecting the exit code) when a body names a known artifact directly instead of through a placeholder — a command's rendered `/<plugin>:<name>`, an agent's `@<plugin>:<name>`, or a bare `<plugin>:<name>` for any kind. These raw references bypass the placeholder pipeline, so they go untracked and unrewritten when an id changes; the warning names the `{{…}}` form to use instead. A raw reference warns only when its id matches an artifact in the resolved scope, so ordinary prose is never flagged.
 
 ## `harness install`
 

@@ -204,15 +204,15 @@ A skill folder must contain exactly one of `SKILL.md` or `SKILL.ts`. Both forms 
 
 Three reference kinds — `skill`, `command`, `agent` — each resolve against the **local marketplace ∪ installed plugins** and render the scoped `<plugin>:<name>` handle. The author never picks a prefix based on where a target lives; a single kind covers both local and cross-plugin references.
 
-Resolution is two-tier: `harness compile` resolves strictly against local artifacts and **warns** (without failing) on a reference found in neither the local marketplace nor an installed plugin — so the compile stays green on a machine without those plugins installed. `harness check --mode=all` is the hard gate: the same unresolved reference fails the check. A malformed value (not `<plugin>:<name>` shape) is always a hard error.
+Both `harness compile` and `harness check` share one rule, keyed on who owns the reference's plugin. An unresolved **internal** reference — one whose plugin is part of this marketplace, but whose artifact is missing — **fails**: it's your own broken link. An unresolved **external** reference — to a vendor, installed, or otherwise-unknown plugin — only **warns**, so the build stays green on a machine without those plugins installed. A malformed value (not `<plugin>:<name>` shape) is always a hard error.
 
 Writing a reference raw — as the rendered `<plugin>:<name>` handle — instead of through its placeholder bypasses all of this; `harness check` warns (without failing) when it spots one. See [docs/cli.md](./docs/cli.md#harness-check).
 
 | Placeholder | Renders to | Validation |
 | --- | --- | --- |
-| `{{skill:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |
-| `{{command:<plugin>:<name>}}` | `` `/<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |
-| `{{agent:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |
+| `{{skill:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; internal-missing fails, external-missing warns |
+| `{{command:<plugin>:<name>}}` | `` `/<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; internal-missing fails, external-missing warns |
+| `{{agent:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; internal-missing fails, external-missing warns |
 | `{{ref:<relative-path>}}` | `` `<relative-path>` `` | Must be a file under the skill directory |
 | `{{include:<path>}}` | Inlined content of the target file | Relative, `#`repo-root, or `@name` alias; any extension, anywhere; no cycles |
 | `{{companions}}` | Companion files section | Required iff companions are declared |

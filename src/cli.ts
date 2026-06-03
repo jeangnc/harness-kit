@@ -9,13 +9,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { compile } from "./compile.js";
-import {
-  CHECK_MODES,
-  check,
-  type BypassWarning,
-  type CheckMode,
-  type ReferenceViolation,
-} from "./check/index.js";
+import { check, type ReferenceViolation, type Warning } from "./check/index.js";
 import { formatConsole, runEval, toJson } from "./eval/index.js";
 import { TIERS, type Tier } from "./eval/schema.js";
 import { initHarness } from "./init/index.js";
@@ -29,15 +23,6 @@ const PackageJsonSchema = z.object({ version: z.string().min(1) });
 
 const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
 const pkg = PackageJsonSchema.parse(JSON.parse(readFileSync(pkgPath, "utf8")));
-
-function isCheckMode(value: string): value is CheckMode {
-  return (CHECK_MODES as readonly string[]).includes(value);
-}
-
-function parseCheckMode(value: string): CheckMode {
-  if (isCheckMode(value)) return value;
-  throw new Error(`Unknown check mode "${value}". Valid: ${CHECK_MODES.join(", ")}`);
-}
 
 const compileCmd = defineCommand({
   meta: { name: "compile", description: "Compile harness sources to dist/" },
@@ -162,20 +147,14 @@ const initCmd = defineCommand({
 const checkCmd = defineCommand({
   meta: {
     name: "check",
-    description: "Validate plugin references against local, installed, or both",
+    description: "Validate plugin references",
   },
   args: {
     src: { type: "string", default: "./src", description: "source root" },
-    mode: {
-      type: "string",
-      default: "installed",
-      description: "validation scope: local | installed | all",
-    },
     silent: { type: "boolean", default: false, description: "suppress non-error output" },
   },
   run: async ({ args }) => {
-    const mode = parseCheckMode(args.mode);
-    const result = await check({ srcRoot: args.src, mode });
+    const result = await check({ srcRoot: args.src });
     if (!args.silent) {
       const breakdown = result.indexedSources.map((s) => `${s.source}=${s.skillCount}`).join(", ");
       const total = result.indexedSources.reduce((acc, s) => acc + s.skillCount, 0);
@@ -210,7 +189,7 @@ function formatViolation(v: ReferenceViolation): string {
   return `${v.file}:${v.line}:${v.column}  \`${v.token}\` — ${v.message}`;
 }
 
-function formatWarning(w: BypassWarning): string {
+function formatWarning(w: Warning): string {
   return `${w.file}:${w.line}:${w.column}  warning: ${w.message}`;
 }
 

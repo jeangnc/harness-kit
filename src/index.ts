@@ -75,6 +75,8 @@ export type {
   ReferenceViolation,
   ReferenceViolationKind,
   SourceSummary,
+  UnresolvedExternalWarning,
+  Warning,
 } from "./check/index.js";
 
 export { runEval, formatConsole, toJson } from "./eval/index.js";
