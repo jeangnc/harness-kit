@@ -1,6 +1,7 @@
 import { rm } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 
+import { resolveRootsForRepo } from "./config/harness.js";
 import { compilePlugins, loadAdapter } from "./compile/index.js";
 import { compileConfigs } from "./configs/compile.js";
 import { emitConfigsManifest } from "./configs/emit.js";
@@ -22,6 +23,7 @@ export async function compile(options: CompileOptions = {}): Promise<void> {
   const outRoot = resolve(options.outRoot ?? "./dist");
   const repoRoot = resolve(options.repoRoot ?? dirname(srcRoot));
   const vendors = options.vendors ?? (await resolveVendorsForRepo(repoRoot));
+  const namedRoots = await resolveRootsForRepo(repoRoot);
   const adapter = await loadAdapter(srcRoot);
   const localIds = await collectLocalIds(adapter);
   const installedIndex = indexInstalled(await discoverInstalled(defaultSources(vendors)));
@@ -38,6 +40,7 @@ export async function compile(options: CompileOptions = {}): Promise<void> {
     adapter,
     localIds,
     installedIndex,
+    namedRoots,
     ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
   });
   await compileConfigs({
@@ -46,6 +49,7 @@ export async function compile(options: CompileOptions = {}): Promise<void> {
     vendors,
     localIds,
     installedIndex,
+    namedRoots,
     ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
   });
   await emitConfigsManifest({

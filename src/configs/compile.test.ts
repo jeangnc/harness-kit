@@ -91,6 +91,49 @@ test("compileConfigs blocks {{include:...}} paths that escape the vendor configs
   });
 });
 
+test("compileConfigs resolves {{include:@shared/...}} from a declared named root", async () => {
+  await withSandbox(async ({ srcRoot, outRoot }) => {
+    mkdirSync(join(srcRoot, "claude/configs"), { recursive: true });
+    mkdirSync(join(srcRoot, "codex/configs"), { recursive: true });
+    mkdirSync(join(srcRoot, "shared"), { recursive: true });
+    writeFileSync(join(srcRoot, "shared/common.md"), "## Common\n\nshared body\n");
+    writeFileSync(
+      join(srcRoot, "claude/configs/AGENTS.md"),
+      "# Claude\n\n{{include:@shared/common.md}}\n",
+    );
+    writeFileSync(
+      join(srcRoot, "codex/configs/AGENTS.md"),
+      "# Codex\n\n{{include:@shared/common.md}}\n",
+    );
+    const codex = fakeVendor("codex");
+    await compileConfigs({
+      srcRoot,
+      outRoot,
+      vendors: [claude, codex],
+      namedRoots: { shared: join(srcRoot, "shared") },
+    });
+    assert.equal(
+      readFileSync(join(outRoot, "claude/configs/AGENTS.md"), "utf8"),
+      "# Claude\n\n## Common\n\nshared body\n",
+    );
+    assert.equal(
+      readFileSync(join(outRoot, "codex/configs/AGENTS.md"), "utf8"),
+      "# Codex\n\n## Common\n\nshared body\n",
+    );
+  });
+});
+
+test("compileConfigs errors on {{include:@shared/...}} when no root is declared", async () => {
+  await withSandbox(async ({ srcRoot, outRoot }) => {
+    mkdirSync(join(srcRoot, "claude/configs"), { recursive: true });
+    writeFileSync(join(srcRoot, "claude/configs/AGENTS.md"), "{{include:@shared/x.md}}\n");
+    await assert.rejects(
+      async () => compileConfigs({ srcRoot, outRoot, vendors: [claude] }),
+      /unknown root/,
+    );
+  });
+});
+
 test("compileConfigs skips vendors that have no configs/ dir", async () => {
   await withSandbox(async ({ srcRoot, outRoot }) => {
     mkdirSync(join(srcRoot, "claude/configs"), { recursive: true });

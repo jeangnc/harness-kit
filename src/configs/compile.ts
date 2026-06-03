@@ -18,6 +18,7 @@ export interface CompileConfigsOptions {
   readonly vendors: readonly Vendor[];
   readonly localIds?: LocalIds;
   readonly installedIndex?: InstalledIndex;
+  readonly namedRoots?: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
 
@@ -36,6 +37,7 @@ const EMPTY_INSTALLED_INDEX: InstalledIndex = {
 export async function compileConfigs(options: CompileConfigsOptions): Promise<void> {
   const localIds = options.localIds ?? EMPTY_LOCAL_IDS;
   const installedIndex = options.installedIndex ?? EMPTY_INSTALLED_INDEX;
+  const namedRoots = options.namedRoots ?? {};
 
   for (const vendor of options.vendors) {
     const configsSrc = join(options.srcRoot, vendor.name, "configs");
@@ -45,6 +47,7 @@ export async function compileConfigs(options: CompileConfigsOptions): Promise<vo
       configsOut: vendor.configsOutDir(options.outRoot),
       localIds,
       installedIndex,
+      namedRoots,
       ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
     });
   }
@@ -55,6 +58,7 @@ interface CompileVendorOptions {
   readonly configsOut: string;
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
+  readonly namedRoots: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
 
@@ -78,7 +82,7 @@ async function emitSubstituted(
   opts: CompileVendorOptions,
 ): Promise<void> {
   const raw = await readFile(srcPath, "utf8");
-  const expanded = await expandIncludes(raw, srcPath, baseDir);
+  const expanded = await expandIncludes(raw, srcPath, { self: baseDir, named: opts.namedRoots });
   if (!expanded.ok) {
     throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
   }

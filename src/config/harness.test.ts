@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { loadHarnessConfig } from "./harness.js";
+import { loadHarnessConfig, resolveRoots } from "./harness.js";
 
 async function withSandbox(fn: (dir: string) => Promise<void> | void): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "harness-yaml-test-"));
@@ -79,5 +79,44 @@ test("loadHarnessConfig throws on malformed YAML", async () => {
   await withSandbox(async (dir) => {
     writeFileSync(join(dir, "harness.yaml"), "marketplace: m\n  bad indent: x\n");
     await assert.rejects(async () => loadHarnessConfig(dir), /harness\.yaml/i);
+  });
+});
+
+test("loadHarnessConfig parses an optional roots map", async () => {
+  await withSandbox(async (dir) => {
+    writeFileSync(
+      join(dir, "harness.yaml"),
+      "marketplace: m\nvendors: [claude]\nroots:\n  shared: ./src/shared\n",
+    );
+    const cfg = await loadHarnessConfig(dir);
+    assert.deepEqual(cfg.roots, { shared: "./src/shared" });
+  });
+});
+
+test("loadHarnessConfig leaves roots undefined when absent", async () => {
+  await withSandbox(async (dir) => {
+    writeFileSync(join(dir, "harness.yaml"), "marketplace: m\nvendors: [claude]\n");
+    const cfg = await loadHarnessConfig(dir);
+    assert.equal(cfg.roots, undefined);
+  });
+});
+
+test("loadHarnessConfig rejects an empty roots value", async () => {
+  await withSandbox(async (dir) => {
+    writeFileSync(
+      join(dir, "harness.yaml"),
+      "marketplace: m\nvendors: [claude]\nroots:\n  shared: ''\n",
+    );
+    await assert.rejects(async () => loadHarnessConfig(dir), /roots/);
+  });
+});
+
+test("resolveRoots returns an empty map when nothing is declared", () => {
+  assert.deepEqual(resolveRoots("/repo", undefined), {});
+});
+
+test("resolveRoots resolves declared paths against the repo root", () => {
+  assert.deepEqual(resolveRoots("/repo", { shared: "./src/shared" }), {
+    shared: "/repo/src/shared",
   });
 });

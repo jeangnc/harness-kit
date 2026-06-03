@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import yaml from "js-yaml";
 import { z } from "zod";
@@ -10,6 +10,7 @@ import { pathExists } from "../fs.js";
 const HarnessConfigSchema = z.object({
   marketplace: z.string().min(1, "marketplace is required"),
   vendors: z.array(z.string().min(1)).min(1, "at least one vendor must be declared"),
+  roots: z.record(z.string().min(1), z.string().min(1)).optional(),
 });
 
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
@@ -42,4 +43,21 @@ export async function loadHarnessConfig(repoRoot: string): Promise<HarnessConfig
     throw new Error(`harness.yaml at ${path}: ${formatZodIssues(parsed.error).join("; ")}`);
   }
   return parsed.data;
+}
+
+export async function resolveRootsForRepo(
+  repoRoot: string,
+): Promise<Readonly<Record<string, string>>> {
+  const config = await loadHarnessConfig(repoRoot);
+  return resolveRoots(repoRoot, config.roots);
+}
+
+export function resolveRoots(
+  repoRoot: string,
+  declared: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> {
+  if (declared === undefined) return {};
+  return Object.fromEntries(
+    Object.entries(declared).map(([name, path]) => [name, resolve(repoRoot, path)]),
+  );
 }

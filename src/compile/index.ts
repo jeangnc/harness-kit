@@ -33,6 +33,7 @@ export interface CompilePluginsOptions {
   readonly adapter?: LayoutAdapter;
   readonly localIds?: LocalIds;
   readonly installedIndex?: InstalledIndex;
+  readonly namedRoots?: Readonly<Record<string, string>>;
 }
 
 export async function compilePlugins(options: CompilePluginsOptions): Promise<void> {
@@ -52,6 +53,7 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
   for (const vendor of vendors) {
     await vendor.emitMarketplaceManifest({ outRoot, marketplace: adapter.marketplace });
   }
+  const namedRoots = options.namedRoots ?? {};
   for (const plugin of adapter.plugins) {
     for (const vendor of vendors) {
       await emitPluginForVendor(plugin, vendor, {
@@ -59,6 +61,7 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
         localIds,
         installedIndex,
         skipRelPaths,
+        namedRoots,
         ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
       });
     }
@@ -103,6 +106,7 @@ interface EmitPluginOptions {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
   readonly skipRelPaths: ReadonlySet<string>;
+  readonly namedRoots: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
 
@@ -119,6 +123,7 @@ async function emitPluginForVendor(
     localIds: options.localIds,
     installedIndex: options.installedIndex,
     skipRelPaths: options.skipRelPaths,
+    namedRoots: options.namedRoots,
     ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   });
 }

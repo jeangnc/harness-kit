@@ -34,12 +34,14 @@ export interface CompileTreeOptions {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
   readonly skipRelPaths?: ReadonlySet<string>;
+  readonly namedRoots?: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
 
 interface CompileContext {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
+  readonly namedRoots: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
 
@@ -48,6 +50,7 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
   const ctx: CompileContext = {
     localIds: options.localIds,
     installedIndex: options.installedIndex,
+    namedRoots: options.namedRoots ?? {},
     ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   };
   const skipRelPaths = options.skipRelPaths ?? new Set<string>();
@@ -127,7 +130,10 @@ async function emitSkill(
   const { skill, body } = loaded.value;
   const expectedName = basename(skillDir);
 
-  const expanded = await expandIncludes(body, loaded.value.skillFilePath, skillDir);
+  const expanded = await expandIncludes(body, loaded.value.skillFilePath, {
+    self: skillDir,
+    named: ctx.namedRoots,
+  });
   if (!expanded.ok) {
     throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
   }
@@ -190,7 +196,7 @@ async function emitSubstitutedFile(
   ctx: CompileContext,
 ): Promise<void> {
   const raw = await readFile(srcPath, "utf8");
-  const expanded = await expandIncludes(raw, srcPath, baseDir);
+  const expanded = await expandIncludes(raw, srcPath, { self: baseDir, named: ctx.namedRoots });
   if (!expanded.ok) {
     throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
   }
