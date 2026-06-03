@@ -1,4 +1,6 @@
 import type { DetectionResult } from "./detect.js";
+import type { AssertionResult } from "./grade-deterministic.js";
+import type { RubricResult } from "./grade-judge.js";
 import type { Expectation } from "./schema.js";
 
 const DEFAULT_THRESHOLD = 1.0;
@@ -41,6 +43,33 @@ export function scoreCase(
     threshold,
     pass: triggerRate >= threshold,
     histogram: histogramOf(runs),
+  };
+}
+
+export interface SolvingRunResult {
+  readonly assertions: readonly AssertionResult[];
+  readonly rubric: RubricResult | null;
+}
+
+export function solvingRunPassed(run: SolvingRunResult): boolean {
+  const assertionsPass = run.assertions.every((a) => a.pass);
+  const rubricPass = run.rubric === null || run.rubric.pass;
+  return assertionsPass && rubricPass;
+}
+
+export function scoreSolving(
+  perRun: readonly SolvingRunResult[],
+  threshold = DEFAULT_THRESHOLD,
+): CaseScore {
+  const matched = perRun.filter(solvingRunPassed).length;
+  const triggerRate = perRun.length === 0 ? 0 : matched / perRun.length;
+  return {
+    matched,
+    runs: perRun.length,
+    triggerRate,
+    threshold,
+    pass: triggerRate >= threshold,
+    histogram: new Map(),
   };
 }
 

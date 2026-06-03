@@ -211,9 +211,52 @@ harness lint      # lint compiled markdown under dist/
 harness check     # validate plugin references against local + installed sources
 harness install   # link configs + register plugins per declared vendor (--mode=local|remote)
 harness uninstall # remove installed plugins per declared vendor
+harness eval      # run routing + solving evals against the installed harness
 ```
 
 → Full flag reference, bundled lint rules, and `package.json` integration: [docs/cli.md](./docs/cli.md).
+
+## Evals
+
+`harness eval` runs YAML cases in two tiers. A case file declares its `tier`, and the two
+tiers carry mutually exclusive keys.
+
+**Routing** — *did the right skill fire?* The session is killed on the first `Skill` tool_use;
+the detector scores against an `expect` clause (`first` / `anyOf` / `path` / `noSkill`).
+
+**Solving** — *did the agent produce the right thing?* The session runs to completion; the
+final output, tool trajectory, and written files are graded by **deterministic assertions**
+(all must pass) plus an optional **LLM-judge rubric** (one isolated call per dimension).
+
+```yaml
+suite: docs
+tier: solving
+cases:
+  - id: writes-a-readme
+    prompt: "Create a README.md describing this project."
+    expectSkill: dev-tools:typescript      # optional; validated against installed skills
+    assert:
+      - { kind: wroteFile, path: README.md, contentMatches: "## " }
+      - { kind: usedTool, tool: Write }
+      - { kind: didNotUseTool, tool: Bash }
+      - { kind: outputMatches, pattern: "README", regex: false }
+    rubric:
+      combine: { combine: fraction, threshold: 0.5 }   # or { combine: all }
+      dimensions:
+        - { dimension: clarity, criterion: "The README explains what the project does." }
+        - { dimension: structure, criterion: "The README has clear sections." }
+```
+
+A solving run passes when every assertion passes **and** the rubric meets its combine rule;
+across `runs`, the case passes when the pass rate meets `threshold` (default `runs` is 1).
+
+Routing needs no API key. Solving cases that declare a `rubric` use `claude` for the judge —
+set `ANTHROPIC_API_KEY` (the run errors clearly if absent). The judge model is separate from
+the session model:
+
+```sh
+harness eval --tier solving --model claude-opus-4-8 --judge-model claude-sonnet-4-5
+```
 
 ## Programmatic API
 

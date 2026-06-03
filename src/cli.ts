@@ -218,7 +218,7 @@ function parsePositiveInt(value: string, flag: string): number {
 const evalCmd = defineCommand({
   meta: {
     name: "eval",
-    description: "Run skill-routing evals against the installed harness",
+    description: "Run routing (did the right skill fire?) and solving (graded behavior) evals",
   },
   args: {
     cases: {
@@ -240,6 +240,14 @@ const evalCmd = defineCommand({
       type: "string",
       description: "model for claude -p (default: user's configured model)",
     },
+    "judge-model": {
+      type: "string",
+      description: "model for the solving-tier LLM judge (default: claude-sonnet-4-5)",
+    },
+    "solving-timeout": {
+      type: "string",
+      description: "per-case timeout in seconds for solving sessions (default: 300)",
+    },
     json: { type: "string", description: "write machine-readable results to this path" },
   },
   run: async ({ args }) => {
@@ -252,6 +260,10 @@ const evalCmd = defineCommand({
       ...(args.tier !== undefined && { tier: parseTier(args.tier) }),
       ...(args.runs !== undefined && { runs: parsePositiveInt(args.runs, "runs") }),
       ...(args.model !== undefined && { model: args.model }),
+      ...(args["judge-model"] !== undefined && { judgeModel: args["judge-model"] }),
+      ...(args["solving-timeout"] !== undefined && {
+        solvingTimeoutMs: parsePositiveInt(args["solving-timeout"], "solving-timeout") * 1000,
+      }),
     });
 
     if (!result.ok) {
