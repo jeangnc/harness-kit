@@ -4,7 +4,8 @@ import { applyConfigLinks, formatPlannedLink, planConfigLinks } from "./links.js
 import { discoverPluginsForVendor, readMarketplaceName } from "./discovery.js";
 import { type InstallMode } from "./mode.js";
 import { defaultRunner, type CommandRunner } from "./runner.js";
-import type { Vendor, VendorInstallContext } from "../vendor/schema.js";
+import { err, ok, type Result } from "../result.js";
+import type { DiscoveredVendorPlugin, Vendor, VendorInstallContext } from "../vendor/schema.js";
 
 export interface InstallOptions {
   readonly distRoot?: string;
@@ -22,6 +23,32 @@ export async function install(options: InstallOptions): Promise<void> {
 
 export async function uninstall(options: InstallOptions): Promise<void> {
   await uninstallWithRunner(options, defaultRunner);
+}
+
+export interface UpdateError {
+  readonly kind: "not-installed";
+}
+
+export type PluginChange =
+  | { readonly kind: "added"; readonly name: string; readonly to: string }
+  | { readonly kind: "changed"; readonly name: string; readonly from: string; readonly to: string }
+  | { readonly kind: "unchanged"; readonly name: string; readonly at: string }
+  | { readonly kind: "removed"; readonly name: string; readonly from: string };
+
+export interface UpdateReport {
+  readonly changes: readonly PluginChange[];
+}
+
+export async function update(options: InstallOptions): Promise<Result<UpdateReport, UpdateError>> {
+  return updateWithRunner(options, defaultRunner);
+}
+
+const UPDATE_ERROR_MESSAGES = {
+  "not-installed": "harness is not installed; run `harness install` first",
+} as const satisfies Record<UpdateError["kind"], string>;
+
+export function formatUpdateError(error: UpdateError): string {
+  return UPDATE_ERROR_MESSAGES[error.kind];
 }
 
 export async function installWithRunner(
@@ -52,6 +79,65 @@ export async function uninstallWithRunner(
   for (const vendor of ctx.vendors) {
     const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);
     await vendor.uninstall(buildVendorContext(ctx, plugins));
+  }
+}
+
+export async function updateWithRunner(
+  options: InstallOptions,
+  runner: CommandRunner,
+): Promise<Result<UpdateReport, UpdateError>> {
+  const ctx = await resolveContext(options, runner);
+  const candidates = await Promise.all(
+    ctx.vendors.map(async (vendor) => {
+      const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);
+      const vendorCtx = buildVendorContext(ctx, plugins);
+      return { vendor, plugins, vendorCtx, installed: await vendor.isInstalled(vendorCtx) };
+    }),
+  );
+  const refreshable = candidates.filter((c) => c.installed);
+  if (refreshable.length === 0) return err({ kind: "not-installed" });
+
+  const changes: PluginChange[] = [];
+  for (const { vendor, plugins, vendorCtx } of refreshable) {
+    const before = await vendor.installedVersions(vendorCtx);
+    const { enabled } = vendor.partitionPlugins(vendorCtx);
+    changes.push(...diffPlugins({ before, refreshed: enabled, shipped: plugins }));
+    if (!options.dryRun) await vendor.install(vendorCtx);
+  }
+  for (const change of changes) ctx.log(formatPluginChange(change));
+  return ok({ changes });
+}
+
+interface DiffInput {
+  readonly before: ReadonlyMap<string, string>;
+  readonly refreshed: readonly DiscoveredVendorPlugin[];
+  readonly shipped: readonly DiscoveredVendorPlugin[];
+}
+
+function diffPlugins({ before, refreshed, shipped }: DiffInput): readonly PluginChange[] {
+  const shippedNames = new Set(shipped.map((p) => p.name));
+  const changes: PluginChange[] = refreshed.map((plugin) => {
+    const from = before.get(plugin.name);
+    if (from === undefined) return { kind: "added", name: plugin.name, to: plugin.version };
+    if (from === plugin.version) return { kind: "unchanged", name: plugin.name, at: from };
+    return { kind: "changed", name: plugin.name, from, to: plugin.version };
+  });
+  for (const [name, from] of before) {
+    if (!shippedNames.has(name)) changes.push({ kind: "removed", name, from });
+  }
+  return changes;
+}
+
+function formatPluginChange(change: PluginChange): string {
+  switch (change.kind) {
+    case "added":
+      return `[update] added ${change.name} ${change.to}`;
+    case "changed":
+      return `[update] ${change.name} ${change.from} → ${change.to}`;
+    case "unchanged":
+      return `[update] ${change.name} unchanged (${change.at})`;
+    case "removed":
+      return `[update] removed ${change.name} (was ${change.from})`;
   }
 }
 

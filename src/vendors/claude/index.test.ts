@@ -207,6 +207,67 @@ test("readDisabledPluginKeys returns empty set when settings.json is missing", (
   assert.equal(keys.size, 0);
 });
 
+test("claudeVendor.isInstalled is true when a plugin cache exists for the marketplace", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-home-"));
+  try {
+    mkdirSync(join(home, "plugins/cache/shop/alpha"), { recursive: true });
+    const v = makeClaudeVendor(home);
+    assert.equal(await v.isInstalled(ctx({ marketplace: "shop" })), true);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("claudeVendor.isInstalled is false when the plugin cache is empty", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-home-"));
+  try {
+    const v = makeClaudeVendor(home);
+    assert.equal(await v.isInstalled(ctx({ marketplace: "shop", distRoot: home })), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("claudeVendor.isInstalled is false when only config links exist but no plugin is cached", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-home-"));
+  try {
+    writeFileSync(join(home, "settings.json"), "{}");
+    const v = makeClaudeVendor(home);
+    assert.equal(await v.isInstalled(ctx({ marketplace: "shop", distRoot: home })), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("claudeVendor.installedVersions reads each cached plugin's manifest version", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-home-"));
+  try {
+    const manifestDir = join(home, "plugins/cache/shop/alpha/.claude-plugin");
+    mkdirSync(manifestDir, { recursive: true });
+    writeFileSync(
+      join(manifestDir, "plugin.json"),
+      JSON.stringify({ name: "alpha", version: "1.2.3" }),
+    );
+    const v = makeClaudeVendor(home);
+    const versions = await v.installedVersions(ctx({ marketplace: "shop" }));
+    assert.equal(versions.get("alpha"), "1.2.3");
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("claudeVendor.installedVersions omits a plugin whose manifest is unreadable", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-home-"));
+  try {
+    mkdirSync(join(home, "plugins/cache/shop/broken"), { recursive: true });
+    const v = makeClaudeVendor(home);
+    const versions = await v.installedVersions(ctx({ marketplace: "shop" }));
+    assert.equal(versions.has("broken"), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test("readDisabledPluginKeys throws on malformed JSON", () => {
   const dist = mkdtempSync(join(tmpdir(), "harness-kit-bad-json-"));
   try {

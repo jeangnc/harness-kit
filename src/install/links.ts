@@ -1,10 +1,10 @@
-import { readFile, readdir, readlink, rm } from "node:fs/promises";
+import { readFile, readlink, rm } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
 import { z } from "zod";
 
 import { formatZodIssues } from "../errors/index.js";
-import { pathExists } from "../fs.js";
+import { errnoCode, pathExists, readdirOrEmpty } from "../fs.js";
 import { applyLink } from "../link/applier.js";
 import type { Vendor } from "../vendor/schema.js";
 
@@ -98,20 +98,6 @@ async function sweepOrphanLinks(
       if (!absTarget.startsWith(managedRoot)) continue;
       await rm(path);
     }
-  }
-}
-
-function errnoCode(e: unknown): string | null {
-  if (e instanceof Error && "code" in e && typeof e.code === "string") return e.code;
-  return null;
-}
-
-async function readdirOrEmpty(dir: string): Promise<readonly string[]> {
-  try {
-    return await readdir(dir);
-  } catch (e) {
-    if (errnoCode(e) === "ENOENT") return [];
-    throw e;
   }
 }
 

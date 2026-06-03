@@ -76,6 +76,8 @@ A top-level `dist/configs.json` link manifest enumerates the symlinks `harness i
 
 `--dry-run` prints the plan without touching the filesystem.
 
+`harness update` is the refresh path for an **already-installed** harness: it skips step 1 (no config-link bootstrap, so a symlinked `settings.json` and its `enabledPlugins` are left untouched) and runs step 2 only. It refuses with an error if no vendor reports an existing install, and reports a per-plugin version diff (`added` / `→` / `unchanged` / `removed`) against the versions currently cached.
+
 ## Authoring a skill
 
 Skills are auto-discovered by walking `<srcRoot>/plugins/<plugin>/skills/<name>/SKILL.md`. The `name` field in frontmatter must match the skill's folder name.
@@ -209,7 +211,8 @@ harness init      # scaffold harness.yaml + src/<vendor>/configs/ + src/plugins/
 harness compile   # compile src/ → dist/ per declared vendors
 harness lint      # lint compiled markdown under dist/
 harness check     # validate plugin references against local + installed sources
-harness install   # link configs + register plugins per declared vendor (--mode=local|remote)
+harness install   # bootstrap: link configs + register plugins per declared vendor (--mode=local|remote)
+harness update    # refresh plugins for an already-installed harness; skips config links, reports version diff
 harness uninstall # remove installed plugins per declared vendor
 harness eval      # run routing + solving evals against the installed harness
 ```

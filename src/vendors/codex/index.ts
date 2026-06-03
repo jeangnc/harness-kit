@@ -3,6 +3,7 @@ import { cp, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { runIgnoreFailure } from "../../install/runner.js";
+import { readdirOrEmpty } from "../../fs.js";
 import {
   defaultEmitMarketplaceManifest,
   defaultEmitPluginManifest,
@@ -43,10 +44,10 @@ export function makeCodexVendor(home: string): Vendor {
     async install(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;
       ctx.log(`[codex] priming ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace}`);
-      await rm(join(home, "plugins/cache", ctx.marketplace), { recursive: true, force: true });
+      await rm(cacheDir(home, ctx.marketplace), { recursive: true, force: true });
       await runIgnoreFailure(ctx.run, "codex", ["plugin", "marketplace", "add", ctx.distRoot]);
       for (const plugin of ctx.plugins) {
-        const dest = join(home, "plugins/cache", ctx.marketplace, plugin.name, plugin.version);
+        const dest = join(cacheDir(home, ctx.marketplace), plugin.name, plugin.version);
         await mkdir(dirname(dest), { recursive: true });
         await cp(plugin.path, dest, { recursive: true });
         ctx.log(`[codex] cached ${plugin.name}@${plugin.version}`);
@@ -59,11 +60,28 @@ export function makeCodexVendor(home: string): Vendor {
         "remove",
         ctx.marketplace,
       ]);
-      await rm(join(home, "plugins/cache", ctx.marketplace), { recursive: true, force: true });
+      await rm(cacheDir(home, ctx.marketplace), { recursive: true, force: true });
       ctx.log(`[codex] removed ${ctx.marketplace} cache`);
     },
     partitionPlugins: defaultPartition,
+    async isInstalled(ctx: VendorInstallContext): Promise<boolean> {
+      const entries = await readdirOrEmpty(cacheDir(home, ctx.marketplace));
+      return entries.length > 0;
+    },
+    async installedVersions(ctx: VendorInstallContext): Promise<ReadonlyMap<string, string>> {
+      const root = cacheDir(home, ctx.marketplace);
+      const versions = new Map<string, string>();
+      for (const name of await readdirOrEmpty(root)) {
+        const [version] = await readdirOrEmpty(join(root, name));
+        if (version !== undefined) versions.set(name, version);
+      }
+      return versions;
+    },
   };
+}
+
+function cacheDir(home: string, marketplace: string): string {
+  return join(home, "plugins/cache", marketplace);
 }
 
 export const codexVendor: Vendor = makeCodexVendor(join(homedir(), ".codex"));

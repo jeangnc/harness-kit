@@ -1,9 +1,10 @@
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { runIgnoreFailure } from "../../install/runner.js";
+import { readdirOrEmpty } from "../../fs.js";
 import { defaultEmitMarketplaceManifest, defaultEmitPluginManifest } from "../shared.js";
 import type {
   DiscoveredVendorPlugin,
@@ -110,7 +111,7 @@ export function makeClaudeVendor(home: string): Vendor {
           "uninstall",
           pluginKey(plugin.name, ctx.marketplace),
         ]);
-        await rm(join(home, "plugins/cache", ctx.marketplace, plugin.name), {
+        await rm(join(cacheDir(home, ctx.marketplace), plugin.name), {
           recursive: true,
           force: true,
         });
@@ -142,7 +143,34 @@ export function makeClaudeVendor(home: string): Vendor {
       ]);
     },
     partitionPlugins: partitionByEnabled,
+    async isInstalled(ctx: VendorInstallContext): Promise<boolean> {
+      const cached = await readdirOrEmpty(cacheDir(home, ctx.marketplace));
+      return cached.length > 0;
+    },
+    async installedVersions(ctx: VendorInstallContext): Promise<ReadonlyMap<string, string>> {
+      const root = cacheDir(home, ctx.marketplace);
+      const versions = new Map<string, string>();
+      for (const name of await readdirOrEmpty(root)) {
+        const version = await readManifestVersion(join(root, name, PLUGIN_MANIFEST_REL));
+        if (version !== undefined) versions.set(name, version);
+      }
+      return versions;
+    },
   };
+}
+
+function cacheDir(home: string, marketplace: string): string {
+  return join(home, "plugins/cache", marketplace);
+}
+
+async function readManifestVersion(manifestPath: string): Promise<string | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+    const version = isRecord(parsed) ? parsed["version"] : undefined;
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {

@@ -122,6 +122,55 @@ test("codexVendor.install wipes any pre-existing marketplace cache", async () =>
   });
 });
 
+test("codexVendor.isInstalled is true when the marketplace cache exists", async () => {
+  await withSandbox(async ({ distRoot, codexHome }) => {
+    mkdirSync(join(codexHome, "plugins/cache/test-market/alpha/1.0.0"), { recursive: true });
+    const { run } = recordingRunner();
+    const installed = await makeCodexVendor(codexHome).isInstalled({
+      distRoot,
+      marketplace: "test-market",
+      plugins: [],
+      mode: "remote",
+      run,
+      log: () => undefined,
+    });
+    assert.equal(installed, true);
+  });
+});
+
+test("codexVendor.isInstalled is false when no marketplace cache exists", async () => {
+  await withSandbox(async ({ distRoot, codexHome }) => {
+    const { run } = recordingRunner();
+    const installed = await makeCodexVendor(codexHome).isInstalled({
+      distRoot,
+      marketplace: "test-market",
+      plugins: [],
+      mode: "remote",
+      run,
+      log: () => undefined,
+    });
+    assert.equal(installed, false);
+  });
+});
+
+test("codexVendor.installedVersions reads the version from the cache directory name", async () => {
+  await withSandbox(async ({ distRoot, codexHome }) => {
+    mkdirSync(join(codexHome, "plugins/cache/test-market/alpha/2.5.0"), { recursive: true });
+    mkdirSync(join(codexHome, "plugins/cache/test-market/beta/0.1.0"), { recursive: true });
+    const { run } = recordingRunner();
+    const versions = await makeCodexVendor(codexHome).installedVersions({
+      distRoot,
+      marketplace: "test-market",
+      plugins: [],
+      mode: "remote",
+      run,
+      log: () => undefined,
+    });
+    assert.equal(versions.get("alpha"), "2.5.0");
+    assert.equal(versions.get("beta"), "0.1.0");
+  });
+});
+
 test("codexVendor.uninstall removes marketplace cache + calls codex CLI", async () => {
   await withSandbox(async ({ distRoot, codexHome }) => {
     const cacheDir = join(codexHome, "plugins/cache/test-market");

@@ -19,7 +19,7 @@ import {
 import { formatConsole, runEval, toJson } from "./eval/index.js";
 import { TIERS, type Tier } from "./eval/schema.js";
 import { initHarness } from "./init/index.js";
-import { install, uninstall } from "./install/index.js";
+import { formatUpdateError, install, uninstall, update } from "./install/index.js";
 import { parseInstallMode } from "./install/mode.js";
 import { lint } from "./lint.js";
 import { builtinVendors } from "./vendor/builtins.js";
@@ -96,6 +96,33 @@ const uninstallCmd = defineCommand({
       silent: args.silent,
       dryRun: args["dry-run"],
     });
+  },
+});
+
+const updateCmd = defineCommand({
+  meta: {
+    name: "update",
+    description: "Refresh plugins for an already-installed harness (skips config-link bootstrap)",
+  },
+  args: {
+    ...installArgs,
+    mode: { type: "string", default: "local", description: "install source: local | remote" },
+  },
+  run: async ({ args }) => {
+    const mode = parseInstallMode(args.mode);
+    const vendors = await resolveVendorsForRepo(args.repo);
+    const result = await update({
+      distRoot: args.dist,
+      repoRoot: args.repo,
+      vendors,
+      mode,
+      silent: args.silent,
+      dryRun: args["dry-run"],
+    });
+    if (!result.ok) {
+      console.error(formatUpdateError(result.error));
+      process.exit(1);
+    }
   },
 });
 
@@ -295,6 +322,7 @@ const main = defineCommand({
     install: installCmd,
     lint: lintCmd,
     uninstall: uninstallCmd,
+    update: updateCmd,
   },
 });
 
