@@ -61,6 +61,11 @@ test("a bare id that matches no known artifact is left alone as ordinary prose",
   assert.deepEqual(found, []);
 });
 
+test("a scoped reference inside a fenced code block is illustrative, not a bypass", () => {
+  const found = detectBypasses("```\na → dev-tools:typescript → b\n```\n", haystacks);
+  assert.deepEqual(found, []);
+});
+
 test("the slash sigil resolves to a command even when the id also names a skill", () => {
   const both: BypassHaystacks = {
     skill: new Set(["dev-tools:open-pr"]),

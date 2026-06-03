@@ -32,7 +32,7 @@ const SIGIL_PATTERNS: readonly SigilPattern[] = [
 ];
 
 export function detectBypasses(body: string, haystacks: BypassHaystacks): readonly Bypass[] {
-  const spans = placeholderSpans(body);
+  const spans = nonReferenceSpans(body);
   const bypasses: Bypass[] = [];
   for (const ref of rawReferences(body)) {
     if (within(ref.offset, spans)) continue;
