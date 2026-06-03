@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 
 import { parsePlaceholders } from "../placeholders/index.js";
 import { err, ok, type Result } from "../result.js";
@@ -7,19 +7,12 @@ import { err, ok, type Result } from "../result.js";
 export type IncludeError =
   | { readonly tag: "include-cycle"; readonly chain: readonly string[] }
   | { readonly tag: "include-missing"; readonly path: string; readonly from: string }
-  | {
-      readonly tag: "include-escapes-roots";
-      readonly path: string;
-      readonly roots: readonly string[];
-    }
   | { readonly tag: "include-unknown-root"; readonly raw: string; readonly name: string }
   | { readonly tag: "include-anchor-without-path"; readonly raw: string; readonly name: string }
-  | { readonly tag: "include-not-md"; readonly path: string }
-  | { readonly tag: "include-absolute"; readonly raw: string }
   | { readonly tag: "include-empty"; readonly raw: string };
 
 export interface IncludeRoots {
-  readonly self: string;
+  readonly repoRoot: string;
   readonly named: Readonly<Record<string, string>>;
 }
 
@@ -46,18 +39,14 @@ export function formatIncludeError(error: IncludeError): string {
       return `include cycle: ${error.chain.join(" → ")}`;
     case "include-missing":
       return `include target not found: ${error.path} (from ${error.from})`;
-    case "include-escapes-roots":
-      return `include path "${error.path}" escapes all allowed roots (${error.roots.join(", ")})`;
     case "include-unknown-root":
       return `include references unknown root "@${error.name}" in ${error.raw}`;
-    case "include-anchor-without-path":
-      return `include "@${error.name}" is missing a path (expected @${error.name}/<file>.md) in ${error.raw}`;
-    case "include-not-md":
-      return `include only supports .md files (got ${error.path})`;
-    case "include-absolute":
-      return `include path must be relative (got ${error.raw})`;
+    case "include-anchor-without-path": {
+      const example = error.name === "#" ? "#<file>" : `${error.name}/<file>`;
+      return `include "${error.name}" is missing a path (expected ${example}) in ${error.raw}`;
+    }
     case "include-empty":
-      return `expected {{include:<relative-path>.md}} (got ${error.raw})`;
+      return `expected {{include:<relative-path>}} (got ${error.raw})`;
   }
 }
 
@@ -67,27 +56,21 @@ type Resolution =
   | { readonly kind: "anchor-without-path"; readonly name: string };
 
 function resolveTarget(rel: string, fromFile: string, roots: IncludeRoots): Resolution {
-  if (!rel.startsWith("@")) {
-    return { kind: "target", target: resolve(dirname(fromFile), rel) };
+  if (rel.startsWith("#")) {
+    const sub = rel.slice(1).replace(/^\//, "");
+    if (sub === "") return { kind: "anchor-without-path", name: "#" };
+    return { kind: "target", target: resolve(roots.repoRoot, sub) };
   }
-  const slash = rel.indexOf("/");
-  const [name, sub] =
-    slash === -1 ? [rel.slice(1), ""] : [rel.slice(1, slash), rel.slice(slash + 1)];
-  const root = roots.named[name];
-  if (root === undefined) {
-    return { kind: "unknown-root", name };
+  if (rel.startsWith("@")) {
+    const slash = rel.indexOf("/");
+    const [name, sub] =
+      slash === -1 ? [rel.slice(1), ""] : [rel.slice(1, slash), rel.slice(slash + 1)];
+    const root = roots.named[name];
+    if (root === undefined) return { kind: "unknown-root", name };
+    if (sub === "") return { kind: "anchor-without-path", name: `@${name}` };
+    return { kind: "target", target: resolve(root, sub) };
   }
-  if (sub === "") {
-    return { kind: "anchor-without-path", name };
-  }
-  return { kind: "target", target: resolve(root, sub) };
-}
-
-function isInsideAnyRoot(target: string, allowed: readonly string[]): boolean {
-  return allowed.some((root) => {
-    const rel = relative(root, target);
-    return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
-  });
+  return { kind: "target", target: resolve(dirname(fromFile), rel) };
 }
 
 interface ResolvedInclude {
@@ -99,27 +82,17 @@ function resolveInclude(
   token: { readonly value: string | null; readonly raw: string },
   fromFile: string,
   roots: IncludeRoots,
-  allowed: readonly string[],
 ): Result<ResolvedInclude, IncludeError> {
   if (token.value === null) {
     return err({ tag: "include-empty", raw: token.raw });
   }
   const rel = token.value.trim();
-  if (isAbsolute(rel)) {
-    return err({ tag: "include-absolute", raw: token.raw });
-  }
   const resolution = resolveTarget(rel, fromFile, roots);
   if (resolution.kind === "unknown-root") {
     return err({ tag: "include-unknown-root", raw: token.raw, name: resolution.name });
   }
   if (resolution.kind === "anchor-without-path") {
     return err({ tag: "include-anchor-without-path", raw: token.raw, name: resolution.name });
-  }
-  if (!rel.endsWith(".md")) {
-    return err({ tag: "include-not-md", path: rel });
-  }
-  if (!isInsideAnyRoot(resolution.target, allowed)) {
-    return err({ tag: "include-escapes-roots", path: rel, roots: allowed });
   }
   return ok({ target: resolution.target, rel });
 }
@@ -135,14 +108,13 @@ async function expand(
   const tokens = parsePlaceholders(body).filter((t) => t.prefix === "include");
   if (tokens.length === 0) return body;
 
-  const allowed = [roots.self, ...Object.values(roots.named)];
   let out = "";
   let cursor = 0;
   for (const token of tokens) {
     out += body.slice(cursor, token.start);
     cursor = token.end;
 
-    const resolution = resolveInclude(token, fromFile, roots, allowed);
+    const resolution = resolveInclude(token, fromFile, roots);
     if (!resolution.ok) {
       errors.push(resolution.error);
       out += token.raw;

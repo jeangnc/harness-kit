@@ -79,15 +79,14 @@ test("compileConfigs errors when a .md file uses an unknown placeholder prefix",
   });
 });
 
-test("compileConfigs blocks {{include:...}} paths that escape the vendor configs dir", async () => {
+test("compileConfigs inlines {{include:...}} paths that escape the vendor configs dir", async () => {
   await withSandbox(async ({ srcRoot, outRoot }) => {
     mkdirSync(join(srcRoot, "claude/configs"), { recursive: true });
-    writeFileSync(join(srcRoot, "outside.md"), "leaked\n");
+    writeFileSync(join(srcRoot, "outside.md"), "outside body\n");
     writeFileSync(join(srcRoot, "claude/configs/AGENTS.md"), "{{include:../../outside.md}}\n");
-    await assert.rejects(
-      async () => compileConfigs({ srcRoot, outRoot, vendors: [claude] }),
-      /escapes/,
-    );
+    await compileConfigs({ srcRoot, outRoot, vendors: [claude] });
+    const out = readFileSync(join(outRoot, "claude/configs/AGENTS.md"), "utf8");
+    assert.equal(out, "outside body\n");
   });
 });
 
@@ -130,6 +129,24 @@ test("compileConfigs errors on {{include:@shared/...}} when no root is declared"
     await assert.rejects(
       async () => compileConfigs({ srcRoot, outRoot, vendors: [claude] }),
       /unknown root/,
+    );
+  });
+});
+
+test("compileConfigs resolves {{include:#...}} from the repo root", async () => {
+  await withSandbox(async ({ srcRoot, outRoot }) => {
+    const repoRoot = join(srcRoot, "..");
+    mkdirSync(join(srcRoot, "claude/configs"), { recursive: true });
+    mkdirSync(join(repoRoot, "shared"), { recursive: true });
+    writeFileSync(join(repoRoot, "shared/common.md"), "## Common\n\nshared body\n");
+    writeFileSync(
+      join(srcRoot, "claude/configs/AGENTS.md"),
+      "# Claude\n\n{{include:#shared/common.md}}\n",
+    );
+    await compileConfigs({ srcRoot, outRoot, vendors: [claude], repoRoot });
+    assert.equal(
+      readFileSync(join(outRoot, "claude/configs/AGENTS.md"), "utf8"),
+      "# Claude\n\n## Common\n\nshared body\n",
     );
   });
 });

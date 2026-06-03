@@ -34,6 +34,7 @@ export interface CompileTreeOptions {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
   readonly skipRelPaths?: ReadonlySet<string>;
+  readonly repoRoot: string;
   readonly namedRoots?: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
@@ -41,6 +42,7 @@ export interface CompileTreeOptions {
 interface CompileContext {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
+  readonly repoRoot: string;
   readonly namedRoots: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
@@ -50,6 +52,7 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
   const ctx: CompileContext = {
     localIds: options.localIds,
     installedIndex: options.installedIndex,
+    repoRoot: options.repoRoot,
     namedRoots: options.namedRoots ?? {},
     ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   };
@@ -131,17 +134,19 @@ async function emitSkill(
   const expectedName = basename(skillDir);
 
   const expanded = await expandIncludes(body, loaded.value.skillFilePath, {
-    self: skillDir,
+    repoRoot: ctx.repoRoot,
     named: ctx.namedRoots,
   });
   if (!expanded.ok) {
     throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
   }
   const expandedBody = expanded.value.body;
-  const includedFilenames = new Set(
-    [...expanded.value.resolvedIncludes].map((p) => relative(skillDir, p)),
+  const includedSiblings = new Set(
+    [...expanded.value.resolvedIncludes]
+      .map((p) => relative(skillDir, p))
+      .filter((rel) => !rel.startsWith("..")),
   );
-  const filteredSiblings = siblings.filter((s) => !includedFilenames.has(s));
+  const filteredSiblings = siblings.filter((s) => !includedSiblings.has(s));
 
   const errors: string[] = [];
   if (skill.name !== expectedName) {
@@ -196,7 +201,10 @@ async function emitSubstitutedFile(
   ctx: CompileContext,
 ): Promise<void> {
   const raw = await readFile(srcPath, "utf8");
-  const expanded = await expandIncludes(raw, srcPath, { self: baseDir, named: ctx.namedRoots });
+  const expanded = await expandIncludes(raw, srcPath, {
+    repoRoot: ctx.repoRoot,
+    named: ctx.namedRoots,
+  });
   if (!expanded.ok) {
     throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
   }

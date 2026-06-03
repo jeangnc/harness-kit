@@ -36,7 +36,7 @@ async function withSkill<T>(
   const namedAbs = Object.fromEntries(
     Object.entries(named).map(([name, rel]) => [name, join(sandbox, rel)]),
   );
-  const roots: IncludeRoots = { self: skillDir, named: namedAbs };
+  const roots: IncludeRoots = { repoRoot: sandbox, named: namedAbs };
   return fn({ skillDir, roots, write }).finally(() =>
     rmSync(sandbox, { recursive: true, force: true }),
   );
@@ -112,30 +112,62 @@ test("expandIncludes returns include-missing for a non-existent target", async (
   });
 });
 
-test("expandIncludes rejects an absolute path", async () => {
-  await withSkill({}, async ({ skillDir, roots }) => {
-    const body = "{{include:/etc/passwd}}";
+test("expandIncludes inlines an absolute path", async () => {
+  await withSkill({}, async ({ skillDir, roots, write }) => {
+    const target = write("anywhere/frag.md", "absolute body\n");
+    const body = `{{include:${target}}}`;
     const result = await expandIncludes(body, skillFile(skillDir), roots);
-    if (result.ok) assert.fail("expected absolute-path error");
-    assert.equal(result.error[0]?.tag, "include-absolute");
+    if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
+    assert.equal(result.value.body, "absolute body");
   });
 });
 
-test("expandIncludes rejects a path that escapes all allowed roots", async () => {
-  await withSkill({}, async ({ skillDir, roots }) => {
+test("expandIncludes inlines a relative path that escapes the skill directory", async () => {
+  await withSkill({}, async ({ skillDir, roots, write }) => {
+    write("plugins/foo/skills/sibling/leak.md", "leaked body\n");
     const body = "{{include:../sibling/leak.md}}";
     const result = await expandIncludes(body, skillFile(skillDir), roots);
-    if (result.ok) assert.fail("expected escapes-roots error");
-    assert.equal(result.error[0]?.tag, "include-escapes-roots");
+    if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
+    assert.equal(result.value.body, "leaked body");
   });
 });
 
-test("expandIncludes rejects a non-.md target", async () => {
-  await withSkill({ "data.json": "{}" }, async ({ skillDir, roots }) => {
+test("expandIncludes inlines a non-.md target verbatim", async () => {
+  await withSkill({ "data.json": '{"k":1}\n' }, async ({ skillDir, roots }) => {
     const body = "{{include:./data.json}}";
     const result = await expandIncludes(body, skillFile(skillDir), roots);
-    if (result.ok) assert.fail("expected non-md error");
-    assert.equal(result.error[0]?.tag, "include-not-md");
+    if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
+    assert.equal(result.value.body, '{"k":1}');
+  });
+});
+
+test("expandIncludes resolves a #-anchored include from the repo root", async () => {
+  await withSkill({}, async ({ skillDir, roots, write }) => {
+    const target = write("shared/frag.md", "repo-root body\n");
+    const body = "x\n{{include:#shared/frag.md}}\ny\n";
+    const result = await expandIncludes(body, skillFile(skillDir), roots);
+    if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
+    assert.equal(result.value.body, "x\nrepo-root body\ny\n");
+    assert.deepEqual([...result.value.resolvedIncludes], [target]);
+  });
+});
+
+test("expandIncludes resolves a #-anchored include written with a leading slash", async () => {
+  await withSkill({}, async ({ skillDir, roots, write }) => {
+    write("shared/frag.md", "leading-slash body\n");
+    const body = "{{include:#/shared/frag.md}}";
+    const result = await expandIncludes(body, skillFile(skillDir), roots);
+    if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
+    assert.equal(result.value.body, "leading-slash body");
+  });
+});
+
+test("expandIncludes reports include-anchor-without-path for a bare # with no path", async () => {
+  await withSkill({}, async ({ skillDir, roots }) => {
+    const body = "{{include:#}}";
+    const result = await expandIncludes(body, skillFile(skillDir), roots);
+    if (result.ok) assert.fail("expected anchor-without-path error");
+    assert.equal(result.error[0]?.tag, "include-anchor-without-path");
   });
 });
 
@@ -221,7 +253,7 @@ test("expandIncludes reports include-anchor-without-path for a bare @root with n
   );
 });
 
-test("expandIncludes accepts an @root include whose target lands inside a different declared root", async () => {
+test("expandIncludes resolves an @root include whose path walks out via ..", async () => {
   await withSkill(
     {},
     async ({ skillDir, roots, write }) => {
@@ -232,34 +264,6 @@ test("expandIncludes accepts an @root include whose target lands inside a differ
       assert.equal(result.value.body, "from other");
     },
     { rootA: "a/sub", rootB: "a/other" },
-  );
-});
-
-test("expandIncludes rejects an @root include that escapes its root via ..", async () => {
-  await withSkill(
-    {},
-    async ({ skillDir, roots, write }) => {
-      write("secret.md", "secret\n");
-      const body = "{{include:@shared/../secret.md}}";
-      const result = await expandIncludes(body, skillFile(skillDir), roots);
-      if (result.ok) assert.fail("expected escapes-roots error");
-      assert.equal(result.error[0]?.tag, "include-escapes-roots");
-    },
-    { shared: "shared" },
-  );
-});
-
-test("expandIncludes still enforces .md for @root includes", async () => {
-  await withSkill(
-    {},
-    async ({ skillDir, roots, write }) => {
-      write("shared/data.json", "{}");
-      const body = "{{include:@shared/data.json}}";
-      const result = await expandIncludes(body, skillFile(skillDir), roots);
-      if (result.ok) assert.fail("expected non-md error");
-      assert.equal(result.error[0]?.tag, "include-not-md");
-    },
-    { shared: "shared" },
   );
 });
 
@@ -278,6 +282,17 @@ test("expandIncludes detects a cycle spanning relative and @root forms", async (
   );
 });
 
+test("expandIncludes detects a cycle reaching the same file via # and relative forms", async () => {
+  await withSkill({}, async ({ skillDir, roots, write }) => {
+    write("shared/a.md", "{{include:./b.md}}");
+    write("shared/b.md", "{{include:#shared/a.md}}");
+    const body = "{{include:#shared/a.md}}";
+    const result = await expandIncludes(body, skillFile(skillDir), roots);
+    if (result.ok) assert.fail("expected cycle error");
+    assert.ok(result.error.some((e) => e.tag === "include-cycle"));
+  });
+});
+
 test("formatIncludeError produces a readable message for each variant", () => {
   assert.match(
     formatIncludeError({ tag: "include-cycle", chain: ["/a.md", "/b.md", "/a.md"] }),
@@ -286,10 +301,6 @@ test("formatIncludeError produces a readable message for each variant", () => {
   assert.match(
     formatIncludeError({ tag: "include-missing", path: "./x.md", from: "/SKILL.md" }),
     /not found/,
-  );
-  assert.match(
-    formatIncludeError({ tag: "include-escapes-roots", path: "../x.md", roots: ["/skill"] }),
-    /escapes/,
   );
   assert.match(
     formatIncludeError({
@@ -307,7 +318,5 @@ test("formatIncludeError produces a readable message for each variant", () => {
     }),
     /missing a path/,
   );
-  assert.match(formatIncludeError({ tag: "include-not-md", path: "./x.json" }), /\.md/);
-  assert.match(formatIncludeError({ tag: "include-absolute", raw: "{{include:/x}}" }), /relative/);
   assert.match(formatIncludeError({ tag: "include-empty", raw: "{{include}}" }), /relative-path/);
 });

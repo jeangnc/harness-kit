@@ -40,6 +40,7 @@ export async function compile(options: CompileOptions = {}): Promise<void> {
     adapter,
     localIds,
     installedIndex,
+    repoRoot,
     namedRoots,
     ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
   });
@@ -49,6 +50,7 @@ export async function compile(options: CompileOptions = {}): Promise<void> {
     vendors,
     localIds,
     installedIndex,
+    repoRoot,
     namedRoots,
     ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
   });

@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { compileTree, type WarningSink } from "./emit.js";
 import { checkHookRootReads } from "./hooks.js";
@@ -33,6 +33,7 @@ export interface CompilePluginsOptions {
   readonly adapter?: LayoutAdapter;
   readonly localIds?: LocalIds;
   readonly installedIndex?: InstalledIndex;
+  readonly repoRoot?: string;
   readonly namedRoots?: Readonly<Record<string, string>>;
 }
 
@@ -53,6 +54,7 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
   for (const vendor of vendors) {
     await vendor.emitMarketplaceManifest({ outRoot, marketplace: adapter.marketplace });
   }
+  const repoRoot = options.repoRoot ?? dirname(srcRoot);
   const namedRoots = options.namedRoots ?? {};
   for (const plugin of adapter.plugins) {
     for (const vendor of vendors) {
@@ -61,6 +63,7 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
         localIds,
         installedIndex,
         skipRelPaths,
+        repoRoot,
         namedRoots,
         ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
       });
@@ -106,6 +109,7 @@ interface EmitPluginOptions {
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
   readonly skipRelPaths: ReadonlySet<string>;
+  readonly repoRoot: string;
   readonly namedRoots: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
@@ -123,6 +127,7 @@ async function emitPluginForVendor(
     localIds: options.localIds,
     installedIndex: options.installedIndex,
     skipRelPaths: options.skipRelPaths,
+    repoRoot: options.repoRoot,
     namedRoots: options.namedRoots,
     ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
   });

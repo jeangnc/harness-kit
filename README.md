@@ -18,13 +18,15 @@ harness install
 
 ### `harness.yaml`
 
-A declarative repo config with two required fields:
+A declarative repo config with two required fields and one optional one:
 
 ```yaml
 marketplace: my-harness
 vendors:
   - claude
   - codex
+roots:                       # optional — named include aliases (see Composing with includes)
+  shared: src/shared
 ```
 
 Created by `harness init`. Read automatically by `compile`, `install`, and `uninstall` via `--repo` (default `.`).
@@ -126,14 +128,25 @@ For details, see `details.md`.
 
 ### Composing with includes
 
-Use `{{include:./.fragments/foo.md}}` to inline another Markdown file verbatim into the body. Includes expand recursively (an included file may itself contain `{{include:...}}`), and any other placeholders inside the inlined content are resolved against the **host skill**, not the include source.
+Use `{{include:./.fragments/foo.md}}` to inline another file verbatim into the body. Includes expand recursively (an included file may itself contain `{{include:...}}`), and any other placeholders inside the inlined content are resolved against the **host skill**, not the include source.
+
+An include target is named one of three ways:
+
+| Form | Resolves from | Example |
+| --- | --- | --- |
+| **relative** | the directory of the including file | `{{include:./.fragments/foo.md}}`, `{{include:../shared/foo.md}}` |
+| **`#` repo-root anchor** | the repo root (`--repo`, default `.`) — built in, no declaration | `{{include:#src/shared/foo.md}}` |
+| **`@name` alias** | a named root declared under `roots:` in `harness.yaml` | `{{include:@shared/foo.md}}` |
+
+`#` is the repo root; `@name` is whatever path you mapped that name to. Both let a deeply-nested skill reach a shared fragment without a fragile `../../../` chain — pick `#` for an ad-hoc repo-relative path, `@name` for a stable alias you reuse across many skills.
 
 Constraints:
 
-- Path must be relative and stay inside the skill directory.
-- Target must end in `.md`.
 - Cycles are detected and fail the compile.
+- An `@name` referencing an undeclared root, or a bare `@name` / `#` with no path, fails the compile.
 - Included files are not copied into `dist/` and are not flagged as undeclared companions.
+
+There is no skill-directory boundary and no extension restriction: an include reads any file from anywhere the path points, `.md` or not.
 
 ### Fragments vs companions
 
@@ -201,7 +214,7 @@ Writing a reference raw — as the rendered `<plugin>:<name>` handle — instead
 | `{{command:<plugin>:<name>}}` | `` `/<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |
 | `{{agent:<plugin>:<name>}}` | `` `<plugin>:<name>` `` | Resolves against local marketplace + installed plugins; warns on compile, fails `check --mode=all` |
 | `{{ref:<relative-path>}}` | `` `<relative-path>` `` | Must be a file under the skill directory |
-| `{{include:<relative-path.md>}}` | Inlined content of the target file | Must be a `.md` file inside the skill, no cycles |
+| `{{include:<path>}}` | Inlined content of the target file | Relative, `#`repo-root, or `@name` alias; any extension, anywhere; no cycles |
 | `{{companions}}` | Companion files section | Required iff companions are declared |
 
 ## CLI

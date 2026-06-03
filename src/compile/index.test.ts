@@ -822,10 +822,28 @@ test("compile fails on an include cycle", async () => {
   );
 });
 
-test("compile fails when an include path escapes the skill directory", async () => {
-  const skillMd = `---\nname: bar\ndescription: x\n---\n\n{{include:../../leak.md}}\n`;
+test("compile inlines a #-anchored include from the repo root", async () => {
+  const skillMd = `---\nname: bar\ndescription: x\n---\n\nx {{include:#shared/frag.md}} y\n`;
   await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    await assert.rejects(compilePlugins({ srcRoot, outRoot: distRoot, vendors }), /escapes/);
+    mkdirSync(join(srcRoot, "shared"), { recursive: true });
+    writeFileSync(join(srcRoot, "shared/frag.md"), "FRAG");
+    await compilePlugins({ srcRoot, outRoot: distRoot, vendors, repoRoot: srcRoot });
+    const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
+    assert.match(out, /x FRAG y/);
+  });
+});
+
+test("compile inlines a cross-skill include without emitting the fragment to dist", async () => {
+  const skillMd = `---\nname: bar\ndescription: x\n---\n\nx {{include:../sibling/.fragments/frag.md}} y\n`;
+  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
+    const fragDir = join(srcRoot, "plugins/foo/skills/sibling/.fragments");
+    mkdirSync(fragDir, { recursive: true });
+    writeFileSync(join(fragDir, "frag.md"), "SHARED");
+    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
+    assert.match(out, /x SHARED y/);
+    const stray = join(distRoot, "claude/plugins/foo/skills/sibling/.fragments/frag.md");
+    assert.ok(!existsSync(stray), `included fragment should not land in dist at ${stray}`);
   });
 });
 
