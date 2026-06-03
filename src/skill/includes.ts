@@ -13,6 +13,7 @@ export type IncludeError =
       readonly roots: readonly string[];
     }
   | { readonly tag: "include-unknown-root"; readonly raw: string; readonly name: string }
+  | { readonly tag: "include-anchor-without-path"; readonly raw: string; readonly name: string }
   | { readonly tag: "include-not-md"; readonly path: string }
   | { readonly tag: "include-absolute"; readonly raw: string }
   | { readonly tag: "include-empty"; readonly raw: string };
@@ -49,6 +50,8 @@ export function formatIncludeError(error: IncludeError): string {
       return `include path "${error.path}" escapes all allowed roots (${error.roots.join(", ")})`;
     case "include-unknown-root":
       return `include references unknown root "@${error.name}" in ${error.raw}`;
+    case "include-anchor-without-path":
+      return `include "@${error.name}" is missing a path (expected @${error.name}/<file>.md) in ${error.raw}`;
     case "include-not-md":
       return `include only supports .md files (got ${error.path})`;
     case "include-absolute":
@@ -58,26 +61,26 @@ export function formatIncludeError(error: IncludeError): string {
   }
 }
 
-interface Resolution {
-  readonly target: string;
-}
+type Resolution =
+  | { readonly kind: "target"; readonly target: string }
+  | { readonly kind: "unknown-root"; readonly name: string }
+  | { readonly kind: "anchor-without-path"; readonly name: string };
 
-function resolveTarget(
-  rel: string,
-  fromFile: string,
-  roots: IncludeRoots,
-): Resolution | { readonly unknownRoot: string } {
+function resolveTarget(rel: string, fromFile: string, roots: IncludeRoots): Resolution {
   if (!rel.startsWith("@")) {
-    return { target: resolve(dirname(fromFile), rel) };
+    return { kind: "target", target: resolve(dirname(fromFile), rel) };
   }
   const slash = rel.indexOf("/");
-  const name = slash === -1 ? rel.slice(1) : rel.slice(1, slash);
-  const sub = slash === -1 ? "" : rel.slice(slash + 1);
-  const rootPath = roots.named[name];
-  if (rootPath === undefined || sub === "") {
-    return { unknownRoot: name };
+  const [name, sub] =
+    slash === -1 ? [rel.slice(1), ""] : [rel.slice(1, slash), rel.slice(slash + 1)];
+  const root = roots.named[name];
+  if (root === undefined) {
+    return { kind: "unknown-root", name };
   }
-  return { target: resolve(rootPath, sub) };
+  if (sub === "") {
+    return { kind: "anchor-without-path", name };
+  }
+  return { kind: "target", target: resolve(root, sub) };
 }
 
 function isInsideAnyRoot(target: string, allowed: readonly string[]): boolean {
@@ -85,6 +88,40 @@ function isInsideAnyRoot(target: string, allowed: readonly string[]): boolean {
     const rel = relative(root, target);
     return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
   });
+}
+
+interface ResolvedInclude {
+  readonly target: string;
+  readonly rel: string;
+}
+
+function resolveInclude(
+  token: { readonly value: string | null; readonly raw: string },
+  fromFile: string,
+  roots: IncludeRoots,
+  allowed: readonly string[],
+): Result<ResolvedInclude, IncludeError> {
+  if (token.value === null) {
+    return err({ tag: "include-empty", raw: token.raw });
+  }
+  const rel = token.value.trim();
+  if (isAbsolute(rel)) {
+    return err({ tag: "include-absolute", raw: token.raw });
+  }
+  const resolution = resolveTarget(rel, fromFile, roots);
+  if (resolution.kind === "unknown-root") {
+    return err({ tag: "include-unknown-root", raw: token.raw, name: resolution.name });
+  }
+  if (resolution.kind === "anchor-without-path") {
+    return err({ tag: "include-anchor-without-path", raw: token.raw, name: resolution.name });
+  }
+  if (!rel.endsWith(".md")) {
+    return err({ tag: "include-not-md", path: rel });
+  }
+  if (!isInsideAnyRoot(resolution.target, allowed)) {
+    return err({ tag: "include-escapes-roots", path: rel, roots: allowed });
+  }
+  return ok({ target: resolution.target, rel });
 }
 
 async function expand(
@@ -105,34 +142,13 @@ async function expand(
     out += body.slice(cursor, token.start);
     cursor = token.end;
 
-    if (token.value === null) {
-      errors.push({ tag: "include-empty", raw: token.raw });
+    const resolution = resolveInclude(token, fromFile, roots, allowed);
+    if (!resolution.ok) {
+      errors.push(resolution.error);
       out += token.raw;
       continue;
     }
-    const rel = token.value.trim();
-    if (isAbsolute(rel)) {
-      errors.push({ tag: "include-absolute", raw: token.raw });
-      out += token.raw;
-      continue;
-    }
-    if (!rel.endsWith(".md")) {
-      errors.push({ tag: "include-not-md", path: rel });
-      out += token.raw;
-      continue;
-    }
-    const resolution = resolveTarget(rel, fromFile, roots);
-    if ("unknownRoot" in resolution) {
-      errors.push({ tag: "include-unknown-root", raw: token.raw, name: resolution.unknownRoot });
-      out += token.raw;
-      continue;
-    }
-    const { target } = resolution;
-    if (!isInsideAnyRoot(target, allowed)) {
-      errors.push({ tag: "include-escapes-roots", path: rel, roots: allowed });
-      out += token.raw;
-      continue;
-    }
+    const { target, rel } = resolution.value;
     if (chain.includes(target)) {
       errors.push({ tag: "include-cycle", chain: [...chain, target] });
       out += token.raw;

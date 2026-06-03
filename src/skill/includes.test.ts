@@ -208,16 +208,30 @@ test("expandIncludes reports include-unknown-root for an undeclared root name", 
   });
 });
 
-test("expandIncludes treats a bare @root with no .md path as a non-md target", async () => {
+test("expandIncludes reports include-anchor-without-path for a bare @root with no path", async () => {
   await withSkill(
     {},
     async ({ skillDir, roots }) => {
       const body = "{{include:@shared}}";
       const result = await expandIncludes(body, skillFile(skillDir), roots);
-      if (result.ok) assert.fail("expected non-md error");
-      assert.equal(result.error[0]?.tag, "include-not-md");
+      if (result.ok) assert.fail("expected anchor-without-path error");
+      assert.equal(result.error[0]?.tag, "include-anchor-without-path");
     },
     { shared: "shared" },
+  );
+});
+
+test("expandIncludes accepts an @root include whose target lands inside a different declared root", async () => {
+  await withSkill(
+    {},
+    async ({ skillDir, roots, write }) => {
+      write("a/other/frag.md", "from other\n");
+      const body = "{{include:@rootA/../other/frag.md}}";
+      const result = await expandIncludes(body, skillFile(skillDir), roots);
+      if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
+      assert.equal(result.value.body, "from other");
+    },
+    { rootA: "a/sub", rootB: "a/other" },
   );
 });
 
@@ -284,6 +298,14 @@ test("formatIncludeError produces a readable message for each variant", () => {
       name: "nope",
     }),
     /root/,
+  );
+  assert.match(
+    formatIncludeError({
+      tag: "include-anchor-without-path",
+      raw: "{{include:@shared}}",
+      name: "shared",
+    }),
+    /missing a path/,
   );
   assert.match(formatIncludeError({ tag: "include-not-md", path: "./x.json" }), /\.md/);
   assert.match(formatIncludeError({ tag: "include-absolute", raw: "{{include:/x}}" }), /relative/);
