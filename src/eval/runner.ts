@@ -1,73 +1,122 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
+import { createCaptor, type SolvingCapture, type WrittenFile } from "./capture.js";
 import { createDetector, type DetectionResult } from "./detect.js";
-import type { LoadedCase } from "./cases.js";
+import type { LoadedCase, LoadedRoutingCase, LoadedSolvingCase } from "./cases.js";
 
 const DEFAULT_RUNS = 5;
+const DEFAULT_SOLVING_RUNS = 1;
 const DEFAULT_CONCURRENCY = 1;
 const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_SOLVING_TIMEOUT_MS = 300_000;
 
 export interface RunnerOptions {
   readonly cwd: string;
   readonly runs?: number;
   readonly concurrency?: number;
   readonly timeoutMs?: number;
+  readonly solvingTimeoutMs?: number;
   readonly model?: string;
   readonly claudeBin?: string;
   readonly onRun?: (caseId: string, result: DetectionResult) => void;
+  readonly onCapture?: (caseId: string, capture: SolvingCapture) => void;
 }
 
-export interface CaseRuns {
-  readonly evalCase: LoadedCase;
-  readonly runs: readonly DetectionResult[];
-}
+export type CaseResult =
+  | {
+      readonly tier: "routing";
+      readonly evalCase: LoadedRoutingCase;
+      readonly runs: readonly DetectionResult[];
+    }
+  | {
+      readonly tier: "solving";
+      readonly evalCase: LoadedSolvingCase;
+      readonly captures: readonly SolvingCapture[];
+    };
 
 export async function runCases(
   cases: readonly LoadedCase[],
   options: RunnerOptions,
-): Promise<CaseRuns[]> {
-  const byCase = new Map<LoadedCase, DetectionResult[]>();
+): Promise<CaseResult[]> {
+  const routing = new Map<LoadedCase, DetectionResult[]>();
+  const solving = new Map<LoadedCase, SolvingCapture[]>();
   const jobs = cases.flatMap((evalCase) => {
-    byCase.set(evalCase, []);
-    const count = evalCase.runs ?? options.runs ?? DEFAULT_RUNS;
-    return Array.from({ length: count }, () => evalCase);
+    if (evalCase.tier === "routing") routing.set(evalCase, []);
+    else solving.set(evalCase, []);
+    return Array.from({ length: runsFor(evalCase, options) }, () => evalCase);
   });
 
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
   await forEachLimit(jobs, concurrency, async (evalCase) => {
-    const result = await runOnce(evalCase, options);
-    byCase.get(evalCase)?.push(result);
-    options.onRun?.(evalCase.id, result);
+    if (evalCase.tier === "routing") {
+      const result = await runRouting(evalCase, options);
+      routing.get(evalCase)?.push(result);
+      options.onRun?.(evalCase.id, result);
+    } else {
+      const capture = await runSolving(evalCase, options);
+      solving.get(evalCase)?.push(capture);
+      options.onCapture?.(evalCase.id, capture);
+    }
   });
 
-  return cases.map((evalCase) => ({ evalCase, runs: byCase.get(evalCase) ?? [] }));
+  return cases.map((evalCase) =>
+    evalCase.tier === "routing"
+      ? { tier: "routing", evalCase, runs: routing.get(evalCase) ?? [] }
+      : { tier: "solving", evalCase, captures: solving.get(evalCase) ?? [] },
+  );
+}
+
+function runsFor(evalCase: LoadedCase, options: RunnerOptions): number {
+  const fallback = evalCase.tier === "solving" ? DEFAULT_SOLVING_RUNS : DEFAULT_RUNS;
+  return evalCase.runs ?? options.runs ?? fallback;
 }
 
 function skillsToCollect(evalCase: LoadedCase): number {
-  return "path" in evalCase.expect ? evalCase.expect.path.length : 1;
+  return "expect" in evalCase && "path" in evalCase.expect ? evalCase.expect.path.length : 1;
 }
 
-async function runOnce(evalCase: LoadedCase, options: RunnerOptions): Promise<DetectionResult> {
-  const cwd = evalCase.cwd ? resolveCwd(options.cwd, evalCase.cwd) : options.cwd;
-  const args = [
-    "-p",
-    evalCase.prompt,
-    "--output-format",
-    "stream-json",
-    "--verbose",
-    "--include-partial-messages",
-  ];
-  if (options.model) args.push("--model", options.model);
-
-  const env = { ...process.env };
-  delete env["CLAUDECODE"];
-
+async function runRouting(evalCase: LoadedCase, options: RunnerOptions): Promise<DetectionResult> {
   const detector = createDetector(skillsToCollect(evalCase));
-  const child = spawn(options.claudeBin ?? "claude", args, {
+  const reached = await runSession(evalCase, options, {
+    timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+    onLine: (line) => detector.push(line),
+    done: () => detector.done,
+    killOnDone: true,
+  });
+  return detector.result(reached ? "timeout" : "no-skill");
+}
+
+async function runSolving(evalCase: LoadedCase, options: RunnerOptions): Promise<SolvingCapture> {
+  const captor = createCaptor();
+  const reached = await runSession(evalCase, options, {
+    timeoutMs: options.solvingTimeoutMs ?? DEFAULT_SOLVING_TIMEOUT_MS,
+    onLine: (line) => captor.push(line),
+    done: () => captor.done,
+    killOnDone: false,
+  });
+  const capture = captor.result(reached ? "timeout" : "stream-end");
+  return mergeDiskWrites(capture, evalCase, options.cwd);
+}
+
+interface SessionHandlers {
+  readonly timeoutMs: number;
+  readonly onLine: (line: string) => void;
+  readonly done: () => boolean;
+  readonly killOnDone: boolean;
+}
+
+async function runSession(
+  evalCase: LoadedCase,
+  options: RunnerOptions,
+  handlers: SessionHandlers,
+): Promise<boolean> {
+  const cwd = evalCase.cwd ? resolveCwd(options.cwd, evalCase.cwd) : options.cwd;
+  const child = spawn(options.claudeBin ?? "claude", buildArgs(evalCase.prompt, options.model), {
     cwd,
-    env,
+    env: scrubbedEnv(),
     stdio: ["ignore", "pipe", "ignore"],
   });
 
@@ -79,30 +128,83 @@ async function runOnce(evalCase: LoadedCase, options: RunnerOptions): Promise<De
   const timer = setTimeout(() => {
     deadline.reached = true;
     child.kill("SIGKILL");
-  }, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  }, handlers.timeoutMs);
 
+  const killOnDone = handlers.killOnDone ? () => child.kill("SIGKILL") : undefined;
   try {
-    await Promise.race([drain(child.stdout, () => child.kill("SIGKILL"), detector), spawnFailure]);
+    await Promise.race([
+      drain(child.stdout, handlers.onLine, handlers.done, killOnDone),
+      spawnFailure,
+    ]);
   } finally {
     clearTimeout(timer);
     if (child.exitCode === null) child.kill("SIGKILL");
   }
+  return deadline.reached;
+}
 
-  return detector.result(deadline.reached ? "timeout" : "no-skill");
+function buildArgs(prompt: string, model: string | undefined): string[] {
+  const args = [
+    "-p",
+    prompt,
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--include-partial-messages",
+  ];
+  if (model) args.push("--model", model);
+  return args;
+}
+
+function scrubbedEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env["CLAUDECODE"];
+  return env;
 }
 
 async function drain(
   stdout: NodeJS.ReadableStream,
-  stop: () => void,
-  detector: ReturnType<typeof createDetector>,
+  onLine: (line: string) => void,
+  done: () => boolean,
+  killOnDone?: () => void,
 ): Promise<void> {
   const lines = createInterface({ input: stdout });
   for await (const line of lines) {
-    detector.push(line);
-    if (detector.done) {
-      stop();
+    onLine(line);
+    if (done()) {
+      killOnDone?.();
       break;
     }
+  }
+}
+
+async function mergeDiskWrites(
+  capture: SolvingCapture,
+  evalCase: LoadedCase,
+  baseCwd: string,
+): Promise<SolvingCapture> {
+  const declared = declaredWritePaths(evalCase);
+  if (declared.length === 0) return capture;
+
+  const cwd = evalCase.cwd ? resolveCwd(baseCwd, evalCase.cwd) : baseCwd;
+  const writes = new Map(capture.writes.map((w) => [w.path, w]));
+  for (const path of declared) {
+    const onDisk = await readFileOrNull(resolveCwd(cwd, path));
+    if (onDisk !== null) writes.set(path, { path, content: onDisk });
+  }
+  return { ...capture, writes: [...writes.values()] as readonly WrittenFile[] };
+}
+
+function declaredWritePaths(evalCase: LoadedCase): string[] {
+  if ("expect" in evalCase) return [];
+  return evalCase.assert.flatMap((a) => (a.kind === "wroteFile" ? [a.path] : []));
+}
+
+async function readFileOrNull(path: string): Promise<string | null> {
+  try {
+    return await readFile(path, "utf8");
+  } catch {
+    return null;
   }
 }
 

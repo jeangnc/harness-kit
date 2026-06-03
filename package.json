@@ -1,6 +1,6 @@
 {
   "name": "@jean.gnc/harness-kit",
-  "version": "0.12.8",
+  "version": "0.13.0",
   "type": "module",
   "description": "Build your own multi-agent harness: typed toolkit for authoring plugins (skills, agents, commands, hooks) and shipping them to Claude Code and Codex from a single source tree.",
   "license": "MIT",
@@ -68,6 +68,7 @@
     ]
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
     "citty": "^0.2.2",
     "js-yaml": "^4.1.1",
     "markdownlint-cli2": "^0.18.1",

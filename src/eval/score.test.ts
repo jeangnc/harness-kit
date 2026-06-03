@@ -2,7 +2,7 @@ import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
 import type { DetectionResult } from "./detect.js";
-import { matchesExpectation, scoreCase } from "./score.js";
+import { matchesExpectation, scoreCase, scoreSolving, type SolvingRunResult } from "./score.js";
 import type { Expectation } from "./schema.js";
 
 function fired(...observed: string[]): DetectionResult {
@@ -72,4 +72,45 @@ test("scoreCase histogram labels a no-skill run", () => {
   const score = scoreCase({ noSkill: true }, [fired()]);
   assert.equal(score.histogram.get("(no skill)"), 1);
   assert.equal(score.pass, true);
+});
+
+function solvingRun(assertionPass: boolean, rubricPass: boolean | null = null): SolvingRunResult {
+  return {
+    assertions: [
+      { assertion: { kind: "usedTool", tool: "Write" }, pass: assertionPass, evidence: "e" },
+    ],
+    rubric: rubricPass === null ? null : { dimensions: [], pass: rubricPass },
+  };
+}
+
+test("scoreSolving counts a run as matched only when assertions and the rubric pass", () => {
+  const score = scoreSolving(
+    [solvingRun(true, true), solvingRun(true, true), solvingRun(false)],
+    0.6,
+  );
+  assert.equal(score.matched, 2);
+  assert.equal(score.runs, 3);
+  assert.ok(Math.abs(score.triggerRate - 2 / 3) < 1e-9);
+  assert.equal(score.pass, true);
+});
+
+test("scoreSolving fails a run when the rubric fails even if assertions pass", () => {
+  const score = scoreSolving([solvingRun(true, false)]);
+  assert.equal(score.matched, 0);
+  assert.equal(score.pass, false);
+});
+
+test("scoreSolving fails below the default threshold of 1.0", () => {
+  const score = scoreSolving([solvingRun(true, true), solvingRun(false)]);
+  assert.equal(score.pass, false);
+});
+
+test("scoreSolving treats a run with no rubric as passing on assertions alone", () => {
+  const score = scoreSolving([solvingRun(true)]);
+  assert.equal(score.pass, true);
+});
+
+test("scoreSolving reports an empty histogram", () => {
+  const score = scoreSolving([solvingRun(true)]);
+  assert.equal(score.histogram.size, 0);
 });

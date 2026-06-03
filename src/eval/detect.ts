@@ -14,7 +14,7 @@ interface Detector {
   readonly result: (reason: ExitReason) => DetectionResult;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+export function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
