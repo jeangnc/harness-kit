@@ -698,3 +698,112 @@ test("check, in all mode, validates skill refs against the union of local and in
     );
   });
 });
+
+test("check flags a backticked bareword that names a known local skill", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        { plugin: "foo", skill: "caller", body: "delegate to `worker` now\n" },
+        { plugin: "foo", skill: "worker", body: "does work\n" },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      const bareword = result.violations.filter((v) => v.kind === "bareword");
+      assert.equal(bareword.length, 1);
+      assert.equal(bareword[0]!.token, "worker");
+      assert.match(bareword[0]!.message, /\{\{skill:foo:worker\}\}/);
+    },
+  );
+});
+
+test("check does not flag a skill backticking its own leaf name", async () => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "verify", body: "`verify` runs the suite\n" }] },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      assert.deepEqual(
+        result.violations.filter((v) => v.kind === "bareword"),
+        [],
+      );
+    },
+  );
+});
+
+test("check does not flag a backticked leaf inside a command invoke body", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [{ plugin: "foo", skill: "ship", body: "ships it\n" }],
+      commands: [{ plugin: "foo", command: "go", body: "Invoke `ship` skill on `$1`.\n" }],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      assert.deepEqual(
+        result.violations.filter((v) => v.kind === "bareword"),
+        [],
+      );
+    },
+  );
+});
+
+test("check does not flag a backticked lang-skill leaf", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        { plugin: "foo", skill: "rspec", body: "test guidance\n" },
+        { plugin: "foo", skill: "caller", body: "run `rspec` to test\n" },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      assert.deepEqual(
+        result.violations.filter((v) => v.kind === "bareword"),
+        [],
+      );
+    },
+  );
+});
+
+test("check flags a backticked sibling companion .md as a ref bypass", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "full detail in `procedure.md`\n",
+          companions: [{ file: "procedure.md", body: "steps\n" }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      const refs = result.violations.filter((v) => v.kind === "ref-bareword");
+      assert.equal(refs.length, 1);
+      assert.equal(refs[0]!.token, "procedure.md");
+      assert.match(refs[0]!.message, /\{\{ref:procedure\.md\}\}/);
+    },
+  );
+});
+
+test("check does not flag an already-templated companion ref or a generic .md mention", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "see {{ref:procedure.md}} and each skill's own `rationalizations.md`\n",
+          companions: [{ file: "procedure.md", body: "steps\n" }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, mode: "local" });
+      assert.deepEqual(
+        result.violations.filter((v) => v.kind === "ref-bareword"),
+        [],
+      );
+    },
+  );
+});

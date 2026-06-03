@@ -1,5 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { pathExists } from "../fs.js";
 import { FQ_ID } from "../ids.js";
@@ -25,7 +25,17 @@ import {
   type PluginSource,
 } from "../installed.js";
 
-import { detectBypasses, type BypassHaystacks } from "./bypass.js";
+import {
+  buildLeafIndex,
+  detectBarewordBypasses,
+  detectBypasses,
+  detectRefBypasses,
+  nonReferenceSpans,
+  type BarewordBypass,
+  type BypassHaystacks,
+  type LeafIndex,
+  type Span,
+} from "./bypass.js";
 import {
   unifiedKindConfigs,
   type HaystackScope,
@@ -55,7 +65,7 @@ export interface CheckOptions {
   readonly sources?: readonly PluginSource[];
 }
 
-export type ReferenceViolationKind = "malformed" | "unresolved";
+export type ReferenceViolationKind = "malformed" | "unresolved" | "bareword" | "ref-bareword";
 
 export interface ReferenceViolation {
   readonly kind: ReferenceViolationKind;
@@ -87,11 +97,16 @@ export interface CheckResult {
   readonly indexedSources: readonly SourceSummary[];
 }
 
+type BodyOrigin =
+  | { readonly role: "skill"; readonly ownLeaf: string }
+  | { readonly role: "command" | "agent" };
+
 interface BodySource {
   readonly body: string;
   readonly bodyOffset: number;
   readonly fileText: string;
   readonly filePath: string;
+  readonly origin: BodyOrigin;
 }
 
 export async function check(options: CheckOptions): Promise<CheckResult> {
@@ -120,6 +135,7 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
 
   const kinds = unifiedKindConfigs(localIds, installedIndex, mode satisfies HaystackScope);
   const haystacks = bypassHaystacks(kinds);
+  const leafIndex = buildLeafIndex(haystacks);
 
   const sources = await collectBodySources({
     srcRoot: options.srcRoot,
@@ -129,7 +145,14 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
   const violations: ReferenceViolation[] = [];
   const warnings: BypassWarning[] = [];
   for (const source of sources) {
+    const skip = nonReferenceSpans(source.body);
     for (const violation of validateBody(source, kinds)) {
+      violations.push(violation);
+    }
+    for (const violation of findBarewordBypasses(source, leafIndex, skip)) {
+      violations.push(violation);
+    }
+    for (const violation of await findRefBypasses(source, options.srcRoot, skip)) {
       violations.push(violation);
     }
     for (const warning of findBypasses(source, haystacks)) {
@@ -164,6 +187,52 @@ function findBypasses(source: BodySource, haystacks: BypassHaystacks): readonly 
   });
 }
 
+function findBarewordBypasses(
+  source: BodySource,
+  index: LeafIndex,
+  skip: readonly Span[],
+): readonly ReferenceViolation[] {
+  if (source.origin.role === "command") return [];
+  const ownLeaf = source.origin.role === "skill" ? source.origin.ownLeaf : null;
+  return detectBarewordBypasses(source.body, index, { ownLeaf }, skip).map((bypass) => {
+    const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + bypass.offset);
+    return {
+      kind: "bareword",
+      token: bypass.leaf,
+      file: source.filePath,
+      line,
+      column,
+      message: barewordMessage(bypass),
+    };
+  });
+}
+
+function barewordMessage(bypass: BarewordBypass): string {
+  const nouns = [...new Set(bypass.candidates.map((c) => c.prefix))].join(" and ");
+  const forms = bypass.candidates.map((c) => `{{${c.prefix}:${c.handle}}}`).join(" or ");
+  return `\`${bypass.leaf}\` names a known ${nouns} but isn't a tracked reference — use ${forms}`;
+}
+
+async function findRefBypasses(
+  source: BodySource,
+  rootDir: string,
+  skip: readonly Span[],
+): Promise<readonly ReferenceViolation[]> {
+  const sourceDir = dirname(source.filePath);
+  const bypasses = await detectRefBypasses(source.body, sourceDir, rootDir, skip);
+  return bypasses.map((bypass) => {
+    const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + bypass.offset);
+    return {
+      kind: "ref-bareword",
+      token: bypass.path,
+      file: source.filePath,
+      line,
+      column,
+      message: `\`${bypass.path}\` is a companion file referenced directly — use \`{{ref:${bypass.suggestion}}}\` so harness-kit can track it`,
+    };
+  });
+}
+
 interface CollectOptions {
   readonly srcRoot: string;
   readonly mode: CheckMode;
@@ -173,17 +242,23 @@ interface CollectOptions {
 async function collectBodySources(opts: CollectOptions): Promise<readonly BodySource[]> {
   const seen = new Set<string>();
   const out: BodySource[] = [];
-  const push = async (filePath: string, body: string, bodyOffset: number): Promise<void> => {
-    if (seen.has(filePath)) return;
-    seen.add(filePath);
-    const fileText = await readFile(filePath, "utf8");
-    out.push({ body, bodyOffset, fileText, filePath });
+  const push = async (file: PluginBody): Promise<void> => {
+    if (seen.has(file.filePath)) return;
+    seen.add(file.filePath);
+    const fileText = await readFile(file.filePath, "utf8");
+    out.push({
+      body: file.body,
+      bodyOffset: file.bodyOffset,
+      fileText,
+      filePath: file.filePath,
+      origin: file.origin,
+    });
   };
 
   if (opts.mode === "installed" || opts.mode === "all") {
     for await (const skillDir of findSkillDirs(opts.srcRoot)) {
       for (const file of await loadSkillBodies(skillDir)) {
-        await push(file.filePath, file.body, file.bodyOffset);
+        await push(file);
       }
     }
   }
@@ -191,7 +266,7 @@ async function collectBodySources(opts: CollectOptions): Promise<readonly BodySo
   if ((opts.mode === "local" || opts.mode === "all") && opts.adapter) {
     for (const plugin of opts.adapter.plugins) {
       for (const file of await collectPluginBodies(plugin)) {
-        await push(file.filePath, file.body, file.bodyOffset);
+        await push(file);
       }
     }
   }
@@ -203,6 +278,7 @@ interface PluginBody {
   readonly filePath: string;
   readonly body: string;
   readonly bodyOffset: number;
+  readonly origin: BodyOrigin;
 }
 
 async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly PluginBody[]> {
@@ -216,13 +292,16 @@ async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly Plu
       out.push(...(await loadSkillBodies(skillDir)));
     }
   }
-  for (const dir of [plugin.commandsDir, plugin.agentsDir]) {
+  for (const [dir, role] of [
+    [plugin.commandsDir, "command"],
+    [plugin.agentsDir, "agent"],
+  ] as const) {
     if (!(await pathExists(dir))) continue;
     for (const entry of await readdir(dir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
       const filePath = join(dir, entry.name);
       const body = await readFile(filePath, "utf8");
-      out.push({ filePath, body, bodyOffset: 0 });
+      out.push({ filePath, body, bodyOffset: 0, origin: { role } });
     }
   }
   return out;
@@ -236,7 +315,8 @@ async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]>
     );
   }
   const { skill, body, bodyFilePath, bodyOffset, skillDir: dir } = loaded.value;
-  const primary: PluginBody = { filePath: bodyFilePath, body, bodyOffset };
+  const origin = { role: "skill", ownLeaf: basename(dir) } as const;
+  const primary: PluginBody = { filePath: bodyFilePath, body, bodyOffset, origin };
   const declared = skill.companions ?? [];
   const present = await Promise.all(declared.map(async (c) => pathExists(join(dir, c.file))));
   const missing = checkCompanionFiles(
@@ -249,7 +329,7 @@ async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]>
   const companions = await Promise.all(
     declared.map(async (companion): Promise<PluginBody> => {
       const filePath = join(dir, companion.file);
-      return { filePath, body: await readFile(filePath, "utf8"), bodyOffset: 0 };
+      return { filePath, body: await readFile(filePath, "utf8"), bodyOffset: 0, origin };
     }),
   );
   return [primary, ...companions];
