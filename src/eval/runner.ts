@@ -74,11 +74,14 @@ function runsFor(evalCase: LoadedCase, options: RunnerOptions): number {
   return evalCase.runs ?? options.runs ?? fallback;
 }
 
-function skillsToCollect(evalCase: LoadedCase): number {
-  return "expect" in evalCase && "path" in evalCase.expect ? evalCase.expect.path.length : 1;
+function skillsToCollect(evalCase: LoadedRoutingCase): number {
+  return "path" in evalCase.expect ? evalCase.expect.path.length : 1;
 }
 
-async function runRouting(evalCase: LoadedCase, options: RunnerOptions): Promise<DetectionResult> {
+async function runRouting(
+  evalCase: LoadedRoutingCase,
+  options: RunnerOptions,
+): Promise<DetectionResult> {
   const detector = createDetector(skillsToCollect(evalCase));
   const reached = await runSession(evalCase, options, {
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -89,7 +92,10 @@ async function runRouting(evalCase: LoadedCase, options: RunnerOptions): Promise
   return detector.result(reached ? "timeout" : "no-skill");
 }
 
-async function runSolving(evalCase: LoadedCase, options: RunnerOptions): Promise<SolvingCapture> {
+async function runSolving(
+  evalCase: LoadedSolvingCase,
+  options: RunnerOptions,
+): Promise<SolvingCapture> {
   const captor = createCaptor();
   const reached = await runSession(evalCase, options, {
     timeoutMs: options.solvingTimeoutMs ?? DEFAULT_SOLVING_TIMEOUT_MS,
@@ -180,7 +186,7 @@ async function drain(
 
 async function mergeDiskWrites(
   capture: SolvingCapture,
-  evalCase: LoadedCase,
+  evalCase: LoadedSolvingCase,
   baseCwd: string,
 ): Promise<SolvingCapture> {
   const declared = declaredWritePaths(evalCase);
@@ -195,8 +201,7 @@ async function mergeDiskWrites(
   return { ...capture, writes: [...writes.values()] as readonly WrittenFile[] };
 }
 
-function declaredWritePaths(evalCase: LoadedCase): string[] {
-  if ("expect" in evalCase) return [];
+function declaredWritePaths(evalCase: LoadedSolvingCase): string[] {
   return evalCase.assert.flatMap((a) => (a.kind === "wroteFile" ? [a.path] : []));
 }
 

@@ -27,3 +27,9 @@ test("parseVerdict returns the parsed verdict on a valid shape", () => {
   assert.equal(verdict.pass, true);
   assert.equal(verdict.evidence, "meets the bar");
 });
+
+test("parseVerdict abstains with a no-verdict reason when the judge returned nothing", () => {
+  const verdict = parseVerdict(undefined);
+  assert.equal(verdict.pass, "unknown");
+  assert.match(verdict.evidence, /no verdict/i);
+});

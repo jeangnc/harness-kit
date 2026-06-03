@@ -1,4 +1,6 @@
+import { err, ok, type Result } from "../result.js";
 import type { SolvingCapture } from "./capture.js";
+import { asRecord } from "./detect.js";
 import type { Assertion } from "./schema.js";
 
 export interface AssertionResult {
@@ -17,16 +19,16 @@ export function gradeAssertions(
 function grade(assertion: Assertion, capture: SolvingCapture): AssertionResult {
   switch (assertion.kind) {
     case "outputMatches":
-      return outputContains(assertion, capture.outputText)
-        ? pass(assertion, `matched "${assertion.pattern}"`)
-        : fail(assertion, `no match for "${assertion.pattern}"`);
+      return matchOutput(assertion, capture.outputText, {
+        whenPresent: () => pass(assertion, `matched "${assertion.pattern}"`),
+        whenAbsent: () => fail(assertion, `no match for "${assertion.pattern}"`),
+      });
 
-    case "outputExcludes": {
-      const offending = firstMatch(assertion, capture.outputText);
-      return offending === null
-        ? pass(assertion, `absent: "${assertion.pattern}"`)
-        : fail(assertion, `found forbidden "${offending}"`);
-    }
+    case "outputExcludes":
+      return matchOutput(assertion, capture.outputText, {
+        whenPresent: (hit) => fail(assertion, `found forbidden "${hit}"`),
+        whenAbsent: () => pass(assertion, `absent: "${assertion.pattern}"`),
+      });
 
     case "usedTool":
       return tools(capture).includes(assertion.tool)
@@ -43,41 +45,75 @@ function grade(assertion: Assertion, capture: SolvingCapture): AssertionResult {
   }
 }
 
+interface MatchOutcome {
+  readonly whenPresent: (hit: string) => AssertionResult;
+  readonly whenAbsent: () => AssertionResult;
+}
+
+function matchOutput(
+  assertion: Extract<Assertion, { kind: "outputMatches" | "outputExcludes" }>,
+  text: string,
+  outcome: MatchOutcome,
+): AssertionResult {
+  const matcher = compileMatcher(assertion.pattern, assertion.regex);
+  if (!matcher.ok) return fail(assertion, matcher.error);
+  const hit = matcher.value(text);
+  return hit === null ? outcome.whenAbsent() : outcome.whenPresent(hit);
+}
+
 function gradeWroteFile(
   assertion: Extract<Assertion, { kind: "wroteFile" }>,
   capture: SolvingCapture,
 ): AssertionResult {
-  const written = capture.writes.find((w) => w.path === assertion.path);
-  if (!written) {
-    const paths = capture.writes.map((w) => w.path);
-    return fail(assertion, `${assertion.path} not written (wrote: [${paths.join(", ")}])`);
+  if (!wroteTo(capture, assertion.path)) {
+    return fail(
+      assertion,
+      `${assertion.path} not written (wrote: [${writtenPaths(capture).join(", ")}])`,
+    );
   }
   if (assertion.contentMatches === undefined) {
     return pass(assertion, `wrote ${assertion.path}`);
   }
-  return textContains(written.content, assertion.contentMatches, assertion.regex)
+  const content = capture.writes.find((w) => w.path === assertion.path)?.content ?? "";
+  const matcher = compileMatcher(assertion.contentMatches, assertion.regex);
+  if (!matcher.ok) return fail(assertion, matcher.error);
+  return matcher.value(content) !== null
     ? pass(assertion, `${assertion.path} content matched`)
     : fail(assertion, `${assertion.path} content did not match "${assertion.contentMatches}"`);
 }
 
-function outputContains(
-  assertion: Extract<Assertion, { kind: "outputMatches" }>,
-  output: string,
-): boolean {
-  return textContains(output, assertion.pattern, assertion.regex);
+type Matcher = (text: string) => string | null;
+
+function compileMatcher(pattern: string, regex: boolean): Result<Matcher, string> {
+  if (!regex) {
+    return ok((text) => (text.includes(pattern) ? pattern : null));
+  }
+  let compiled: RegExp;
+  try {
+    compiled = new RegExp(pattern);
+  } catch (cause) {
+    return err(`invalid regex "${pattern}": ${(cause as Error).message}`);
+  }
+  return ok((text) => compiled.exec(text)?.[0] ?? null);
 }
 
-function firstMatch(
-  assertion: Extract<Assertion, { kind: "outputExcludes" }>,
-  output: string,
-): string | null {
-  if (!assertion.regex) return output.includes(assertion.pattern) ? assertion.pattern : null;
-  const found = new RegExp(assertion.pattern).exec(output);
-  return found ? found[0] : null;
+function wroteTo(capture: SolvingCapture, path: string): boolean {
+  return writtenPaths(capture).includes(path);
 }
 
-function textContains(haystack: string, pattern: string, regex: boolean): boolean {
-  return regex ? new RegExp(pattern).test(haystack) : haystack.includes(pattern);
+function writtenPaths(capture: SolvingCapture): string[] {
+  return capture.trajectory.flatMap((call) =>
+    isWriteTool(call.name) ? writePathOf(call.input) : [],
+  );
+}
+
+function isWriteTool(name: string): boolean {
+  return name === "Write" || name === "Edit";
+}
+
+function writePathOf(input: unknown): string[] {
+  const path = asRecord(input)["file_path"];
+  return typeof path === "string" ? [path] : [];
 }
 
 function tools(capture: SolvingCapture): string[] {

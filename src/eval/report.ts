@@ -54,7 +54,7 @@ export function toJson(report: EvalReport): string {
         suite: evalCase.suite,
         tier: evalCase.tier,
         prompt: evalCase.prompt,
-        ...("expect" in evalCase && { expect: evalCase.expect }),
+        ...(evalCase.tier === "routing" && { expect: evalCase.expect }),
         pass: score.pass,
         matched: score.matched,
         runs: score.runs,
@@ -86,7 +86,7 @@ function formatCase({ evalCase, score, solving }: CaseReport): string[] {
 }
 
 function describeCase(evalCase: LoadedCase): string {
-  if ("expect" in evalCase) return describeExpectation(evalCase.expect);
+  if (evalCase.tier === "routing") return describeExpectation(evalCase.expect);
   const parts = [`${evalCase.assert.length} assertions`];
   if (evalCase.rubric) parts.push(`${evalCase.rubric.dimensions.length} rubric dims`);
   return parts.join(", ");

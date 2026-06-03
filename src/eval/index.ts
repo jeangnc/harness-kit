@@ -18,6 +18,7 @@ export interface EvalOptions {
   readonly concurrency?: number;
   readonly model?: string;
   readonly judgeModel?: string;
+  readonly solvingTimeoutMs?: number;
   readonly judge?: Judge;
   readonly onRun?: RunnerOptions["onRun"];
 }
@@ -44,6 +45,7 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
     ...(options.runs !== undefined && { runs: options.runs }),
     ...(options.concurrency !== undefined && { concurrency: options.concurrency }),
     ...(options.model !== undefined && { model: options.model }),
+    ...(options.solvingTimeoutMs !== undefined && { solvingTimeoutMs: options.solvingTimeoutMs }),
     ...(options.onRun !== undefined && { onRun: options.onRun }),
   };
   const results = await runCases(selected, runnerOptions);
@@ -53,7 +55,7 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
 }
 
 function needsJudge(cases: readonly LoadedCase[]): boolean {
-  return cases.some((c) => !("expect" in c) && c.rubric !== undefined);
+  return cases.some((c) => c.tier === "solving" && c.rubric !== undefined);
 }
 
 function resolveJudge(
