@@ -746,6 +746,23 @@ test("check does not flag a backticked leaf inside a command invoke body", async
   );
 });
 
+test("check flags a backticked bareword in a plugin-root doc file (README, auto-invoke)", async () => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "worker", body: "does work\n" }] },
+    async (srcRoot) => {
+      writeFileSync(
+        join(srcRoot, "plugins", "foo", "README.md"),
+        "the `worker` skill does the work\n",
+      );
+      const result = await check({ srcRoot, mode: "local" });
+      const bareword = result.violations.filter((v) => v.kind === "bareword");
+      assert.equal(bareword.length, 1);
+      assert.equal(bareword[0]!.token, "worker");
+      assert.match(bareword[0]!.file, /README\.md$/);
+    },
+  );
+});
+
 test("check does not flag a backticked lang-skill leaf", async () => {
   await withLocalSrcFixture(
     {

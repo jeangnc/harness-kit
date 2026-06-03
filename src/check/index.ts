@@ -99,7 +99,8 @@ export interface CheckResult {
 
 type BodyOrigin =
   | { readonly role: "skill"; readonly ownLeaf: string }
-  | { readonly role: "command" | "agent" };
+  | { readonly role: "command" }
+  | { readonly role: "doc" };
 
 interface BodySource {
   readonly body: string;
@@ -292,19 +293,22 @@ async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly Plu
       out.push(...(await loadSkillBodies(skillDir)));
     }
   }
-  for (const [dir, role] of [
-    [plugin.commandsDir, "command"],
-    [plugin.agentsDir, "agent"],
-  ] as const) {
-    if (!(await pathExists(dir))) continue;
-    for (const entry of await readdir(dir, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
-      const filePath = join(dir, entry.name);
-      const body = await readFile(filePath, "utf8");
-      out.push({ filePath, body, bodyOffset: 0, origin: { role } });
-    }
+  for await (const filePath of walkMarkdown(plugin.pluginDir)) {
+    if (filePath.startsWith(plugin.skillsDir)) continue;
+    const body = await readFile(filePath, "utf8");
+    const role = filePath.startsWith(plugin.commandsDir) ? "command" : "doc";
+    out.push({ filePath, body, bodyOffset: 0, origin: { role } });
   }
   return out;
+}
+
+async function* walkMarkdown(dir: string): AsyncGenerator<string> {
+  if (!(await pathExists(dir))) return;
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) yield* walkMarkdown(full);
+    else if (entry.isFile() && entry.name.endsWith(".md")) yield full;
+  }
 }
 
 async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]> {
