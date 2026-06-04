@@ -68,6 +68,28 @@ A plugin set to `false` in the claude vendor's compiled `settings.json` `enabled
 
 Same flags as `install`. Reverses each vendor's `install` hook.
 
+## `harness update`
+
+Refreshes plugins for an **already-installed** harness. Same flags as `install`. Skips the config-link bootstrap (step 1 of install), so a symlinked `settings.json` and its `enabledPlugins` are left untouched, and runs only the per-vendor plugin refresh. Refuses with an error if no vendor reports an existing install, and reports a per-plugin version diff (`added` / `→` / `unchanged` / `removed`) against the versions currently cached.
+
+## `harness eval`
+
+Runs routing (*did the right skill fire?*) and solving (*graded behavior*) evals against the installed harness. Format and tiers: [evals.md](./evals.md).
+
+- `--cases <path>` (default `./evals/cases`) — directory of eval case files.
+- `--cwd <path>` (default `.`) — working directory for the `claude -p` sessions.
+- `--suite <name>` — only run cases from this suite.
+- `--case <id>` — only run the case with this id.
+- `--tier <routing|solving>` — only run this tier.
+- `--runs <n>` — runs per case (overrides the per-case default).
+- `--concurrency <n>` (default `1`) — max concurrent sessions. Parallel sessions interfere with routing detection, so the default is serial.
+- `--model <model>` — model for the `claude -p` sessions (default: the user's configured model).
+- `--judge-model <model>` (default `claude-haiku-4-5`) — model for the solving-tier LLM judge.
+- `--solving-timeout <seconds>` (default `300`) — per-case timeout for solving sessions.
+- `--json <path>` — write machine-readable results to this path.
+
+No API key needed: sessions and the judge both spawn the `claude` CLI on its own auth.
+
 ## `package.json` integration
 
 ```json

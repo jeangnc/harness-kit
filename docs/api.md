@@ -124,6 +124,25 @@ const index = indexInstalled(artifacts);
 
 Types: `InstalledIndex`, `InstalledSkill`, `InstalledAgent`, `InstalledCommand`, `InstalledArtifacts`, `PluginSource`.
 
+## Eval
+
+Run routing + solving evals and render the report. `runEval` loads cases from `casesDir`, runs them, and returns a `Result` — `err` carries the per-file load errors when a case file is malformed.
+
+```ts
+import { runEval, formatConsole, toJson } from "@jean.gnc/harness-kit";
+
+const result = await runEval({ casesDir: "./evals/cases", cwd: "." });
+if (!result.ok) throw new Error(`bad case files: ${result.error.length}`);
+
+const report = result.value;            // { cases, passed, failed }
+console.log(formatConsole(report));     // human-readable table
+await writeFile("out.json", toJson(report));
+```
+
+`EvalOptions` narrows a run: `suite`, `caseId`, `tier`, `runs`, `concurrency`, `model`, `judgeModel`, `solvingTimeoutMs`. Inject a custom `judge` to bypass the default `claude`-CLI judge, or an `onRun` callback for progress. Sessions and the judge spawn the `claude` CLI on its own auth — no API key.
+
+Case files are validated by `CaseFileSchema` (exported alongside `TIERS`); types: `EvalReport`, `CaseReport`, `CaseFile`, `EvalCase`, `Expectation`, `Tier`.
+
 ## Skill + plugin authoring
 
 Use these in `SKILL.ts` / `PLUGIN.ts` files for typed metadata:
