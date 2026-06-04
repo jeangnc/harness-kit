@@ -11,3 +11,10 @@ test("judgeArgs runs a one-shot json prompt pinned to the given model", () => {
   assert.equal(args[args.indexOf("--model") + 1], "claude-haiku-4-5");
   assert.equal(args[args.indexOf("--json-schema") + 1], '{"type":"object"}');
 });
+
+test("judgeArgs pins a deterministic permission mode so the judge is unaffected by the launcher's mode", () => {
+  const args = judgeArgs("grade this", "claude-haiku-4-5", '{"type":"object"}');
+  const flag = args.indexOf("--permission-mode");
+  assert.notEqual(flag, -1, "expected --permission-mode to be passed");
+  assert.equal(args[flag + 1], "bypassPermissions");
+});

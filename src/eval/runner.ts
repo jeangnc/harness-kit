@@ -150,7 +150,7 @@ async function runSession(
   return deadline.reached;
 }
 
-function buildArgs(prompt: string, model: string | undefined): string[] {
+export function buildArgs(prompt: string, model: string | undefined): string[] {
   const args = [
     "-p",
     prompt,
@@ -158,6 +158,8 @@ function buildArgs(prompt: string, model: string | undefined): string[] {
     "stream-json",
     "--verbose",
     "--include-partial-messages",
+    "--permission-mode",
+    "bypassPermissions",
   ];
   if (model) args.push("--model", model);
   return args;

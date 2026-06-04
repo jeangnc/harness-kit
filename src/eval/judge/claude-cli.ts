@@ -4,7 +4,18 @@ import { scrubEnv, SUBPROCESS_ENV_OVERRIDES } from "../claude-env.js";
 import type { SubagentRunner } from "./subagent.js";
 
 export function judgeArgs(prompt: string, model: string, schema: string): string[] {
-  return ["-p", prompt, "--output-format", "json", "--model", model, "--json-schema", schema];
+  return [
+    "-p",
+    prompt,
+    "--output-format",
+    "json",
+    "--model",
+    model,
+    "--json-schema",
+    schema,
+    "--permission-mode",
+    "bypassPermissions",
+  ];
 }
 
 export interface ClaudeCliOptions {
