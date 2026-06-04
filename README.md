@@ -266,9 +266,12 @@ cases:
 A solving run passes when every assertion passes **and** the rubric meets its combine rule;
 across `runs`, the case passes when the pass rate meets `threshold` (default `runs` is 1).
 
-Routing needs no API key. Solving cases that declare a `rubric` use `claude` for the judge —
-set `ANTHROPIC_API_KEY` (the run errors clearly if absent). The judge model is separate from
-the session model:
+No API key needed. Both the session and the rubric judge run by spawning the `claude` CLI on
+its own auth — `ANTHROPIC_API_KEY` is scrubbed from the subprocess env, not required. Each
+spawned session is pinned to `--permission-mode bypassPermissions` so it runs to completion
+unattended regardless of the launcher's mode (a session in plan mode would otherwise write
+plan files instead of the code under test). The judge model is separate from the session
+model and defaults to `claude-haiku-4-5`:
 
 ```sh
 harness eval --tier solving --model claude-opus-4-8 --judge-model claude-sonnet-4-5
