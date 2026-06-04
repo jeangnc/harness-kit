@@ -44,20 +44,20 @@ Writing your own vendor: see [docs/vendors.md](./docs/vendors.md).
 
 ### Source layout
 
-```text
-src/
-  <vendor>/configs/             # vendor-specific config files (e.g. AGENTS.md, settings.json)
-    .fragments/                 # source-only snippets; never emitted to dist
-  plugins/<plugin>/             # shared across every declared vendor
-    .claude-plugin/plugin.json  # or PLUGIN.ts
-    skills/<name>/SKILL.md      # or SKILL.ts + body.md
-    agents/<agent>.md           # optional
-    commands/<command>.md       # optional
-    hooks/<hook>.json           # optional
-  .claude-plugin/marketplace.json  # lists the plugins to compile
-```
+You author a single source manifest, `src/.claude-plugin/marketplace.json`, listing which plugins to compile. `compile` reads it and emits a per-vendor manifest at `dist/<vendor>/.claude-plugin/marketplace.json` — that emitted one is the marketplace each vendor's CLI actually installs.
+
+Under `src/`:
+
+| Path | What it is |
+| --- | --- |
+| `src/.claude-plugin/marketplace.json` | The source manifest — lists the plugins to compile. |
+| `src/<vendor>/configs/` | Vendor-specific config files (e.g. `AGENTS.md`, `settings.json`). A `.fragments/` subdir holds source-only snippets, never emitted to dist. |
+| `src/plugins/<plugin>/` | A plugin, shared across every declared vendor — `skills/<name>/` (each `SKILL.md`, or `SKILL.ts` + `body.md`), plus optional `agents/`, `commands/`, and `hooks/`. |
+| `src/<root>/` | Any directory mapped under `roots:` in `harness.yaml` (e.g. `shared/`), reachable from skills via `{{include:@<root>/…}}`. |
 
 `compile` reads `src/` and writes a `dist/<vendor>/` subtree per declared vendor; `install` links those into place. Mechanics: [docs/pipeline.md](./docs/pipeline.md). Manifest fields: [docs/marketplace.md](./docs/marketplace.md).
+
+> **Known gap:** a repo that publishes its own marketplace from the root needs a `.claude-plugin/marketplace.json` symlink at the repo root pointing at the compiled `dist/<vendor>/.claude-plugin/marketplace.json`. `install` does not create it yet — repos that need it maintain it by hand. See [docs/pipeline.md](./docs/pipeline.md#install-pipeline).
 
 ## Capabilities
 
