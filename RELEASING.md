@@ -1,16 +1,19 @@
 # Releasing
 
-CI handles publishes. To cut a release:
+**You only tag. CI publishes to npm.** No `npm login`, no `npm publish`, no token — never run those by hand.
+
+To cut a release, from a clean `main`:
 
 ```sh
-# bump version (edits package.json, commits, tags)
-npm version patch   # or minor / major
-
-# push commit + tag
+npm version patch        # or minor / major
 git push --follow-tags
 ```
 
-The `release.yml` workflow fires on any `v*` tag push:
+`npm version` bumps `package.json`, commits that bump, and creates the matching `v<version>` tag — all three in lockstep. `--follow-tags` pushes the commit and the tag together. That tag push is the entire release trigger.
+
+> **Tag and `package.json` must agree.** The workflow's first step fails the release if `v<tag>` ≠ `package.json` version. Always bump with `npm version` (which keeps them in sync) — don't hand-tag a commit whose `package.json` wasn't bumped, and don't bump `package.json` without letting `npm version` create the tag.
+
+The `release.yml` workflow fires on any `v*` tag push and does the rest:
 
 1. Verifies the tag matches `package.json` version
 2. Runs lint + tests
@@ -18,6 +21,8 @@ The `release.yml` workflow fires on any `v*` tag push:
 4. `npm publish --access public --provenance` using OIDC
 
 `--provenance` records a supply-chain attestation linking the published tarball to this commit + workflow run. Visible on the package page on npmjs.com.
+
+If a release doesn't appear on npm, check the **Actions** tab for the `release` run — a lint/test/build failure or a tag/version mismatch stops the publish there.
 
 ## One-time setup (Trusted Publishing via OIDC)
 
