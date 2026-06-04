@@ -1,7 +1,7 @@
-import { err, ok, type Result } from "../result.js";
-import type { SolvingCapture } from "./capture.js";
-import { asRecord } from "./detect.js";
-import type { Assertion } from "./schema.js";
+import { err, ok, type Result } from "../../result.js";
+import type { SolvingCapture } from "../capture.js";
+import { asRecord } from "../detect.js";
+import type { Assertion } from "../schema.js";
 
 export interface AssertionResult {
   readonly assertion: Assertion;

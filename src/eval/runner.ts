@@ -4,6 +4,7 @@ import { isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 import { createCaptor, type SolvingCapture, type WrittenFile } from "./capture.js";
+import { scrubEnv, SUBPROCESS_ENV_OVERRIDES } from "./claude-env.js";
 import { createDetector, type DetectionResult } from "./detect.js";
 import type { LoadedCase, LoadedRoutingCase, LoadedSolvingCase } from "./cases.js";
 
@@ -122,7 +123,7 @@ async function runSession(
   const cwd = evalCase.cwd ? resolveCwd(options.cwd, evalCase.cwd) : options.cwd;
   const child = spawn(options.claudeBin ?? "claude", buildArgs(evalCase.prompt, options.model), {
     cwd,
-    env: scrubbedEnv(),
+    env: scrubEnv(process.env, SUBPROCESS_ENV_OVERRIDES),
     stdio: ["ignore", "pipe", "ignore"],
   });
 
@@ -160,12 +161,6 @@ function buildArgs(prompt: string, model: string | undefined): string[] {
   ];
   if (model) args.push("--model", model);
   return args;
-}
-
-function scrubbedEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  delete env["CLAUDECODE"];
-  return env;
 }
 
 async function drain(

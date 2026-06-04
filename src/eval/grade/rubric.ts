@@ -1,5 +1,5 @@
-import type { Judge, Verdict } from "./judge.js";
-import type { CombineRule, Rubric } from "./schema.js";
+import type { Judge, Verdict } from "../judge/index.js";
+import type { CombineRule, Rubric } from "../schema.js";
 
 export interface DimensionResult {
   readonly dimension: string;

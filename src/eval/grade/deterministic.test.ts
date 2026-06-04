@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import type { SolvingCapture } from "./capture.js";
-import { gradeAssertions } from "./grade-deterministic.js";
-import type { Assertion } from "./schema.js";
+import type { SolvingCapture } from "../capture.js";
+import { gradeAssertions } from "./deterministic.js";
+import type { Assertion } from "../schema.js";
 
 function capture(partial: Partial<SolvingCapture>): SolvingCapture {
   return {

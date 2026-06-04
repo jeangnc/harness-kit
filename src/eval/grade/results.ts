@@ -1,11 +1,11 @@
-import type { SolvingCapture } from "./capture.js";
-import { gradeAssertions } from "./grade-deterministic.js";
-import { gradeRubric, type RubricResult } from "./grade-judge.js";
-import type { Judge } from "./judge.js";
-import type { CaseReport } from "./report.js";
-import type { CaseResult } from "./runner.js";
-import { scoreCase, scoreSolving, type SolvingRunResult } from "./score.js";
-import type { Assertion, Rubric } from "./schema.js";
+import type { SolvingCapture } from "../capture.js";
+import { gradeAssertions } from "./deterministic.js";
+import { gradeRubric, type RubricResult } from "./rubric.js";
+import type { Judge } from "../judge/index.js";
+import type { CaseReport } from "../report.js";
+import type { CaseResult } from "../runner.js";
+import { scoreCase, scoreSolving, type SolvingRunResult } from "../score.js";
+import type { Assertion, Rubric } from "../schema.js";
 
 export async function gradeResults(
   results: readonly CaseResult[],

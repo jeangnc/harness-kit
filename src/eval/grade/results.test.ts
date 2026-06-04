@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import type { SolvingCapture } from "./capture.js";
-import type { CaseResult } from "./runner.js";
-import { gradeResults } from "./grade.js";
-import type { Judge } from "./judge.js";
-import type { LoadedRoutingCase, LoadedSolvingCase } from "./cases.js";
+import type { SolvingCapture } from "../capture.js";
+import type { CaseResult } from "../runner.js";
+import { gradeResults } from "./results.js";
+import type { Judge } from "../judge/index.js";
+import type { LoadedRoutingCase, LoadedSolvingCase } from "../cases.js";
 
 const passJudge: Judge = async () => ({ pass: true, evidence: "ok" });
 

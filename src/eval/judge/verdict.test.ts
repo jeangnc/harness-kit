@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import { Verdict, parseVerdict } from "./judge.js";
+import { Verdict, parseVerdict } from "./verdict.js";
 
 test("Verdict accepts a boolean pass with evidence", () => {
   assert.equal(Verdict.safeParse({ pass: true, evidence: "clear" }).success, true);

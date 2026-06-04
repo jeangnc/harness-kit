@@ -1,12 +1,10 @@
 import { defaultSources, discoverInstalled, indexInstalled } from "../installed.js";
 import { err, ok, type Result } from "../result.js";
 import { loadCases, unresolvedSkills, type CaseLoadError, type LoadedCase } from "./cases.js";
-import { gradeResults } from "./grade.js";
-import { createAnthropicJudge, type Judge } from "./judge.js";
+import { gradeResults } from "./grade/index.js";
+import { DEFAULT_JUDGE_MODEL, selectJudge, type Judge } from "./judge/index.js";
 import { buildReport, type EvalReport } from "./report.js";
 import { runCases, type RunnerOptions } from "./runner.js";
-
-const DEFAULT_JUDGE_MODEL = "claude-sonnet-4-5";
 
 export interface EvalOptions {
   readonly casesDir: string;
@@ -38,7 +36,6 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
   if (unresolved.length > 0) return err(unresolved);
 
   const judge = resolveJudge(selected, options);
-  if (!judge.ok) return err(judge.error);
 
   const runnerOptions: RunnerOptions = {
     cwd: options.cwd,
@@ -49,7 +46,7 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
     ...(options.onRun !== undefined && { onRun: options.onRun }),
   };
   const results = await runCases(selected, runnerOptions);
-  const reports = await gradeResults(results, judge.value);
+  const reports = await gradeResults(results, judge);
 
   return ok(buildReport(reports));
 }
@@ -58,23 +55,12 @@ function needsJudge(cases: readonly LoadedCase[]): boolean {
   return cases.some((c) => c.tier === "solving" && c.rubric !== undefined);
 }
 
-function resolveJudge(
-  cases: readonly LoadedCase[],
-  options: EvalOptions,
-): Result<Judge | undefined, CaseLoadError[]> {
-  if (options.judge) return ok(options.judge);
-  if (!needsJudge(cases)) return ok(undefined);
-
-  const apiKey = process.env["ANTHROPIC_API_KEY"];
-  if (!apiKey) {
-    return err([
-      {
-        file: options.casesDir,
-        message: "solving rubric grading requires ANTHROPIC_API_KEY for the judge",
-      },
-    ]);
-  }
-  return ok(createAnthropicJudge({ model: options.judgeModel ?? DEFAULT_JUDGE_MODEL, apiKey }));
+function resolveJudge(cases: readonly LoadedCase[], options: EvalOptions): Judge | undefined {
+  if (!needsJudge(cases)) return undefined;
+  return selectJudge({
+    model: options.judgeModel ?? DEFAULT_JUDGE_MODEL,
+    ...(options.judge !== undefined && { override: options.judge }),
+  });
 }
 
 function select(cases: readonly LoadedCase[], options: EvalOptions): LoadedCase[] {

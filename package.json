@@ -68,7 +68,6 @@
     ]
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.100.1",
     "citty": "^0.2.2",
     "js-yaml": "^4.1.1",
     "markdownlint-cli2": "^0.18.1",

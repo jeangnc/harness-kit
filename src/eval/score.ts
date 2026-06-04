@@ -1,6 +1,5 @@
 import type { DetectionResult } from "./detect.js";
-import type { AssertionResult } from "./grade-deterministic.js";
-import type { RubricResult } from "./grade-judge.js";
+import type { AssertionResult, RubricResult } from "./grade/index.js";
 import type { Expectation } from "./schema.js";
 
 const DEFAULT_THRESHOLD = 1.0;

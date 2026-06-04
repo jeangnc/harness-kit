@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import { gradeRubric } from "./grade-judge.js";
-import type { Judge, JudgeRequest, Verdict } from "./judge.js";
-import type { Rubric } from "./schema.js";
+import { gradeRubric } from "./rubric.js";
+import type { Judge, JudgeRequest, Verdict } from "../judge/index.js";
+import type { Rubric } from "../schema.js";
 
 function rubric(combine: Rubric["combine"], ...dimensions: string[]): Rubric {
   return {
