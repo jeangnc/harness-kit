@@ -117,6 +117,7 @@ export function makeClaudeVendor(home: string): Vendor {
         });
       }
       await refreshMarketplace(ctx);
+      await pruneStagingDirs(home);
       ctx.log(`[claude] refreshed marketplace ${ctx.marketplace}`);
       for (const plugin of disabled) {
         ctx.log(`[claude] skipped ${plugin.name} (disabled in settings)`);
@@ -161,6 +162,16 @@ export function makeClaudeVendor(home: string): Vendor {
 
 function cacheDir(home: string, marketplace: string): string {
   return join(home, "plugins/cache", marketplace);
+}
+
+const STAGING_DIR_PATTERN = /^temp_\d+$/;
+
+async function pruneStagingDirs(home: string): Promise<void> {
+  const marketplacesDir = join(home, "plugins/marketplaces");
+  for (const entry of await readdirOrEmpty(marketplacesDir)) {
+    if (!STAGING_DIR_PATTERN.test(entry)) continue;
+    await rm(join(marketplacesDir, entry), { recursive: true, force: true }).catch(() => undefined);
+  }
 }
 
 async function readManifestVersion(manifestPath: string): Promise<string | undefined> {

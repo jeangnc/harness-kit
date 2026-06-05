@@ -1,8 +1,11 @@
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { compileTree, type WarningSink } from "./emit.js";
 import { checkHookRootReads } from "./hooks.js";
 import { throwInvariantViolations } from "./discovery.js";
+import { pathExists } from "../fs.js";
+import { PluginManifestSchema } from "../install/discovery.js";
 import { SOURCE_PLUGIN_MANIFEST_JSON, SOURCE_PLUGIN_MANIFEST_TS } from "../layout/conventions.js";
 import {
   collectLocalIds,
@@ -68,6 +71,39 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
         ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
       });
     }
+  }
+  for (const vendor of vendors) {
+    await verifyEmittedMarketplaceSources(outRoot, vendor);
+  }
+}
+
+export async function verifyEmittedMarketplaceSources(
+  outRoot: string,
+  vendor: Vendor,
+): Promise<void> {
+  const manifestPath = join(outRoot, vendor.marketplaceManifestPath);
+  const marketplace = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    plugins: ReadonlyArray<{ name: string; source: unknown }>;
+  };
+  const unresolved: string[] = [];
+  for (const { name, source } of marketplace.plugins) {
+    if (typeof source !== "string") continue;
+    const target = join(vendor.pluginOutDir(outRoot, name), vendor.pluginManifestPath);
+    if (!(await pluginManifestParses(target))) unresolved.push(`${name} → ${source}`);
+  }
+  if (unresolved.length > 0) {
+    throwInvariantViolations(manifestPath, [
+      `plugin sources with no emitted plugin manifest: ${unresolved.join("; ")}`,
+    ]);
+  }
+}
+
+async function pluginManifestParses(manifestPath: string): Promise<boolean> {
+  if (!(await pathExists(manifestPath))) return false;
+  try {
+    return PluginManifestSchema.safeParse(JSON.parse(await readFile(manifestPath, "utf8"))).success;
+  } catch {
+    return false;
   }
 }
 

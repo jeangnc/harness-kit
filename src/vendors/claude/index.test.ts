@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -165,6 +165,32 @@ test("claudeVendor.install in local mode adds the dist marketplace instead of up
     "claude plugin marketplace add /tmp/dist/claude --scope local",
     "claude plugin install alpha@test-market",
   ]);
+});
+
+test("claudeVendor.install prunes leaked temp_* staging dirs but spares real marketplaces", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-prune-"));
+  try {
+    const marketplaces = join(home, "plugins/marketplaces");
+    for (const name of ["temp_111", "temp_222", "gq-marketplace", "claude-plugins-official"]) {
+      mkdirSync(join(marketplaces, name), { recursive: true });
+    }
+    const { run } = recordingRunner();
+    const v = makeClaudeVendor(home);
+    await v.install(
+      ctx({
+        run,
+        mode: "local",
+        distRoot: join(home, "dist"),
+        plugins: [{ name: "alpha", path: join(home, "dist/claude/alpha"), version: "1.0.0" }],
+      }),
+    );
+    assert.deepEqual(readdirSync(marketplaces).sort(), [
+      "claude-plugins-official",
+      "gq-marketplace",
+    ]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test("claudeVendor.install is a no-op when no plugins", async () => {
