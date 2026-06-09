@@ -8,6 +8,9 @@ import {
   defaultSources,
   discoverInstalled,
   indexInstalled,
+  localSources,
+  mergeArtifacts,
+  type InstalledArtifacts,
   type PluginSource,
 } from "./installed.js";
 import { makeFakeVendor } from "./vendor/fakeVendor.testutil.js";
@@ -308,4 +311,113 @@ test("defaultSources falls back to built-in vendors when none are supplied", () 
     assert.ok(source.root.endsWith("/plugins/cache"), "root should end with plugins/cache");
     assert.ok(source.manifestRelativePath.endsWith("/plugin.json"));
   }
+});
+
+test("discoverInstalled tags skills with the source's marketplace override when set", async () => {
+  await withInstalledSourceFixture(async (root) => {
+    // A local dist layout: plugin dir directly under root, no marketplace dir between.
+    const pluginRoot = join(root, "plugin-x");
+    mkdirSync(join(pluginRoot, "skills", "s"), { recursive: true });
+    mkdirSync(join(pluginRoot, ".claude-plugin"), { recursive: true });
+    writeFileSync(
+      join(pluginRoot, ".claude-plugin/plugin.json"),
+      JSON.stringify({ name: "plugin-x", version: "1.0.0" }),
+    );
+    writeFileSync(
+      join(pluginRoot, "skills", "s", "SKILL.md"),
+      `---\nname: s\ndescription: x\n---\n\nbody\n`,
+    );
+    const [skill] = (
+      await discoverInstalled([
+        {
+          name: "claude",
+          root,
+          manifestRelativePath: ".claude-plugin/plugin.json",
+          marketplace: "market-a",
+        },
+      ])
+    ).skills;
+    assert.ok(skill);
+    assert.equal(skill.plugin, "plugin-x");
+    assert.equal(
+      skill.marketplace,
+      "market-a",
+      "marketplace override should win over the empty directory-derived value",
+    );
+  });
+});
+
+test("localSources reads the marketplace name from the dist marketplace manifest", async () => {
+  await withInstalledSourceFixture(async (distRoot) => {
+    const vendor = makeFakeVendor("claude");
+    mkdirSync(join(distRoot, "claude/.claude-plugin"), { recursive: true });
+    writeFileSync(
+      join(distRoot, vendor.marketplaceManifestPath),
+      JSON.stringify({ name: "market-a" }),
+    );
+    const sources = await localSources(distRoot, [vendor]);
+    assert.equal(sources.length, 1);
+    const [source] = sources;
+    assert.ok(source);
+    assert.equal(source.name, "claude");
+    assert.equal(source.marketplace, "market-a");
+    assert.equal(source.root, join(distRoot, "claude", "plugins"));
+  });
+});
+
+test("localSources skips a vendor whose dist marketplace manifest is absent", async () => {
+  await withInstalledSourceFixture(async (distRoot) => {
+    const vendor = makeFakeVendor("claude");
+    const sources = await localSources(distRoot, [vendor]);
+    assert.deepEqual(sources, []);
+  });
+});
+
+test("mergeArtifacts lets the overlay win on a colliding plugin:skill id", () => {
+  const base: InstalledArtifacts = {
+    skills: [
+      {
+        source: "claude",
+        marketplace: "market-a",
+        plugin: "plugin-x",
+        skill: "old",
+        path: "/cache/old",
+      },
+      {
+        source: "claude",
+        marketplace: "market-a",
+        plugin: "plugin-x",
+        skill: "keep",
+        path: "/cache/keep",
+      },
+    ],
+    commands: [],
+    agents: [],
+  };
+  const overlay: InstalledArtifacts = {
+    skills: [
+      {
+        source: "claude",
+        marketplace: "market-a",
+        plugin: "plugin-x",
+        skill: "old",
+        path: "/dist/old",
+      },
+      {
+        source: "claude",
+        marketplace: "market-a",
+        plugin: "plugin-x",
+        skill: "new",
+        path: "/dist/new",
+      },
+    ],
+    commands: [],
+    agents: [],
+  };
+  const merged = mergeArtifacts(base, overlay);
+  const byId = new Map(merged.skills.map((s) => [`${s.plugin}:${s.skill}`, s]));
+  assert.equal(byId.get("plugin-x:old")?.path, "/dist/old", "overlay wins on collision");
+  assert.equal(byId.get("plugin-x:keep")?.path, "/cache/keep", "base-only entry survives");
+  assert.equal(byId.get("plugin-x:new")?.path, "/dist/new", "overlay-only entry is added");
+  assert.equal(merged.skills.length, 3, "colliding id is not duplicated");
 });

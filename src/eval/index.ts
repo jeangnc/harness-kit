@@ -2,6 +2,9 @@ import {
   defaultSources,
   discoverInstalled,
   indexInstalled,
+  localSources,
+  mergeArtifacts,
+  type InstalledArtifacts,
   type InstalledIndex,
 } from "../installed.js";
 import { err, ok, type Result } from "../result.js";
@@ -15,6 +18,7 @@ import { runCases, type RunnerOptions } from "./runner.js";
 export interface EvalOptions {
   readonly casesDir: string;
   readonly cwd: string;
+  readonly distRoot?: string;
   readonly suite?: string;
   readonly caseId?: string;
   readonly tier?: LoadedCase["tier"];
@@ -36,7 +40,7 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
     return err([{ file: options.casesDir, message: "no cases matched the given filters" }]);
   }
 
-  const installed = indexInstalled(await discoverInstalled(defaultSources()));
+  const installed = indexInstalled(await resolveArtifacts(options.distRoot));
   const installedIds = new Set(installed.skills.keys());
   const unresolved = unresolvedSkills(selected, installedIds);
   if (unresolved.length > 0) return err(unresolved);
@@ -57,6 +61,13 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
   const reports = await gradeResults(results, judge);
 
   return ok(buildReport(reports));
+}
+
+async function resolveArtifacts(distRoot?: string): Promise<InstalledArtifacts> {
+  const cache = await discoverInstalled(defaultSources());
+  if (distRoot === undefined) return cache;
+  const local = await discoverInstalled(await localSources(distRoot));
+  return mergeArtifacts(cache, local);
 }
 
 const EVAL_VENDOR = "claude";

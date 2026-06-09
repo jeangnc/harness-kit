@@ -12,6 +12,7 @@ export interface PluginSource {
   readonly name: string;
   readonly root: string;
   readonly manifestRelativePath: string;
+  readonly marketplace?: string;
 }
 
 export interface InstalledSkill {
@@ -60,6 +61,43 @@ export function defaultSources(
   }));
 }
 
+const MarketplaceManifestSchema = z.object({ name: z.string().min(1) });
+
+export async function localSources(
+  distRoot: string,
+  vendors: readonly Vendor[] = builtinVendors(),
+): Promise<readonly PluginSource[]> {
+  const sources: PluginSource[] = [];
+  for (const vendor of vendors) {
+    const marketplace = await readMarketplaceName(join(distRoot, vendor.marketplaceManifestPath));
+    if (marketplace === null) continue;
+    sources.push({
+      name: vendor.name,
+      root: join(vendor.vendorOutDir(distRoot), "plugins"),
+      manifestRelativePath: vendor.pluginManifestPath,
+      marketplace,
+    });
+  }
+  return sources;
+}
+
+async function readMarketplaceName(manifestPath: string): Promise<string | null> {
+  let raw: string;
+  try {
+    raw = await readFile(manifestPath, "utf8");
+  } catch {
+    return null;
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  const parsed = MarketplaceManifestSchema.safeParse(json);
+  return parsed.success ? parsed.data.name : null;
+}
+
 export async function discoverInstalled(
   sources: readonly PluginSource[],
 ): Promise<InstalledArtifacts> {
@@ -67,7 +105,11 @@ export async function discoverInstalled(
   const commands: InstalledCommand[] = [];
   const agents: InstalledAgent[] = [];
   for (const source of sources) {
-    for await (const pluginRoot of findPluginRoots(source.root, source.manifestRelativePath)) {
+    for await (const pluginRoot of findPluginRoots(
+      source.root,
+      source.manifestRelativePath,
+      source.marketplace,
+    )) {
       for await (const skillFile of collectSkills(pluginRoot.root)) {
         skills.push({
           source: source.name,
@@ -105,6 +147,28 @@ export function indexInstalled(artifacts: InstalledArtifacts): InstalledIndex {
     skills: groupBy(artifacts.skills, (s) => `${s.plugin}:${s.skill}`),
     commands: groupBy(artifacts.commands, (c) => `${c.plugin}:${c.command}`),
     agents: groupBy(artifacts.agents, (a) => `${a.plugin}:${a.agent}`),
+  };
+}
+
+const skillId = (s: InstalledSkill): string => `${s.plugin}:${s.skill}`;
+const commandId = (c: InstalledCommand): string => `${c.plugin}:${c.command}`;
+const agentId = (a: InstalledAgent): string => `${a.plugin}:${a.agent}`;
+
+function overlayById<T>(base: readonly T[], overlay: readonly T[], id: (t: T) => string): T[] {
+  const byId = new Map<string, T>();
+  for (const item of base) byId.set(id(item), item);
+  for (const item of overlay) byId.set(id(item), item);
+  return [...byId.values()];
+}
+
+export function mergeArtifacts(
+  base: InstalledArtifacts,
+  overlay: InstalledArtifacts,
+): InstalledArtifacts {
+  return {
+    skills: overlayById(base.skills, overlay.skills, skillId),
+    commands: overlayById(base.commands, overlay.commands, commandId),
+    agents: overlayById(base.agents, overlay.agents, agentId),
   };
 }
 

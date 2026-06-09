@@ -233,6 +233,12 @@ const evalCmd = defineCommand({
       description: "directory of eval case files",
     },
     cwd: { type: "string", default: ".", description: "working directory for claude -p sessions" },
+    dist: {
+      type: "string",
+      default: "./dist",
+      description:
+        "local compiled plugins to overlay over the installed cache (local wins); empty to disable",
+    },
     suite: { type: "string", description: "only run cases from this suite" },
     case: { type: "string", description: "only run the case with this id" },
     tier: { type: "string", description: `only run this tier: ${TIERS.join(" | ")}` },
@@ -261,6 +267,7 @@ const evalCmd = defineCommand({
       casesDir: args.cases,
       cwd: args.cwd,
       concurrency: parsePositiveInt(args.concurrency, "concurrency"),
+      ...(args.dist !== "" && { distRoot: args.dist }),
       ...(args.suite !== undefined && { suite: args.suite }),
       ...(args.case !== undefined && { caseId: args.case }),
       ...(args.tier !== undefined && { tier: parseTier(args.tier) }),
