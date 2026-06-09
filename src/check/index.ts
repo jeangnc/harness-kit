@@ -171,7 +171,6 @@ function findBarewordBypasses(
   index: LeafIndex,
   skip: readonly Span[],
 ): readonly ReferenceViolation[] {
-  if (source.origin.role === "command") return [];
   const ownLeaf = source.origin.role === "skill" ? source.origin.ownLeaf : null;
   return detectBarewordBypasses(source.body, index, { ownLeaf }, skip).map((bypass) => {
     const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + bypass.offset);

@@ -751,7 +751,7 @@ test("check does not flag a skill backticking its own leaf name", async () => {
   );
 });
 
-test("check does not flag a backticked leaf inside a command invoke body", async () => {
+test("check flags a backticked leaf inside a command invoke body", async () => {
   await withLocalSrcFixture(
     {
       skills: [{ plugin: "foo", skill: "ship", body: "ships it\n" }],
@@ -759,10 +759,10 @@ test("check does not flag a backticked leaf inside a command invoke body", async
     },
     async (srcRoot) => {
       const result = await check({ srcRoot, sources: NO_INSTALLED });
-      assert.deepEqual(
-        result.violations.filter((v) => v.kind === "bareword"),
-        [],
-      );
+      const bareword = result.violations.filter((v) => v.kind === "bareword");
+      assert.equal(bareword.length, 1);
+      assert.equal(bareword[0]!.token, "ship");
+      assert.match(bareword[0]!.file, /go\.md$/);
     },
   );
 });
