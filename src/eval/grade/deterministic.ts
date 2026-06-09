@@ -1,6 +1,5 @@
 import { err, ok, type Result } from "../../result.js";
 import type { SolvingCapture } from "../capture.js";
-import { asRecord } from "../detect.js";
 import type { Assertion } from "../schema.js";
 
 export interface AssertionResult {
@@ -102,18 +101,7 @@ function wroteTo(capture: SolvingCapture, path: string): boolean {
 }
 
 function writtenPaths(capture: SolvingCapture): string[] {
-  return capture.trajectory.flatMap((call) =>
-    isWriteTool(call.name) ? writePathOf(call.input) : [],
-  );
-}
-
-function isWriteTool(name: string): boolean {
-  return name === "Write" || name === "Edit";
-}
-
-function writePathOf(input: unknown): string[] {
-  const path = asRecord(input)["file_path"];
-  return typeof path === "string" ? [path] : [];
+  return capture.writes.map((w) => w.path);
 }
 
 function tools(capture: SolvingCapture): string[] {

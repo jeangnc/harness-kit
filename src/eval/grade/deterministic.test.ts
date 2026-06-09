@@ -74,13 +74,29 @@ test("wroteFile passes when the agent wrote the path and fails when it did not",
   assert.match(miss.evidence, /out\.txt/);
 });
 
-test("wroteFile fails for a file present on disk that the agent never wrote", () => {
+test("wroteFile counts a disk-merged write absent from the tool trajectory", () => {
   const a: Assertion = { kind: "wroteFile", path: "out.txt", regex: false };
   const result = gradeOne(a, {
     trajectory: [],
-    writes: [{ path: "out.txt", content: "pre-existing" }],
+    writes: [{ path: "out.txt", content: "from a heredoc" }],
   });
+  assert.equal(result.pass, true);
+});
+
+test("wroteFile fails when nothing was written to the declared path", () => {
+  const a: Assertion = { kind: "wroteFile", path: "out.txt", regex: false };
+  const result = gradeOne(a, { trajectory: [wrote("other.txt")], writes: [] });
   assert.equal(result.pass, false);
+  assert.match(result.evidence, /out\.txt/);
+});
+
+test("wroteFile matches a declared relative path when the agent wrote an absolute file_path", () => {
+  const a: Assertion = { kind: "wroteFile", path: "app/models/order.rb", regex: false };
+  const result = gradeOne(a, {
+    trajectory: [wrote("/abs/sandbox/app/models/order.rb")],
+    writes: [{ path: "app/models/order.rb", content: "class Order; end" }],
+  });
+  assert.equal(result.pass, true);
 });
 
 test("wroteFile with contentMatches passes on matching content and fails on mismatch", () => {
