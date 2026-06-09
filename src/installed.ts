@@ -16,6 +16,7 @@ export interface PluginSource {
 
 export interface InstalledSkill {
   readonly source: string;
+  readonly marketplace: string;
   readonly plugin: string;
   readonly skill: string;
   readonly path: string;
@@ -23,6 +24,7 @@ export interface InstalledSkill {
 
 export interface InstalledCommand {
   readonly source: string;
+  readonly marketplace: string;
   readonly plugin: string;
   readonly command: string;
   readonly path: string;
@@ -30,6 +32,7 @@ export interface InstalledCommand {
 
 export interface InstalledAgent {
   readonly source: string;
+  readonly marketplace: string;
   readonly plugin: string;
   readonly agent: string;
   readonly path: string;
@@ -64,29 +67,32 @@ export async function discoverInstalled(
   const commands: InstalledCommand[] = [];
   const agents: InstalledAgent[] = [];
   for (const source of sources) {
-    for await (const plugin of findPluginRoots(source.root, source.manifestRelativePath)) {
-      for await (const skill of collectSkills(plugin.root)) {
+    for await (const pluginRoot of findPluginRoots(source.root, source.manifestRelativePath)) {
+      for await (const skillFile of collectSkills(pluginRoot.root)) {
         skills.push({
           source: source.name,
-          plugin: plugin.name,
-          skill: skill.name,
-          path: skill.path,
+          marketplace: pluginRoot.marketplace,
+          plugin: pluginRoot.name,
+          skill: skillFile.name,
+          path: skillFile.path,
         });
       }
-      for await (const cmd of collectFlat(plugin.root, "commands")) {
+      for await (const commandFile of collectFlat(pluginRoot.root, "commands")) {
         commands.push({
           source: source.name,
-          plugin: plugin.name,
-          command: cmd.name,
-          path: cmd.path,
+          marketplace: pluginRoot.marketplace,
+          plugin: pluginRoot.name,
+          command: commandFile.name,
+          path: commandFile.path,
         });
       }
-      for await (const agent of collectFlat(plugin.root, "agents")) {
+      for await (const agentFile of collectFlat(pluginRoot.root, "agents")) {
         agents.push({
           source: source.name,
-          plugin: plugin.name,
-          agent: agent.name,
-          path: agent.path,
+          marketplace: pluginRoot.marketplace,
+          plugin: pluginRoot.name,
+          agent: agentFile.name,
+          path: agentFile.path,
         });
       }
     }
@@ -116,15 +122,17 @@ function groupBy<T>(items: readonly T[], key: (t: T) => string): ReadonlyMap<str
 interface PluginRoot {
   readonly name: string;
   readonly root: string;
+  readonly marketplace: string;
 }
 
 async function* findPluginRoots(
   dir: string,
   manifestRelativePath: string,
+  marketplace?: string,
 ): AsyncGenerator<PluginRoot> {
   const name = await readPluginName(join(dir, manifestRelativePath));
   if (name !== null) {
-    yield { name, root: dir };
+    yield { name, root: dir, marketplace: marketplace ?? "" };
     return;
   }
   let entries;
@@ -135,7 +143,13 @@ async function* findPluginRoots(
   }
   for (const entry of entries) {
     if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) yield* findPluginRoots(join(dir, entry.name), manifestRelativePath);
+    if (entry.isDirectory()) {
+      yield* findPluginRoots(
+        join(dir, entry.name),
+        manifestRelativePath,
+        marketplace ?? entry.name,
+      );
+    }
   }
 }
 

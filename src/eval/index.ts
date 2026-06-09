@@ -1,6 +1,12 @@
-import { defaultSources, discoverInstalled, indexInstalled } from "../installed.js";
+import {
+  defaultSources,
+  discoverInstalled,
+  indexInstalled,
+  type InstalledIndex,
+} from "../installed.js";
 import { err, ok, type Result } from "../result.js";
 import { loadCases, unresolvedSkills, type CaseLoadError, type LoadedCase } from "./cases.js";
+import { caseExpectedSkills } from "./schema.js";
 import { gradeResults } from "./grade/index.js";
 import { DEFAULT_JUDGE_MODEL, selectJudge, type Judge } from "./judge/index.js";
 import { buildReport, type EvalReport } from "./report.js";
@@ -36,6 +42,7 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
   if (unresolved.length > 0) return err(unresolved);
 
   const judge = resolveJudge(selected, options);
+  const enabledPlugins = enabledPluginKeys(selected, installed);
 
   const runnerOptions: RunnerOptions = {
     cwd: options.cwd,
@@ -44,11 +51,31 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
     ...(options.model !== undefined && { model: options.model }),
     ...(options.solvingTimeoutMs !== undefined && { solvingTimeoutMs: options.solvingTimeoutMs }),
     ...(options.onRun !== undefined && { onRun: options.onRun }),
+    ...(enabledPlugins.size > 0 && { enabledPlugins }),
   };
   const results = await runCases(selected, runnerOptions);
   const reports = await gradeResults(results, judge);
 
   return ok(buildReport(reports));
+}
+
+const EVAL_VENDOR = "claude";
+
+export function enabledPluginKeys(
+  selected: readonly LoadedCase[],
+  index: InstalledIndex,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const evalCase of selected) {
+    for (const id of caseExpectedSkills(evalCase)) {
+      for (const entry of index.skills.get(id) ?? []) {
+        if (entry.source === EVAL_VENDOR && entry.marketplace) {
+          keys.add(`${entry.plugin}@${entry.marketplace}`);
+        }
+      }
+    }
+  }
+  return keys;
 }
 
 function needsJudge(cases: readonly LoadedCase[]): boolean {

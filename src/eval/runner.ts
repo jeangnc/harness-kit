@@ -21,6 +21,7 @@ export interface RunnerOptions {
   readonly timeoutMs?: number;
   readonly solvingTimeoutMs?: number;
   readonly model?: string;
+  readonly enabledPlugins?: ReadonlySet<string>;
   readonly claudeBin?: string;
   readonly onRun?: (caseId: string, result: DetectionResult) => void;
   readonly onCapture?: (caseId: string, capture: SolvingCapture) => void;
@@ -121,7 +122,11 @@ async function runSession(
   handlers: SessionHandlers,
 ): Promise<boolean> {
   const cwd = evalCase.cwd ? resolveCwd(options.cwd, evalCase.cwd) : options.cwd;
-  const child = spawn(options.claudeBin ?? "claude", buildArgs(evalCase.prompt, options.model), {
+  const argsOptions: BuildArgsOptions = {
+    ...(options.model !== undefined && { model: options.model }),
+    ...(options.enabledPlugins !== undefined && { enabledPlugins: options.enabledPlugins }),
+  };
+  const child = spawn(options.claudeBin ?? "claude", buildArgs(evalCase.prompt, argsOptions), {
     cwd,
     env: scrubEnv(process.env, SUBPROCESS_ENV_OVERRIDES),
     stdio: ["ignore", "pipe", "ignore"],
@@ -150,7 +155,12 @@ async function runSession(
   return deadline.reached;
 }
 
-export function buildArgs(prompt: string, model: string | undefined): string[] {
+export interface BuildArgsOptions {
+  readonly model?: string;
+  readonly enabledPlugins?: ReadonlySet<string>;
+}
+
+export function buildArgs(prompt: string, options: BuildArgsOptions = {}): string[] {
   const args = [
     "-p",
     prompt,
@@ -161,7 +171,13 @@ export function buildArgs(prompt: string, model: string | undefined): string[] {
     "--permission-mode",
     "bypassPermissions",
   ];
-  if (model) args.push("--model", model);
+  if (options.model) args.push("--model", options.model);
+  if (options.enabledPlugins?.size) {
+    const enabledPlugins = Object.fromEntries(
+      [...options.enabledPlugins].map((key) => [key, true]),
+    );
+    args.push("--settings", JSON.stringify({ enabledPlugins }));
+  }
   return args;
 }
 

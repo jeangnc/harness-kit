@@ -133,6 +133,52 @@ test("discoverInstalled tags each skill with its source name", async () => {
   });
 });
 
+test("discoverInstalled tags each skill with its marketplace in a flat layout", async () => {
+  await withInstalledSourceFixture(async (root) => {
+    placeSkill(root, { layout: "flat", marketplace: "market-a", plugin: "p", skill: "s" });
+    const [skill] = (
+      await discoverInstalled([
+        { name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+      ])
+    ).skills;
+    assert.ok(skill);
+    assert.equal(skill.marketplace, "market-a");
+  });
+});
+
+test("discoverInstalled tags each skill with its marketplace in a versioned layout", async () => {
+  await withInstalledSourceFixture(async (root) => {
+    placeSkill(root, {
+      layout: "versioned",
+      marketplace: "market-b",
+      plugin: "p",
+      version: "1.0.0",
+      skill: "s",
+    });
+    const [skill] = (
+      await discoverInstalled([
+        { name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+      ])
+    ).skills;
+    assert.ok(skill);
+    assert.equal(skill.marketplace, "market-b");
+  });
+});
+
+test("discoverInstalled distinguishes the same plugin:skill across two marketplaces", async () => {
+  await withInstalledSourceFixture(async (root) => {
+    placeSkill(root, { layout: "flat", marketplace: "market-a", plugin: "plugin-x", skill: "s" });
+    placeSkill(root, { layout: "flat", marketplace: "market-b", plugin: "plugin-x", skill: "s" });
+    const skills = (
+      await discoverInstalled([
+        { name: "claude", root, manifestRelativePath: ".claude-plugin/plugin.json" },
+      ])
+    ).skills;
+    const marketplaces = skills.map((s) => s.marketplace).sort();
+    assert.deepEqual(marketplaces, ["market-a", "market-b"]);
+  });
+});
+
 test("discoverInstalled returns empty when source root does not exist", async () => {
   const result = (
     await discoverInstalled([
