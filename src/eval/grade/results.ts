@@ -1,11 +1,12 @@
 import type { SolvingCapture } from "../capture.js";
+import type { LoadedSolvingCase } from "../cases.js";
 import { gradeAssertions } from "./deterministic.js";
+import { extractAnswer } from "./extract.js";
 import { gradeRubric, type RubricResult } from "./rubric.js";
 import type { Judge } from "../judge/index.js";
 import type { CaseReport } from "../report.js";
 import type { CaseResult } from "../runner.js";
 import { scoreCase, scoreSolving, type SolvingRunResult } from "../score.js";
-import type { Assertion, Rubric } from "../schema.js";
 
 export async function gradeResults(
   results: readonly CaseResult[],
@@ -22,7 +23,7 @@ async function gradeOne(result: CaseResult, judge: Judge | undefined): Promise<C
 
   const { evalCase, captures } = result;
   const perRun = await Promise.all(
-    captures.map(async (capture) => gradeRun(evalCase.assert, evalCase.rubric, capture, judge)),
+    captures.map(async (capture) => gradeRun(evalCase, capture, judge)),
   );
   return {
     evalCase,
@@ -32,13 +33,18 @@ async function gradeOne(result: CaseResult, judge: Judge | undefined): Promise<C
 }
 
 async function gradeRun(
-  assertions: readonly Assertion[],
-  rubric: Rubric | undefined,
+  evalCase: LoadedSolvingCase,
   capture: SolvingCapture,
   judge: Judge | undefined,
 ): Promise<SolvingRunResult> {
-  const graded = gradeAssertions(assertions, capture);
+  const extracted = extractAnswer(evalCase.answer, capture.outputText);
+  if (!extracted.found) return { found: false };
+
   const rubricResult: RubricResult | null =
-    rubric && judge ? await gradeRubric(rubric, capture.outputText, judge) : null;
-  return { assertions: graded, rubric: rubricResult };
+    evalCase.rubric && judge ? await gradeRubric(evalCase.rubric, extracted.text, judge) : null;
+  return {
+    found: true,
+    assertions: gradeAssertions(evalCase.assert, capture, extracted.text),
+    rubric: rubricResult,
+  };
 }

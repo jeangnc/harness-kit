@@ -16,7 +16,8 @@ function capture(partial: Partial<SolvingCapture>): SolvingCapture {
 }
 
 function gradeOne(assertion: Assertion, partial: Partial<SolvingCapture>) {
-  const [result] = gradeAssertions([assertion], capture(partial));
+  const cap = capture(partial);
+  const [result] = gradeAssertions([assertion], cap, cap.outputText);
   return result!;
 }
 
@@ -40,6 +41,21 @@ test("outputExcludes passes when absent and fails citing the offending match", (
   const hit = gradeOne(a, { outputText: "an error occurred" });
   assert.equal(hit.pass, false);
   assert.match(hit.evidence, /error/);
+});
+
+test("outputMatches grades the provided answer surface, not the raw capture text", () => {
+  const a: Assertion = { kind: "outputMatches", pattern: "VERDICT", regex: false };
+  const cap = capture({ outputText: "preamble narration only" });
+  const [result] = gradeAssertions([a], cap, "===REVIEW===\nVERDICT\n===");
+  assert.equal(result!.pass, true);
+});
+
+test("outputExcludes grades the raw capture text, not the answer surface", () => {
+  const a: Assertion = { kind: "outputExcludes", pattern: "Here is my review", regex: false };
+  const cap = capture({ outputText: "Here is my review:\n===REVIEW===\nclean\n===" });
+  const [result] = gradeAssertions([a], cap, "===REVIEW===\nclean\n===");
+  assert.equal(result!.pass, false);
+  assert.match(result!.evidence, /Here is my review/);
 });
 
 test("usedTool passes when the tool appears and fails listing observed tools", () => {
@@ -135,6 +151,7 @@ test("gradeAssertions returns one result per assertion preserving order", () => 
       { kind: "didNotUseTool", tool: "Bash" },
     ],
     capture({ trajectory: [{ name: "Write", input: {} }] }),
+    "",
   );
   assert.equal(results.length, 2);
   assert.equal(results[0]!.assertion.kind, "usedTool");

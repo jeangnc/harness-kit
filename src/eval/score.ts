@@ -45,12 +45,16 @@ export function scoreCase(
   };
 }
 
-export interface SolvingRunResult {
-  readonly assertions: readonly AssertionResult[];
-  readonly rubric: RubricResult | null;
-}
+export type SolvingRunResult =
+  | { readonly found: false }
+  | {
+      readonly found: true;
+      readonly assertions: readonly AssertionResult[];
+      readonly rubric: RubricResult | null;
+    };
 
 export function solvingRunPassed(run: SolvingRunResult): boolean {
+  if (!run.found) return false;
   const assertionsPass = run.assertions.every((a) => a.pass);
   const rubricPass = run.rubric === null || run.rubric.pass;
   return assertionsPass && rubricPass;

@@ -61,6 +61,7 @@ test("formatConsole renders failed solving assertions with evidence", () => {
     solving: {
       perRun: [
         {
+          found: true,
           assertions: [
             {
               assertion: { kind: "usedTool", tool: "Write" },
@@ -84,6 +85,28 @@ test("formatConsole renders failed solving assertions with evidence", () => {
   assert.match(out, /tools used: \[Read\]/);
   assert.match(out, /clarity/);
   assert.match(out, /rambling intro/);
+});
+
+test("formatConsole reports a missing answer block as the failure reason", () => {
+  const caseReport: CaseReport = {
+    evalCase: solvingCase(),
+    score: { matched: 0, runs: 1, triggerRate: 0, threshold: 1, pass: false, histogram: new Map() },
+    solving: { perRun: [{ found: false }] },
+  };
+  const out = formatConsole(buildReport([caseReport], []));
+  assert.match(out, /no answer block/i);
+});
+
+test("toJson marks a run with no answer block as not found", () => {
+  const caseReport: CaseReport = {
+    evalCase: solvingCase(),
+    score: { matched: 0, runs: 1, triggerRate: 0, threshold: 1, pass: false, histogram: new Map() },
+    solving: { perRun: [{ found: false }] },
+  };
+  const json = JSON.parse(toJson(buildReport([caseReport], []))) as {
+    cases: Array<{ solving: Array<{ found: boolean }> }>;
+  };
+  assert.equal(json.cases[0]!.solving[0]!.found, false);
 });
 
 test("diagnostics aggregate rate-limited runs and duration across all runs", () => {

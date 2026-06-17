@@ -2,7 +2,13 @@ import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
 import type { DetectionResult } from "./detect.js";
-import { matchesExpectation, scoreCase, scoreSolving, type SolvingRunResult } from "./score.js";
+import {
+  matchesExpectation,
+  scoreCase,
+  scoreSolving,
+  solvingRunPassed,
+  type SolvingRunResult,
+} from "./score.js";
 import type { Expectation } from "./schema.js";
 
 function fired(...observed: string[]): DetectionResult {
@@ -76,6 +82,7 @@ test("scoreCase histogram labels a no-skill run", () => {
 
 function solvingRun(assertionPass: boolean, rubricPass: boolean | null = null): SolvingRunResult {
   return {
+    found: true,
     assertions: [
       { assertion: { kind: "usedTool", tool: "Write" }, pass: assertionPass, evidence: "e" },
     ],
@@ -108,6 +115,10 @@ test("scoreSolving fails below the default threshold of 1.0", () => {
 test("scoreSolving treats a run with no rubric as passing on assertions alone", () => {
   const score = scoreSolving([solvingRun(true)]);
   assert.equal(score.pass, true);
+});
+
+test("solvingRunPassed fails a run with a missing answer block", () => {
+  assert.equal(solvingRunPassed({ found: false }), false);
 });
 
 test("scoreSolving reports an empty histogram", () => {

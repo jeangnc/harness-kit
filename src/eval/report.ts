@@ -141,6 +141,10 @@ function solvingFailures(solving: SolvingBreakdown): string[] {
   const lines: string[] = [];
   solving.perRun.forEach((run, index) => {
     const prefix = solving.perRun.length > 1 ? `run ${index + 1} ` : "";
+    if (!run.found) {
+      lines.push(`${INDENT}${prefix}no answer block in output`);
+      return;
+    }
     for (const a of run.assertions) {
       if (!a.pass) lines.push(`${INDENT}${prefix}assert ${a.assertion.kind}: ${a.evidence}`);
     }
@@ -156,23 +160,27 @@ function solvingFailures(solving: SolvingBreakdown): string[] {
 }
 
 function jsonSolving(solving: SolvingBreakdown): unknown {
-  return solving.perRun.map((run) => ({
-    assertions: run.assertions.map((a) => ({
-      kind: a.assertion.kind,
-      pass: a.pass,
-      evidence: a.evidence,
-    })),
-    rubric: run.rubric
-      ? {
-          pass: run.rubric.pass,
-          dimensions: run.rubric.dimensions.map((d) => ({
-            dimension: d.dimension,
-            pass: d.verdict.pass,
-            evidence: d.verdict.evidence,
-          })),
-        }
-      : null,
-  }));
+  return solving.perRun.map((run) => {
+    if (!run.found) return { found: false };
+    return {
+      found: true,
+      assertions: run.assertions.map((a) => ({
+        kind: a.assertion.kind,
+        pass: a.pass,
+        evidence: a.evidence,
+      })),
+      rubric: run.rubric
+        ? {
+            pass: run.rubric.pass,
+            dimensions: run.rubric.dimensions.map((d) => ({
+              dimension: d.dimension,
+              pass: d.verdict.pass,
+              evidence: d.verdict.evidence,
+            })),
+          }
+        : null,
+    };
+  });
 }
 
 function describeExpectation(expectation: Expectation): string {

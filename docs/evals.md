@@ -32,6 +32,28 @@ cases:
 A solving run passes when every assertion passes **and** the rubric meets its combine rule;
 across `runs`, the case passes when the pass rate meets `threshold` (default `runs` is 1).
 
+## Grading a delimited answer block
+
+When a skill renders a delimited answer (e.g. a `===REVIEW===…===` block), the model often
+prefixes it with narration prose that no prompt reliably suppresses. Declare the delimiter and
+the harness grades only the block, discarding the preamble:
+
+```yaml
+- id: review-block
+  prompt: "Review the diff and emit a ===REVIEW=== block."
+  answer: { start: "===REVIEW===", end: "===" }
+  rubric:
+    dimensions:
+      - { dimension: format, criterion: "The verdict line is one short sentence." }
+```
+
+`start` and `end` are matched as literal substrings; the graded region runs from the first
+`start` through the first `end` after it (markers included), or to end-of-output if no `end`
+follows. The region feeds `outputMatches` and the rubric judge. `outputExcludes` still grades
+the **full** output, so it can police forbidden text in the preamble or trailer. Text **after**
+the close marker is not in the region — assert on it explicitly if it matters. A declared `answer`
+whose `start` never appears in the output **fails the run** (the required block is missing).
+
 No API key needed. Both the session and the rubric judge run by spawning the `claude` CLI on
 its own auth — `ANTHROPIC_API_KEY` is scrubbed from the subprocess env, not required. Each
 spawned session is pinned to `--permission-mode bypassPermissions` so it runs to completion

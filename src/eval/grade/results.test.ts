@@ -60,7 +60,8 @@ test("gradeResults grades solving assertions and attaches a breakdown", async ()
   const [report] = await gradeResults([result], passJudge);
   assert.equal(report!.score.pass, true);
   assert.equal(report!.solving?.perRun.length, 1);
-  assert.equal(report!.solving?.perRun[0]!.assertions[0]!.pass, true);
+  const run = report!.solving.perRun[0]!;
+  assert.equal(run.found && run.assertions[0]!.pass, true);
 });
 
 test("gradeResults fails a solving case when an assertion fails", async () => {
@@ -95,7 +96,101 @@ test("gradeResults invokes the judge for a rubric and reflects its verdict", asy
   const [report] = await gradeResults([result], judge);
   assert.deepEqual(calls, ["clarity"]);
   assert.equal(report!.score.pass, false);
-  assert.equal(report!.solving?.perRun[0]!.rubric?.pass, false);
+  const run = report!.solving!.perRun[0]!;
+  assert.equal(run.found && run.rubric?.pass, false);
+});
+
+const reviewDelimiter = { start: "===REVIEW===", end: "===" };
+
+test("gradeResults grades only the answer block, ignoring the preamble prose", async () => {
+  const evalCase = solvingCase({
+    answer: reviewDelimiter,
+    assert: [{ kind: "outputMatches", pattern: "VERDICT: COMMENT", regex: false }],
+  });
+  const result: CaseResult = {
+    tier: "solving",
+    evalCase,
+    captures: [
+      capture({
+        outputText: "Reviewer confirms my self-review.\n===REVIEW===\nVERDICT: COMMENT\n===",
+      }),
+    ],
+  };
+  const [report] = await gradeResults([result], passJudge);
+  assert.equal(report!.score.pass, true);
+});
+
+test("gradeResults passes the extracted answer block to the judge", async () => {
+  let seen = "";
+  const judge: Judge = async ({ output }) => {
+    seen = output;
+    return { pass: true, evidence: "ok" };
+  };
+  const evalCase = solvingCase({
+    answer: reviewDelimiter,
+    rubric: {
+      dimensions: [{ dimension: "format", criterion: "no prose wraps the block" }],
+      combine: { combine: "all" },
+    },
+  });
+  const result: CaseResult = {
+    tier: "solving",
+    evalCase,
+    captures: [capture({ outputText: "Here is my review:\n===REVIEW===\nclean\n===" })],
+  };
+  await gradeResults([result], judge);
+  assert.equal(seen, "===REVIEW===\nclean\n===");
+});
+
+test("gradeResults fails the run and skips the judge when the answer block is missing", async () => {
+  let called = false;
+  const judge: Judge = async () => {
+    called = true;
+    return { pass: true, evidence: "" };
+  };
+  const evalCase = solvingCase({
+    answer: reviewDelimiter,
+    assert: [{ kind: "usedTool", tool: "Write" }],
+    rubric: {
+      dimensions: [{ dimension: "format", criterion: "clear" }],
+      combine: { combine: "all" },
+    },
+  });
+  const result: CaseResult = {
+    tier: "solving",
+    evalCase,
+    captures: [
+      capture({
+        outputText: "just narration, the skill never rendered a block",
+        trajectory: [{ name: "Write", input: {} }],
+      }),
+    ],
+  };
+  const [report] = await gradeResults([result], judge);
+  assert.equal(report!.score.pass, false);
+  assert.equal(report!.solving?.perRun[0]!.found, false);
+  assert.equal(called, false);
+});
+
+test("gradeResults passes the full output to the judge when no answer delimiter is declared", async () => {
+  let seen = "";
+  const judge: Judge = async ({ output }) => {
+    seen = output;
+    return { pass: true, evidence: "ok" };
+  };
+  const evalCase = solvingCase({
+    rubric: {
+      dimensions: [{ dimension: "clarity", criterion: "clear" }],
+      combine: { combine: "all" },
+    },
+  });
+  const result: CaseResult = {
+    tier: "solving",
+    evalCase,
+    captures: [capture({ outputText: "the whole message, preamble and all" })],
+  };
+  await gradeResults([result], judge);
+  assert.equal(seen, "the whole message, preamble and all");
 });
 
 test("gradeResults does not call the judge for an assertion-only solving case", async () => {

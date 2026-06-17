@@ -58,6 +58,36 @@ test("solving file rejects a case carrying a routing expect clause", () => {
   assert.equal(result.success, false);
 });
 
+test("solving file accepts an answer delimiter", () => {
+  const result = CaseFileSchema.safeParse(
+    solvingFile([{ id: "s1", prompt: "p", answer: { start: "===REVIEW===", end: "===" } }]),
+  );
+  assert.equal(result.success, true);
+});
+
+test("solving answer requires both a start and an end marker", () => {
+  const result = CaseFileSchema.safeParse(
+    solvingFile([{ id: "s1", prompt: "p", answer: { start: "===REVIEW===" } }]),
+  );
+  assert.equal(result.success, false);
+});
+
+test("solving answer rejects an empty marker", () => {
+  const result = CaseFileSchema.safeParse(
+    solvingFile([{ id: "s1", prompt: "p", answer: { start: "", end: "===" } }]),
+  );
+  assert.equal(result.success, false);
+});
+
+test("routing file rejects an answer delimiter", () => {
+  const result = CaseFileSchema.safeParse(
+    routingFile([
+      { id: "r1", prompt: "p", expect: { first: "alpha:plan" }, answer: { start: "a", end: "b" } },
+    ]),
+  );
+  assert.equal(result.success, false);
+});
+
 test("solving assert accepts every assertion kind", () => {
   const result = CaseFileSchema.safeParse(
     solvingFile([

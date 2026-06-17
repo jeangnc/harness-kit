@@ -11,14 +11,15 @@ export interface AssertionResult {
 export function gradeAssertions(
   assertions: readonly Assertion[],
   capture: SolvingCapture,
+  answer: string,
 ): AssertionResult[] {
-  return assertions.map((assertion) => grade(assertion, capture));
+  return assertions.map((assertion) => grade(assertion, capture, answer));
 }
 
-function grade(assertion: Assertion, capture: SolvingCapture): AssertionResult {
+function grade(assertion: Assertion, capture: SolvingCapture, answer: string): AssertionResult {
   switch (assertion.kind) {
     case "outputMatches":
-      return matchOutput(assertion, capture.outputText, {
+      return matchOutput(assertion, answer, {
         whenPresent: () => pass(assertion, `matched "${assertion.pattern}"`),
         whenAbsent: () => fail(assertion, `no match for "${assertion.pattern}"`),
       });

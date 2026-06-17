@@ -51,6 +51,11 @@ const Assertion = z.discriminatedUnion("kind", [
   }),
 ]);
 
+const AnswerDelimiter = z.object({
+  start: z.string().min(1),
+  end: z.string().min(1),
+});
+
 const Dimension = z.object({
   dimension: z.string().min(1),
   criterion: z.string().min(1),
@@ -81,6 +86,7 @@ const SolvingCase = z
   .object({
     ...CommonCaseFields,
     expectSkill: FqId.optional(),
+    answer: AnswerDelimiter.optional(),
     assert: z.array(Assertion).default([]),
     rubric: Rubric.optional(),
   })
@@ -105,6 +111,7 @@ export const CaseFileSchema = z.discriminatedUnion("tier", [RoutingFile, Solving
 export type Tier = (typeof TIERS)[number];
 export type Expectation = z.infer<typeof Expectation>;
 export type Assertion = z.infer<typeof Assertion>;
+export type AnswerDelimiter = z.infer<typeof AnswerDelimiter>;
 export type Rubric = z.infer<typeof Rubric>;
 export type CombineRule = z.infer<typeof CombineRule>;
 export type RoutingCase = z.infer<typeof RoutingCase>;
