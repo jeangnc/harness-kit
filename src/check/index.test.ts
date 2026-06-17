@@ -75,8 +75,9 @@ async function withLocalSrcFixture<T>(
     const lines = ["---", `name: ${file.skill}`, "description: x"];
     if (companions.length > 0) {
       lines.push("companions:");
-      for (const c of companions)
-        {lines.push(`  - file: ${c.file}`, `    summary: ${JSON.stringify(c.summary ?? c.file)}`);}
+      for (const c of companions) {
+        lines.push(`  - file: ${c.file}`, `    summary: ${JSON.stringify(c.summary ?? c.file)}`);
+      }
     }
     lines.push("---", "", "");
     writeFileSync(join(skillDir, "SKILL.md"), `${lines.join("\n")}${file.body}`);
