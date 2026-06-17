@@ -1,10 +1,15 @@
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { cp, mkdir, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { runIgnoreFailure } from "../../install/runner.js";
-import { readdirOrEmpty } from "../../fs.js";
+import { errnoCode, pathExists, readdirOrEmpty } from "../../fs.js";
+import {
+  patchInstalledEntries,
+  readInstalledPlugins,
+  writeInstalledPlugins,
+} from "./installedPlugins.js";
 import { defaultEmitMarketplaceManifest, defaultEmitPluginManifest } from "../shared.js";
 import type {
   DiscoveredVendorPlugin,
@@ -30,7 +35,7 @@ export function readDisabledPluginKeys(configsDir: string): ReadonlySet<string> 
   try {
     raw = readFileSync(settingsPath, "utf8");
   } catch (cause) {
-    if (isErrno(cause) && cause.code === "ENOENT") return new Set();
+    if (errnoCode(cause) === "ENOENT") return new Set();
     throw new Error(`cannot read claude settings.json at ${settingsPath}`, { cause });
   }
   let parsed: unknown;
@@ -58,10 +63,6 @@ export function readDisabledPluginKeys(configsDir: string): ReadonlySet<string> 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isErrno(value: unknown): value is NodeJS.ErrnoException {
-  return value instanceof Error && "code" in value;
 }
 
 function partitionByEnabled(ctx: VendorInstallContext): PluginPartition {
@@ -111,7 +112,7 @@ export function makeClaudeVendor(home: string): Vendor {
           "uninstall",
           pluginKey(plugin.name, ctx.marketplace),
         ]);
-        await rm(join(cacheDir(home, ctx.marketplace), plugin.name), {
+        await rm(pluginCacheDir(home, ctx.marketplace, plugin.name), {
           recursive: true,
           force: true,
         });
@@ -126,6 +127,10 @@ export function makeClaudeVendor(home: string): Vendor {
         await ctx.run("claude", ["plugin", "install", pluginKey(plugin.name, ctx.marketplace)]);
         ctx.log(`[claude] installed ${plugin.name}`);
       }
+    },
+    async refresh(ctx: VendorInstallContext): Promise<void> {
+      if (ctx.plugins.length === 0) return;
+      await refreshPlugins(home, ctx, new Date().toISOString());
     },
     async uninstall(ctx: VendorInstallContext): Promise<void> {
       for (const plugin of ctx.plugins) {
@@ -152,12 +157,55 @@ export function makeClaudeVendor(home: string): Vendor {
       const root = cacheDir(home, ctx.marketplace);
       const versions = new Map<string, string>();
       for (const name of await readdirOrEmpty(root)) {
-        const version = await readManifestVersion(join(root, name, PLUGIN_MANIFEST_REL));
-        if (version !== undefined) versions.set(name, version);
+        const cached: string[] = [];
+        for (const version of await readdirOrEmpty(join(root, name))) {
+          if (await pathExists(join(root, name, version, PLUGIN_MANIFEST_REL))) {
+            cached.push(version);
+          }
+        }
+        const latest = cached
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+          .at(-1);
+        if (latest !== undefined) versions.set(name, latest);
       }
       return versions;
     },
   };
+}
+
+async function refreshPlugins(home: string, ctx: VendorInstallContext, now: string): Promise<void> {
+  let registry = await readInstalledPlugins(home);
+  for (const plugin of ctx.plugins) {
+    const key = pluginKey(plugin.name, ctx.marketplace);
+    if (registry.plugins[key] === undefined) {
+      ctx.log(`[claude] skipped ${plugin.name} (not installed)`);
+      continue;
+    }
+    const dest = versionedCacheDir(home, ctx.marketplace, plugin.name, plugin.version);
+    await rm(pluginCacheDir(home, ctx.marketplace, plugin.name), { recursive: true, force: true });
+    await mkdir(dirname(dest), { recursive: true });
+    await cp(plugin.path, dest, { recursive: true });
+    registry = patchInstalledEntries(registry, key, {
+      installPath: dest,
+      version: plugin.version,
+      lastUpdated: now,
+    });
+    await writeInstalledPlugins(home, registry);
+    ctx.log(`[claude] refreshed ${plugin.name}@${plugin.version}`);
+  }
+}
+
+function pluginCacheDir(home: string, marketplace: string, name: string): string {
+  return join(home, "plugins/cache", marketplace, name);
+}
+
+function versionedCacheDir(
+  home: string,
+  marketplace: string,
+  name: string,
+  version: string,
+): string {
+  return join(pluginCacheDir(home, marketplace, name), version);
 }
 
 function cacheDir(home: string, marketplace: string): string {
@@ -171,16 +219,6 @@ async function pruneStagingDirs(home: string): Promise<void> {
   for (const entry of await readdirOrEmpty(marketplacesDir)) {
     if (!STAGING_DIR_PATTERN.test(entry)) continue;
     await rm(join(marketplacesDir, entry), { recursive: true, force: true }).catch(() => undefined);
-  }
-}
-
-async function readManifestVersion(manifestPath: string): Promise<string | undefined> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
-    const version = isRecord(parsed) ? parsed["version"] : undefined;
-    return typeof version === "string" ? version : undefined;
-  } catch {
-    return undefined;
   }
 }
 

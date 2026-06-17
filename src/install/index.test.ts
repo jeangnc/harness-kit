@@ -25,7 +25,12 @@ function recordingRunner(): { run: CommandRunner; calls: CommandCall[] } {
 
 interface VendorRecord {
   readonly installs: VendorInstallContext[];
+  readonly refreshes: VendorInstallContext[];
   readonly uninstalls: VendorInstallContext[];
+}
+
+function emptyRecord(): VendorRecord {
+  return { installs: [], refreshes: [], uninstalls: [] };
 }
 
 function makeRecordingVendor(
@@ -46,6 +51,9 @@ function makeRecordingVendor(
     emitMarketplaceManifest: async () => undefined,
     install: async (ctx) => {
       record.installs.push(ctx);
+    },
+    refresh: async (ctx) => {
+      record.refreshes.push(ctx);
     },
     uninstall: async (ctx) => {
       record.uninstalls.push(ctx);
@@ -104,8 +112,8 @@ test("install dispatches vendor.install with discovered per-vendor plugins", asy
     },
     async ({ distRoot, sandbox }) => {
       const recorder = recordingRunner();
-      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
-      const codexRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claudeRecord = emptyRecord();
+      const codexRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       const codex = makeRecordingVendor("codex", join(sandbox, "codex"), codexRecord);
 
@@ -153,7 +161,7 @@ test("install applies config links before invoking vendors", async () => {
       );
       const recorder = recordingRunner();
       const claudeHome = join(sandbox, "claude");
-      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", claudeHome, claudeRecord);
 
       await installWithRunner(
@@ -193,7 +201,7 @@ test("install --dry-run reports plan without touching disk or invoking vendors",
       );
       const recorder = recordingRunner();
       const claudeHome = join(sandbox, "claude");
-      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", claudeHome, claudeRecord);
       const logs: string[] = [];
 
@@ -228,7 +236,7 @@ test("install --dry-run lists a vendor's disabled plugins under the skipped mark
       ],
     },
     async ({ distRoot, sandbox }) => {
-      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const record = emptyRecord();
       const vendor = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
         partitionPlugins: (ctx) => ({
           enabled: ctx.plugins.filter((p) => p.name !== "beta"),
@@ -258,7 +266,7 @@ test("uninstall dispatches vendor.uninstall with discovered plugins", async () =
     },
     async ({ distRoot, sandbox }) => {
       const recorder = recordingRunner();
-      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
 
       await uninstallWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run);
@@ -279,7 +287,7 @@ test("install rejects a marketplace.json missing the required `name` field", asy
   writeFileSync(join(distRoot, "claude/.claude-plugin/marketplace.json"), JSON.stringify({}));
   try {
     const recorder = recordingRunner();
-    const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+    const claudeRecord = emptyRecord();
     const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
     await assert.rejects(
       installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run),
@@ -303,7 +311,7 @@ test("install rejects a plugin.json missing the required `version` field", async
   writeFileSync(join(pluginPath, ".claude-plugin/plugin.json"), JSON.stringify({ name: "alpha" }));
   try {
     const recorder = recordingRunner();
-    const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+    const claudeRecord = emptyRecord();
     const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
     await assert.rejects(
       installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run),
@@ -319,7 +327,7 @@ test("install passes an empty plugin list when the vendor dist subtree is empty"
     { marketplaceName: "shop", plugins: [] },
     async ({ distRoot, sandbox }) => {
       const recorder = recordingRunner();
-      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       await installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run);
       assert.equal(claudeRecord.installs.length, 1);
@@ -333,7 +341,7 @@ test("install defaults the vendor context mode to local", async () => {
     { marketplaceName: "shop", plugins: [] },
     async ({ distRoot, sandbox }) => {
       const recorder = recordingRunner();
-      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       await installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run);
       assert.equal(claudeRecord.installs[0]!.mode, "local");
@@ -346,7 +354,7 @@ test("install threads the requested mode into the vendor context", async () => {
     { marketplaceName: "shop", plugins: [] },
     async ({ distRoot, sandbox }) => {
       const recorder = recordingRunner();
-      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       await installWithRunner(
         { distRoot, vendors: [claude], silent: true, mode: "remote" },
@@ -364,7 +372,7 @@ test("update returns a not-installed error when no vendor reports an existing in
       plugins: [{ name: "alpha", vendor: "claude", version: "1.0.0" }],
     },
     async ({ distRoot, sandbox }) => {
-      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const record = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
         isInstalled: async () => false,
       });
@@ -376,19 +384,19 @@ test("update returns a not-installed error when no vendor reports an existing in
 
       assert.equal(result.ok, false);
       assert.equal(result.ok === false && result.error.kind, "not-installed");
-      assert.equal(record.installs.length, 0, "must not refresh when not installed");
+      assert.equal(record.refreshes.length, 0, "must not refresh when not installed");
     },
   );
 });
 
-test("update refreshes plugins via vendor.install when the harness is installed", async () => {
+test("update invokes vendor.refresh and never vendor.install when the harness is installed", async () => {
   await withInstallFixture(
     {
       marketplaceName: "shop",
       plugins: [{ name: "alpha", vendor: "claude", version: "2.0.0" }],
     },
     async ({ distRoot, sandbox }) => {
-      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const record = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
         isInstalled: async () => true,
       });
@@ -399,9 +407,10 @@ test("update refreshes plugins via vendor.install when the harness is installed"
       );
 
       assert.equal(result.ok, true);
-      assert.equal(record.installs.length, 1);
+      assert.equal(record.installs.length, 0, "update must not enable via vendor.install");
+      assert.equal(record.refreshes.length, 1);
       assert.deepEqual(
-        record.installs[0]!.plugins.map((p) => p.name),
+        record.refreshes[0]!.plugins.map((p) => p.name),
         ["alpha"],
       );
     },
@@ -432,7 +441,7 @@ test("update does not apply config links", async () => {
         }),
       );
       const claudeHome = join(sandbox, "claude");
-      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const record = emptyRecord();
       const claude = makeRecordingVendor("claude", claudeHome, record);
 
       await updateWithRunner(
@@ -459,7 +468,7 @@ test("update reports added, changed, and unchanged plugins against the installed
       ],
     },
     async ({ distRoot, sandbox }) => {
-      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const record = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
         installedVersions: async () =>
           new Map([
@@ -492,8 +501,8 @@ test("update refreshes only the vendors that report an existing install", async 
       ],
     },
     async ({ distRoot, sandbox }) => {
-      const claudeRecord: VendorRecord = { installs: [], uninstalls: [] };
-      const codexRecord: VendorRecord = { installs: [], uninstalls: [] };
+      const claudeRecord = emptyRecord();
+      const codexRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord, {
         isInstalled: async () => true,
       });
@@ -507,13 +516,13 @@ test("update refreshes only the vendors that report an existing install", async 
       );
 
       assert.equal(result.ok, true);
-      assert.equal(claudeRecord.installs.length, 1, "installed vendor is refreshed");
-      assert.equal(codexRecord.installs.length, 0, "uninstalled vendor is not freshly installed");
+      assert.equal(claudeRecord.refreshes.length, 1, "installed vendor is refreshed");
+      assert.equal(codexRecord.refreshes.length, 0, "uninstalled vendor is not refreshed");
     },
   );
 });
 
-test("update omits plugins the vendor will skip as disabled from the version diff", async () => {
+test("update reports every shipped plugin regardless of enabled state", async () => {
   await withInstallFixture(
     {
       marketplaceName: "shop",
@@ -523,39 +532,7 @@ test("update omits plugins the vendor will skip as disabled from the version dif
       ],
     },
     async ({ distRoot, sandbox }) => {
-      const record: VendorRecord = { installs: [], uninstalls: [] };
-      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
-        partitionPlugins: (c) => ({
-          enabled: c.plugins.filter((p) => p.name !== "beta"),
-          disabled: c.plugins.filter((p) => p.name === "beta"),
-        }),
-        installedVersions: async () => new Map([["alpha", "1.0.0"]]),
-      });
-      const logs: string[] = [];
-
-      await updateWithRunner(
-        { distRoot, vendors: [claude], log: (m) => logs.push(m) },
-        recordingRunner().run,
-      );
-
-      const joined = logs.join("\n");
-      assert.match(joined, /alpha 1\.0\.0 → 2\.0\.0/);
-      assert.doesNotMatch(joined, /beta/, "disabled plugin must not appear in the refresh diff");
-    },
-  );
-});
-
-test("update does not report a cached-but-disabled plugin as removed", async () => {
-  await withInstallFixture(
-    {
-      marketplaceName: "shop",
-      plugins: [
-        { name: "alpha", vendor: "claude", version: "1.0.0" },
-        { name: "beta", vendor: "claude", version: "1.0.0" },
-      ],
-    },
-    async ({ distRoot, sandbox }) => {
-      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const record = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
         partitionPlugins: (c) => ({
           enabled: c.plugins.filter((p) => p.name !== "beta"),
@@ -574,7 +551,47 @@ test("update does not report a cached-but-disabled plugin as removed", async () 
         recordingRunner().run,
       );
 
-      assert.doesNotMatch(logs.join("\n"), /beta/, "disabled-but-shipped plugin is not removed");
+      const joined = logs.join("\n");
+      assert.match(joined, /alpha 1\.0\.0 → 2\.0\.0/);
+      assert.match(
+        joined,
+        /beta 1\.0\.0 → 2\.0\.0/,
+        "disabled-but-shipped plugin is still refreshed",
+      );
+    },
+  );
+});
+
+test("update does not report a cached-but-shipped plugin as removed", async () => {
+  await withInstallFixture(
+    {
+      marketplaceName: "shop",
+      plugins: [
+        { name: "alpha", vendor: "claude", version: "1.0.0" },
+        { name: "beta", vendor: "claude", version: "1.0.0" },
+      ],
+    },
+    async ({ distRoot, sandbox }) => {
+      const record = emptyRecord();
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
+        installedVersions: async () =>
+          new Map([
+            ["alpha", "1.0.0"],
+            ["beta", "1.0.0"],
+          ]),
+      });
+      const logs: string[] = [];
+
+      await updateWithRunner(
+        { distRoot, vendors: [claude], log: (m) => logs.push(m) },
+        recordingRunner().run,
+      );
+
+      assert.doesNotMatch(
+        logs.join("\n"),
+        /removed beta/,
+        "a shipped plugin is not reported removed",
+      );
     },
   );
 });
@@ -586,7 +603,7 @@ test("update reports a plugin that is no longer shipped as removed", async () =>
       plugins: [{ name: "alpha", vendor: "claude", version: "1.0.0" }],
     },
     async ({ distRoot, sandbox }) => {
-      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const record = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
         installedVersions: async () =>
           new Map([
@@ -606,14 +623,14 @@ test("update reports a plugin that is no longer shipped as removed", async () =>
   );
 });
 
-test("update --dry-run reports the plan without invoking vendor.install", async () => {
+test("update --dry-run reports the plan without invoking vendor.refresh", async () => {
   await withInstallFixture(
     {
       marketplaceName: "shop",
       plugins: [{ name: "alpha", vendor: "claude", version: "2.0.0" }],
     },
     async ({ distRoot, sandbox }) => {
-      const record: VendorRecord = { installs: [], uninstalls: [] };
+      const record = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
         installedVersions: async () => new Map([["alpha", "1.0.0"]]),
       });
@@ -625,7 +642,8 @@ test("update --dry-run reports the plan without invoking vendor.install", async 
       );
 
       assert.equal(result.ok, true);
-      assert.equal(record.installs.length, 0, "dry run must not refresh");
+      assert.equal(record.refreshes.length, 0, "dry run must not refresh");
+      assert.equal(record.installs.length, 0, "dry run must not enable");
       assert.match(logs.join("\n"), /alpha 1\.0\.0 → 2\.0\.0/);
     },
   );

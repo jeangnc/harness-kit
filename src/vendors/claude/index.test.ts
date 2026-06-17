@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -268,7 +276,7 @@ test("claudeVendor.isInstalled is false when only config links exist but no plug
 test("claudeVendor.installedVersions reads each cached plugin's manifest version", async () => {
   const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-home-"));
   try {
-    const manifestDir = join(home, "plugins/cache/shop/alpha/.claude-plugin");
+    const manifestDir = join(home, "plugins/cache/shop/alpha/1.2.3/.claude-plugin");
     mkdirSync(manifestDir, { recursive: true });
     writeFileSync(
       join(manifestDir, "plugin.json"),
@@ -289,6 +297,22 @@ test("claudeVendor.installedVersions omits a plugin whose manifest is unreadable
     const v = makeClaudeVendor(home);
     const versions = await v.installedVersions(ctx({ marketplace: "shop" }));
     assert.equal(versions.has("broken"), false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("claudeVendor.installedVersions deterministically picks the latest when several version dirs coexist", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-home-"));
+  try {
+    for (const version of ["9.0.0", "10.0.0", "9.5.0"]) {
+      const dir = join(home, "plugins/cache/shop/alpha", version, ".claude-plugin");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "plugin.json"), JSON.stringify({ name: "alpha", version }));
+    }
+    const v = makeClaudeVendor(home);
+    const versions = await v.installedVersions(ctx({ marketplace: "shop" }));
+    assert.equal(versions.get("alpha"), "10.0.0");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -393,6 +417,186 @@ test("claudeVendor.install installs none when all plugins are disabled, still re
       );
     },
   );
+});
+
+async function withHome<T>(fn: (home: string, dist: string) => Promise<T>): Promise<T> {
+  const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-claude-refresh-"));
+  try {
+    return await fn(join(sandbox, "home"), join(sandbox, "dist"));
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
+}
+
+function writeDistPlugin(dist: string, name: string, version: string, markerBody: string): string {
+  const dir = join(dist, "claude/plugins", name);
+  mkdirSync(join(dir, ".claude-plugin"), { recursive: true });
+  writeFileSync(join(dir, ".claude-plugin/plugin.json"), JSON.stringify({ name, version }));
+  writeFileSync(join(dir, "marker.txt"), markerBody);
+  return dir;
+}
+
+function writeInstalledRegistry(home: string, body: unknown): void {
+  mkdirSync(join(home, "plugins"), { recursive: true });
+  writeFileSync(join(home, "plugins/installed_plugins.json"), JSON.stringify(body));
+}
+
+function readRegistry(home: string): {
+  plugins: Record<string, ReadonlyArray<Record<string, unknown>>>;
+} {
+  return JSON.parse(readFileSync(join(home, "plugins/installed_plugins.json"), "utf8")) as {
+    plugins: Record<string, ReadonlyArray<Record<string, unknown>>>;
+  };
+}
+
+test("claudeVendor.refresh copies the shipped plugin into the versioned cache dir", async () => {
+  await withHome(async (home, dist) => {
+    const path = writeDistPlugin(dist, "alpha", "2.0.0", "alpha-v2");
+    writeInstalledRegistry(home, {
+      version: 2,
+      plugins: {
+        "alpha@test-market": [
+          {
+            scope: "user",
+            installPath: join(home, "plugins/cache/test-market/alpha/1.0.0"),
+            version: "1.0.0",
+          },
+        ],
+      },
+    });
+    const { run } = recordingRunner();
+    await makeClaudeVendor(home).refresh(
+      ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
+    );
+    const cached = join(home, "plugins/cache/test-market/alpha/2.0.0/marker.txt");
+    assert.equal(readFileSync(cached, "utf8"), "alpha-v2");
+  });
+});
+
+test("claudeVendor.refresh patches the registry version and installPath across all scopes", async () => {
+  await withHome(async (home, dist) => {
+    const path = writeDistPlugin(dist, "alpha", "2.0.0", "alpha-v2");
+    writeInstalledRegistry(home, {
+      version: 2,
+      plugins: {
+        "alpha@test-market": [
+          {
+            scope: "user",
+            installPath: join(home, "plugins/cache/test-market/alpha/1.0.0"),
+            version: "1.0.0",
+          },
+          {
+            scope: "local",
+            projectPath: "/repo",
+            installPath: join(home, "plugins/cache/test-market/alpha/1.0.0"),
+            version: "1.0.0",
+          },
+        ],
+      },
+    });
+    const { run } = recordingRunner();
+    await makeClaudeVendor(home).refresh(
+      ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
+    );
+    const entries = readRegistry(home).plugins["alpha@test-market"]!;
+    const expectedPath = join(home, "plugins/cache/test-market/alpha/2.0.0");
+    assert.equal(entries.length, 2);
+    for (const entry of entries) {
+      assert.equal(entry["version"], "2.0.0");
+      assert.equal(entry["installPath"], expectedPath);
+      assert.match(
+        String(entry["lastUpdated"]),
+        /^\d{4}-\d{2}-\d{2}T/,
+        "lastUpdated set to an ISO timestamp",
+      );
+    }
+    assert.equal(entries[1]!["projectPath"], "/repo", "scope metadata preserved");
+  });
+});
+
+test("claudeVendor.refresh skips a plugin absent from the install registry (never registers something new)", async () => {
+  await withHome(async (home, dist) => {
+    const path = writeDistPlugin(dist, "ghost", "1.0.0", "ghost");
+    writeInstalledRegistry(home, { version: 2, plugins: {} });
+    const { run } = recordingRunner();
+    await makeClaudeVendor(home).refresh(
+      ctx({ run, distRoot: dist, plugins: [{ name: "ghost", path, version: "1.0.0" }] }),
+    );
+    assert.deepEqual(readRegistry(home).plugins, {}, "unregistered plugin stays unregistered");
+    assert.equal(
+      existsSync(join(home, "plugins/cache/test-market/ghost")),
+      false,
+      "no cache is written for an unregistered plugin",
+    );
+  });
+});
+
+test("claudeVendor.refresh never writes settings.json", async () => {
+  await withHome(async (home, dist) => {
+    const path = writeDistPlugin(dist, "alpha", "2.0.0", "alpha-v2");
+    mkdirSync(home, { recursive: true });
+    const settingsPath = join(home, "settings.json");
+    writeFileSync(settingsPath, JSON.stringify({ enabledPlugins: { "alpha@test-market": true } }));
+    const before = readFileSync(settingsPath, "utf8");
+    writeInstalledRegistry(home, {
+      version: 2,
+      plugins: {
+        "alpha@test-market": [
+          {
+            scope: "user",
+            installPath: join(home, "plugins/cache/test-market/alpha/1.0.0"),
+            version: "1.0.0",
+          },
+        ],
+      },
+    });
+    const { run, calls } = recordingRunner();
+    await makeClaudeVendor(home).refresh(
+      ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
+    );
+    assert.equal(readFileSync(settingsPath, "utf8"), before, "settings.json byte-unchanged");
+    assert.equal(calls.length, 0, "refresh runs no claude CLI command");
+  });
+});
+
+test("claudeVendor.refresh removes the stale prior-version cache dir", async () => {
+  await withHome(async (home, dist) => {
+    const path = writeDistPlugin(dist, "alpha", "2.0.0", "alpha-v2");
+    const stale = join(home, "plugins/cache/test-market/alpha/1.0.0");
+    mkdirSync(stale, { recursive: true });
+    writeFileSync(join(stale, "marker.txt"), "alpha-v1");
+    writeInstalledRegistry(home, {
+      version: 2,
+      plugins: {
+        "alpha@test-market": [{ scope: "user", installPath: stale, version: "1.0.0" }],
+      },
+    });
+    const { run } = recordingRunner();
+    await makeClaudeVendor(home).refresh(
+      ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
+    );
+    assert.equal(existsSync(stale), false, "old version dir is pruned");
+    assert.equal(
+      readFileSync(join(home, "plugins/cache/test-market/alpha/2.0.0/marker.txt"), "utf8"),
+      "alpha-v2",
+    );
+  });
+});
+
+test("claudeVendor.install still enables plugins absent from settings", async () => {
+  await withSettings({}, async (dist) => {
+    const { run, calls } = recordingRunner();
+    await claudeVendor.install(
+      ctx({
+        run,
+        mode: "remote",
+        distRoot: dist,
+        plugins: [{ name: "alpha", path: join(dist, "claude/alpha"), version: "1.0.0" }],
+      }),
+    );
+    const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
+    assert.ok(cmds.includes("claude plugin install alpha@test-market"));
+  });
 });
 
 test("claudeVendor.install reads disabled state before uninstall mutates settings.json", async () => {

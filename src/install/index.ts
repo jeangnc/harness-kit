@@ -100,9 +100,8 @@ export async function updateWithRunner(
   const changes: PluginChange[] = [];
   for (const { vendor, plugins, vendorCtx } of refreshable) {
     const before = await vendor.installedVersions(vendorCtx);
-    const { enabled } = vendor.partitionPlugins(vendorCtx);
-    changes.push(...diffPlugins({ before, refreshed: enabled, shipped: plugins }));
-    if (!options.dryRun) await vendor.install(vendorCtx);
+    changes.push(...diffPlugins({ before, shipped: plugins }));
+    if (!options.dryRun) await vendor.refresh(vendorCtx);
   }
   for (const change of changes) ctx.log(formatPluginChange(change));
   return ok({ changes });
@@ -110,13 +109,12 @@ export async function updateWithRunner(
 
 interface DiffInput {
   readonly before: ReadonlyMap<string, string>;
-  readonly refreshed: readonly DiscoveredVendorPlugin[];
   readonly shipped: readonly DiscoveredVendorPlugin[];
 }
 
-function diffPlugins({ before, refreshed, shipped }: DiffInput): readonly PluginChange[] {
+function diffPlugins({ before, shipped }: DiffInput): readonly PluginChange[] {
   const shippedNames = new Set(shipped.map((p) => p.name));
-  const changes: PluginChange[] = refreshed.map((plugin) => {
+  const changes: PluginChange[] = shipped.map((plugin) => {
     const from = before.get(plugin.name);
     if (from === undefined) return { kind: "added", name: plugin.name, to: plugin.version };
     if (from === plugin.version) return { kind: "unchanged", name: plugin.name, at: from };

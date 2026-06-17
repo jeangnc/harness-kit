@@ -52,6 +52,7 @@ export interface Vendor {
   readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;
   readonly emitMarketplaceManifest: (ctx: VendorMarketplaceEmitContext) => Promise<void>;
   readonly install: (ctx: VendorInstallContext) => Promise<void>;
+  readonly refresh: (ctx: VendorInstallContext) => Promise<void>;
   readonly uninstall: (ctx: VendorInstallContext) => Promise<void>;
   readonly partitionPlugins: (ctx: VendorInstallContext) => PluginPartition;
   readonly isInstalled: (ctx: VendorInstallContext) => Promise<boolean>;

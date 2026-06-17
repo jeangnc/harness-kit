@@ -14,6 +14,7 @@ export function makeFakeVendor(name: string, overrides: Partial<Vendor> = {}): V
     emitPluginManifest: async () => undefined,
     emitMarketplaceManifest: async () => undefined,
     install: async () => undefined,
+    refresh: async () => undefined,
     uninstall: async () => undefined,
     partitionPlugins: (ctx) => ({ enabled: ctx.plugins, disabled: [] }),
     isInstalled: async () => true,

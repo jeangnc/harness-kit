@@ -42,16 +42,10 @@ export function makeCodexVendor(home: string): Vendor {
       await defaultEmitMarketplaceManifest(MARKETPLACE_MANIFEST_REL, ctx);
     },
     async install(ctx: VendorInstallContext): Promise<void> {
-      if (ctx.plugins.length === 0) return;
-      ctx.log(`[codex] priming ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace}`);
-      await rm(cacheDir(home, ctx.marketplace), { recursive: true, force: true });
-      await runIgnoreFailure(ctx.run, "codex", ["plugin", "marketplace", "add", ctx.distRoot]);
-      for (const plugin of ctx.plugins) {
-        const dest = join(cacheDir(home, ctx.marketplace), plugin.name, plugin.version);
-        await mkdir(dirname(dest), { recursive: true });
-        await cp(plugin.path, dest, { recursive: true });
-        ctx.log(`[codex] cached ${plugin.name}@${plugin.version}`);
-      }
+      await primeCache(home, ctx);
+    },
+    async refresh(ctx: VendorInstallContext): Promise<void> {
+      await primeCache(home, ctx);
     },
     async uninstall(ctx: VendorInstallContext): Promise<void> {
       await runIgnoreFailure(ctx.run, "codex", [
@@ -78,6 +72,19 @@ export function makeCodexVendor(home: string): Vendor {
       return versions;
     },
   };
+}
+
+async function primeCache(home: string, ctx: VendorInstallContext): Promise<void> {
+  if (ctx.plugins.length === 0) return;
+  ctx.log(`[codex] priming ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace}`);
+  await rm(cacheDir(home, ctx.marketplace), { recursive: true, force: true });
+  await runIgnoreFailure(ctx.run, "codex", ["plugin", "marketplace", "add", ctx.distRoot]);
+  for (const plugin of ctx.plugins) {
+    const dest = join(cacheDir(home, ctx.marketplace), plugin.name, plugin.version);
+    await mkdir(dirname(dest), { recursive: true });
+    await cp(plugin.path, dest, { recursive: true });
+    ctx.log(`[codex] cached ${plugin.name}@${plugin.version}`);
+  }
 }
 
 function cacheDir(home: string, marketplace: string): string {

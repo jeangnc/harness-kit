@@ -63,7 +63,8 @@ interface VendorEmitContext {
 - **`aliases`** *(optional)* — given a linked config file, return additional symlink destinations. Claude uses this to add a `CLAUDE.md` alias whenever an `AGENTS.md` config is linked.
 - **`emitPluginManifest`** — write the per-vendor manifest into `ctx.pluginOutDir` during compile. The shared `Plugin` shape is provided; the vendor decides how (or whether) to translate it.
 - **`emitMarketplaceManifest`** — write the per-vendor marketplace manifest. Relative `source` values are rewritten to `./plugins/<name>` so they resolve under the new dist layout.
-- **`install`** — register the discovered plugins with the vendor (CLI commands, cache priming, whatever the vendor needs). `ctx.run` is a recordable command runner so test code can intercept shell calls.
+- **`install`** — register the discovered plugins with the vendor (CLI commands, cache priming, whatever the vendor needs), including enabling them where the vendor distinguishes cache from enablement. `ctx.run` is a recordable command runner so test code can intercept shell calls.
+- **`refresh`** — prime/refresh the plugin cache **only**, never touching enablement. `install` composes `refresh` plus any enable step; `update` calls `refresh` alone so an already-installed harness gets fresh plugin code without re-enabling anything in settings.
 - **`uninstall`** — reverse of `install`. Should be idempotent.
 
 ## Built-in vendors
@@ -73,14 +74,15 @@ interface VendorEmitContext {
 - **Home**: `~/.claude`
 - **Manifest path**: `.claude-plugin/plugin.json`
 - **Aliases**: a linked `AGENTS.md` also gets a `CLAUDE.md` symlink in the vendor home (one-way).
-- **Install**: the disabled set is read from the compiled `settings.json` `enabledPlugins` **first**, before any `claude` command runs — `claude plugin uninstall` strips a plugin's entry from settings, and when `~/.claude/settings.json` is symlinked to the compiled file that would otherwise erase the `false` mid-install. Then, for each discovered plugin, `claude plugin uninstall <name>@<marketplace>` (ignore-failure), remove `~/.claude/plugins/cache/<marketplace>/<name>`, refresh the marketplace, then `claude plugin install <name>@<marketplace>` — unless the plugin was disabled, in which case the install is skipped (the marketplace is still refreshed). The clean-reinstall cycle avoids stale-cache surprises.
+- **Install**: the disabled set is read from the compiled `settings.json` `enabledPlugins` **first**, before any `claude` command runs — `claude plugin uninstall` strips a plugin's entry from settings, and when `~/.claude/settings.json` is symlinked to the compiled file that would otherwise erase the `false` mid-install. Then, for each discovered plugin, `claude plugin uninstall <name>@<marketplace>` (ignore-failure), remove `~/.claude/plugins/cache/<marketplace>/<name>`, refresh the marketplace, then `claude plugin install <name>@<marketplace>` — unless the plugin was disabled, in which case the install is skipped (the marketplace is still refreshed). The clean-reinstall cycle avoids stale-cache surprises. `claude plugin install` is what populates the cache and writes the `enabledPlugins[...]=true` entry — so install both caches and enables.
+- **Refresh**: refreshes the cache for plugins **already installed** without enabling anything. For each shipped plugin already present in `~/.claude/plugins/installed_plugins.json` (the install registry), copy its compiled tree into `~/.claude/plugins/cache/<marketplace>/<name>/<version>/`, prune the stale prior-version dir, then patch every registry entry for that plugin (all scopes — user/project/local) to the new `installPath`/`version`/`lastUpdated`. A plugin absent from the registry is skipped (refresh never installs something new). `settings.json` is never opened, so `enabledPlugins` is left exactly as the user set it. This is the path `harness update` takes. The cache is populated by filesystem copy (not `claude plugin install`) precisely because `claude plugin install` is the command that would write `enabledPlugins`.
 - **Uninstall**: `claude plugin uninstall <name>@<marketplace>` per plugin, then `claude plugin marketplace remove <marketplace>`.
 
 ### `codex`
 
 - **Home**: `~/.codex`
 - **Manifest path**: `.codex-plugin/plugin.json`
-- **Install**: drops `~/.codex/plugins/cache/<marketplace>`, runs `codex plugin marketplace add <distRoot>`, then copies each compiled plugin into `~/.codex/plugins/cache/<marketplace>/<name>/<version>/`. The copy primes the cache so Codex picks up plugins immediately without a separate fetch step.
+- **Install / Refresh**: drops `~/.codex/plugins/cache/<marketplace>`, runs `codex plugin marketplace add <distRoot>`, then copies each compiled plugin into `~/.codex/plugins/cache/<marketplace>/<name>/<version>/`. The copy primes the cache so Codex picks up plugins immediately without a separate fetch step. Codex never enables plugins through settings, so its `refresh` and `install` are identical.
 - **Uninstall**: `codex plugin marketplace remove <marketplace>`, then drops the cache directory.
 
 ## Writing a custom vendor

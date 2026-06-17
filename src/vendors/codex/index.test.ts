@@ -122,6 +122,28 @@ test("codexVendor.install wipes any pre-existing marketplace cache", async () =>
   });
 });
 
+test("codexVendor.refresh primes the cache identically to install", async () => {
+  await withSandbox(async ({ distRoot, codexHome }) => {
+    const alphaPath = makePluginDir(distRoot, "alpha", "alpha-content");
+    const { run, calls } = recordingRunner();
+    const ctx: VendorInstallContext = {
+      distRoot,
+      marketplace: "test-market",
+      plugins: [{ name: "alpha", path: alphaPath, version: "1.2.3" }],
+      mode: "remote",
+      run,
+      log: () => undefined,
+    };
+    await makeCodexVendor(codexHome).refresh(ctx);
+
+    const cached = join(codexHome, "plugins/cache/test-market/alpha/1.2.3/marker.txt");
+    assert.equal(existsSync(cached), true);
+    assert.equal(readFileSync(cached, "utf8"), "alpha-content");
+    const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
+    assert.deepEqual(cmds, [`codex plugin marketplace add ${distRoot}`]);
+  });
+});
+
 test("codexVendor.isInstalled is true when the marketplace cache exists", async () => {
   await withSandbox(async ({ distRoot, codexHome }) => {
     mkdirSync(join(codexHome, "plugins/cache/test-market/alpha/1.0.0"), { recursive: true });
