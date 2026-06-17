@@ -57,10 +57,10 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
     ...(options.onRun !== undefined && { onRun: options.onRun }),
     ...(enabledPlugins.size > 0 && { enabledPlugins }),
   };
-  const results = await runCases(selected, runnerOptions);
+  const { results, metrics } = await runCases(selected, runnerOptions);
   const reports = await gradeResults(results, judge);
 
-  return ok(buildReport(reports));
+  return ok(buildReport(reports, metrics));
 }
 
 async function resolveArtifacts(distRoot?: string): Promise<InstalledArtifacts> {

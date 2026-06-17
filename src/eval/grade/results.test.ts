@@ -22,7 +22,13 @@ function solvingCase(partial: Partial<LoadedSolvingCase>): LoadedSolvingCase {
 }
 
 function capture(partial: Partial<SolvingCapture>): SolvingCapture {
-  return { outputText: "", trajectory: [], writes: [], exitReason: "result", ...partial };
+  return {
+    outputText: "",
+    trajectory: [],
+    writes: [],
+    exitReason: "result",
+    ...partial,
+  };
 }
 
 test("gradeResults scores a routing case via the routing scorer", async () => {

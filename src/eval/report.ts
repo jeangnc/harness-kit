@@ -1,4 +1,5 @@
 import type { LoadedCase } from "./cases.js";
+import type { RunMetrics } from "./metrics.js";
 import type { CaseScore, SolvingRunResult } from "./score.js";
 import type { Expectation } from "./schema.js";
 
@@ -12,15 +13,49 @@ export interface CaseReport {
   readonly solving?: SolvingBreakdown;
 }
 
+export interface Diagnostics {
+  readonly totalRuns: number;
+  readonly rateLimitedRuns: number;
+  readonly durationMs: { readonly min: number; readonly max: number; readonly mean: number } | null;
+}
+
 export interface EvalReport {
   readonly cases: readonly CaseReport[];
   readonly passed: number;
   readonly failed: number;
+  readonly diagnostics: Diagnostics;
 }
 
-export function buildReport(cases: readonly CaseReport[]): EvalReport {
+export function buildReport(
+  cases: readonly CaseReport[],
+  metrics: readonly RunMetrics[],
+): EvalReport {
   const passed = cases.filter((c) => c.score.pass).length;
-  return { cases, passed, failed: cases.length - passed };
+  return {
+    cases,
+    passed,
+    failed: cases.length - passed,
+    diagnostics: collectDiagnostics(metrics),
+  };
+}
+
+function collectDiagnostics(metrics: readonly RunMetrics[]): Diagnostics {
+  const durations = metrics.flatMap((m) => (m.durationMs === null ? [] : [m.durationMs]));
+  return {
+    totalRuns: metrics.length,
+    rateLimitedRuns: metrics.filter((m) => m.rateLimited).length,
+    durationMs: summarize(durations),
+  };
+}
+
+function summarize(values: readonly number[]): Diagnostics["durationMs"] {
+  if (values.length === 0) return null;
+  const sum = values.reduce((acc, v) => acc + v, 0);
+  return {
+    min: Math.min(...values),
+    max: Math.max(...values),
+    mean: Math.round(sum / values.length),
+  };
 }
 
 export function formatConsole(report: EvalReport): string {
@@ -38,7 +73,16 @@ export function formatConsole(report: EvalReport): string {
   const total = report.passed + report.failed;
   const pct = total === 0 ? 0 : Math.round((report.passed / total) * 100);
   lines.push(`Summary: ${report.passed}/${total} cases passed (${pct}%).`);
+  lines.push(formatDiagnostics(report.diagnostics));
   return lines.join("\n");
+}
+
+function formatDiagnostics(diagnostics: Diagnostics): string {
+  const { rateLimitedRuns, totalRuns, durationMs } = diagnostics;
+  const duration = durationMs
+    ? `, duration ms min/mean/max ${durationMs.min}/${durationMs.mean}/${durationMs.max}`
+    : "";
+  return `Diagnostics: ${rateLimitedRuns}/${totalRuns} runs rate-limited${duration}.`;
 }
 
 export function toJson(report: EvalReport): string {
@@ -49,6 +93,7 @@ export function toJson(report: EvalReport): string {
         passed: report.passed,
         failed: report.failed,
       },
+      diagnostics: report.diagnostics,
       cases: report.cases.map(({ evalCase, score, solving }) => ({
         id: evalCase.id,
         suite: evalCase.suite,

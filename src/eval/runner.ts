@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { createCaptor, type SolvingCapture, type WrittenFile } from "./capture.js";
 import { scrubEnv, SUBPROCESS_ENV_OVERRIDES } from "./claude-env.js";
 import { createDetector, type DetectionResult } from "./detect.js";
+import { createMetrics, type RunMetrics } from "./metrics.js";
 import type { LoadedCase, LoadedRoutingCase, LoadedSolvingCase } from "./cases.js";
 
 const DEFAULT_RUNS = 5;
@@ -39,12 +40,18 @@ export type CaseResult =
       readonly captures: readonly SolvingCapture[];
     };
 
+export interface RunOutcome {
+  readonly results: readonly CaseResult[];
+  readonly metrics: readonly RunMetrics[];
+}
+
 export async function runCases(
   cases: readonly LoadedCase[],
   options: RunnerOptions,
-): Promise<CaseResult[]> {
+): Promise<RunOutcome> {
   const routing = new Map<LoadedCase, DetectionResult[]>();
   const solving = new Map<LoadedCase, SolvingCapture[]>();
+  const metrics: RunMetrics[] = [];
   const jobs = cases.flatMap((evalCase) => {
     if (evalCase.tier === "routing") routing.set(evalCase, []);
     else solving.set(evalCase, []);
@@ -54,21 +61,25 @@ export async function runCases(
   const concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
   await forEachLimit(jobs, concurrency, async (evalCase) => {
     if (evalCase.tier === "routing") {
-      const result = await runRouting(evalCase, options);
-      routing.get(evalCase)?.push(result);
-      options.onRun?.(evalCase.id, result);
+      const run = await runRouting(evalCase, options);
+      routing.get(evalCase)?.push(run.result);
+      metrics.push(run.metrics);
+      options.onRun?.(evalCase.id, run.result);
     } else {
-      const capture = await runSolving(evalCase, options);
-      solving.get(evalCase)?.push(capture);
-      options.onCapture?.(evalCase.id, capture);
+      const run = await runSolving(evalCase, options);
+      solving.get(evalCase)?.push(run.result);
+      metrics.push(run.metrics);
+      options.onCapture?.(evalCase.id, run.result);
     }
   });
 
-  return cases.map((evalCase) =>
-    evalCase.tier === "routing"
-      ? { tier: "routing", evalCase, runs: routing.get(evalCase) ?? [] }
-      : { tier: "solving", evalCase, captures: solving.get(evalCase) ?? [] },
+  const results = cases.map(
+    (evalCase): CaseResult =>
+      evalCase.tier === "routing"
+        ? { tier: "routing", evalCase, runs: routing.get(evalCase) ?? [] }
+        : { tier: "solving", evalCase, captures: solving.get(evalCase) ?? [] },
   );
+  return { results, metrics };
 }
 
 function runsFor(evalCase: LoadedCase, options: RunnerOptions): number {
@@ -80,33 +91,49 @@ function skillsToCollect(evalCase: LoadedRoutingCase): number {
   return "path" in evalCase.expect ? evalCase.expect.path.length : 1;
 }
 
+interface RoutingRun {
+  readonly result: DetectionResult;
+  readonly metrics: RunMetrics;
+}
+
 async function runRouting(
   evalCase: LoadedRoutingCase,
   options: RunnerOptions,
-): Promise<DetectionResult> {
+): Promise<RoutingRun> {
   const detector = createDetector(skillsToCollect(evalCase));
-  const reached = await runSession(evalCase, options, {
+  const session = await runSession(evalCase, options, {
     timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     onLine: (line) => detector.push(line),
     done: () => detector.done,
     killOnDone: true,
   });
-  return detector.result(reached ? "timeout" : "no-skill");
+  return {
+    result: detector.result(session.reached ? "timeout" : "no-skill"),
+    metrics: session.metrics,
+  };
+}
+
+interface SolvingRun {
+  readonly result: SolvingCapture;
+  readonly metrics: RunMetrics;
 }
 
 async function runSolving(
   evalCase: LoadedSolvingCase,
   options: RunnerOptions,
-): Promise<SolvingCapture> {
+): Promise<SolvingRun> {
   const captor = createCaptor();
-  const reached = await runSession(evalCase, options, {
+  const session = await runSession(evalCase, options, {
     timeoutMs: options.solvingTimeoutMs ?? DEFAULT_SOLVING_TIMEOUT_MS,
     onLine: (line) => captor.push(line),
     done: () => captor.done,
     killOnDone: false,
   });
-  const capture = captor.result(reached ? "timeout" : "stream-end");
-  return mergeDiskWrites(capture, evalCase, options.cwd);
+  const capture = captor.result(session.reached ? "timeout" : "stream-end");
+  return {
+    result: await mergeDiskWrites(capture, evalCase, options.cwd),
+    metrics: session.metrics,
+  };
 }
 
 interface SessionHandlers {
@@ -116,11 +143,16 @@ interface SessionHandlers {
   readonly killOnDone: boolean;
 }
 
+interface SessionResult {
+  readonly reached: boolean;
+  readonly metrics: RunMetrics;
+}
+
 async function runSession(
   evalCase: LoadedCase,
   options: RunnerOptions,
   handlers: SessionHandlers,
-): Promise<boolean> {
+): Promise<SessionResult> {
   const cwd = evalCase.cwd ? resolveCwd(options.cwd, evalCase.cwd) : options.cwd;
   const argsOptions: BuildArgsOptions = {
     ...(options.model !== undefined && { model: options.model }),
@@ -142,17 +174,20 @@ async function runSession(
     child.kill("SIGKILL");
   }, handlers.timeoutMs);
 
+  const metrics = createMetrics();
+  const onLine = (line: string) => {
+    metrics.push(line);
+    handlers.onLine(line);
+  };
+
   const killOnDone = handlers.killOnDone ? () => child.kill("SIGKILL") : undefined;
   try {
-    await Promise.race([
-      drain(child.stdout, handlers.onLine, handlers.done, killOnDone),
-      spawnFailure,
-    ]);
+    await Promise.race([drain(child.stdout, onLine, handlers.done, killOnDone), spawnFailure]);
   } finally {
     clearTimeout(timer);
     if (child.exitCode === null) child.kill("SIGKILL");
   }
-  return deadline.reached;
+  return { reached: deadline.reached, metrics: metrics.result() };
 }
 
 export interface BuildArgsOptions {
