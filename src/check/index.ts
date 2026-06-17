@@ -9,7 +9,6 @@ import {
   findSkillFile,
   formatLoadSkillError,
   loadSkill,
-  type Companion,
 } from "../skill/index.js";
 import {
   collectLocalIds,
@@ -99,6 +98,7 @@ interface BodySource {
   readonly fileText: string;
   readonly filePath: string;
   readonly origin: BodyOrigin;
+  readonly frontmatter: boolean;
 }
 
 export async function check(options: CheckOptions): Promise<CheckResult> {
@@ -139,7 +139,8 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
     }
   }
 
-  return { violations, warnings, checkedFiles: bodies.length, indexedSources };
+  const checkedFiles = new Set(bodies.map((b) => b.filePath)).size;
+  return { violations, warnings, checkedFiles, indexedSources };
 }
 
 function bypassHaystacks(kinds: ReadonlyMap<string, KindConfig>): BypassHaystacks {
@@ -198,7 +199,8 @@ async function findRefBypasses(
   skip: readonly Span[],
 ): Promise<readonly ReferenceViolation[]> {
   const sourceDir = dirname(source.filePath);
-  const bypasses = await detectRefBypasses(source.body, sourceDir, rootDir, skip);
+  const scope = source.frontmatter ? "frontmatter" : "prose";
+  const bypasses = await detectRefBypasses(source.body, sourceDir, rootDir, skip, scope);
   return bypasses.map((bypass) => {
     const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + bypass.offset);
     return {
@@ -226,6 +228,7 @@ async function collectBodySources(adapter: LayoutAdapter): Promise<readonly Body
       fileText,
       filePath: file.filePath,
       origin: file.origin,
+      frontmatter: file.frontmatter ?? false,
     });
   };
 
@@ -243,6 +246,7 @@ interface PluginBody {
   readonly body: string;
   readonly bodyOffset: number;
   readonly origin: BodyOrigin;
+  readonly frontmatter?: boolean;
 }
 
 async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly PluginBody[]> {
@@ -301,23 +305,34 @@ async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]>
   );
   if (loaded.value.source !== "md") return [primary, ...companions];
   const skillText = await readFile(loaded.value.skillFilePath, "utf8");
-  const summaries = summaryBodies(skillText, loaded.value.skillFilePath, declared, origin);
-  return [primary, ...companions, ...summaries];
+  const frontmatter = frontmatterBodies(
+    skillText,
+    loaded.value.skillFilePath,
+    [skill.description, ...declared.map((c) => c.summary)],
+    origin,
+  );
+  return [primary, ...companions, ...frontmatter];
 }
 
-function summaryBodies(
+function frontmatterBodies(
   skillText: string,
   skillFilePath: string,
-  declared: readonly Companion[],
+  values: readonly string[],
   origin: BodyOrigin,
 ): readonly PluginBody[] {
   const bodies: PluginBody[] = [];
   let cursor = 0;
-  for (const companion of declared) {
-    const at = skillText.indexOf(companion.summary, cursor);
+  for (const value of values) {
+    const at = skillText.indexOf(value, cursor);
     if (at === -1) continue;
-    cursor = at + companion.summary.length;
-    bodies.push({ filePath: skillFilePath, body: companion.summary, bodyOffset: at, origin });
+    cursor = at + value.length;
+    bodies.push({
+      filePath: skillFilePath,
+      body: value,
+      bodyOffset: at,
+      origin,
+      frontmatter: true,
+    });
   }
   return bodies;
 }

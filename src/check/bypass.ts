@@ -108,7 +108,23 @@ const LANG_SKILL_LEAVES: ReadonlySet<string> = new Set([
 const BACKTICK_LEAF = /`([a-z][a-z0-9-]*)`/g;
 
 export function nonReferenceSpans(body: string): readonly Span[] {
-  return [...placeholderSpans(body), ...codeSpans(body)];
+  return [...placeholderSpans(body), ...codeSpans(body), ...linkDestinationSpans(body)];
+}
+
+const INLINE_LINK_DEST = /\]\(\s*<?([^)>\s]+)/g;
+const REFERENCE_LINK_DEST = /^[ \t]*\[[^\]]+\]:\s*<?(\S+)/gm;
+
+function linkDestinationSpans(body: string): readonly Span[] {
+  const spans: Span[] = [];
+  for (const pattern of [INLINE_LINK_DEST, REFERENCE_LINK_DEST]) {
+    for (const match of body.matchAll(pattern)) {
+      const dest = match[1];
+      if (dest === undefined) continue;
+      const start = match.index + match[0].length - dest.length;
+      spans.push({ start, end: start + dest.length });
+    }
+  }
+  return spans;
 }
 
 export function detectBarewordBypasses(
@@ -147,16 +163,22 @@ export interface RefBypass {
   readonly offset: number;
 }
 
-const BACKTICK_MD = /`([a-z0-9][a-z0-9.-]*\.md)`/gi;
+export type RefBypassScope = "prose" | "frontmatter";
+
+const COMPANION_MD: Readonly<Record<RefBypassScope, RegExp>> = {
+  prose: /(?<![\w/.-])`?([a-z0-9][a-z0-9.-]*\.md)`?(?![\w/-])/gi,
+  frontmatter: /`([a-z0-9][a-z0-9.-]*\.md)`/gi,
+};
 
 export async function detectRefBypasses(
   body: string,
   sourceDir: string,
   rootDir: string,
   skip: readonly Span[] = nonReferenceSpans(body),
+  scope: RefBypassScope = "frontmatter",
 ): Promise<readonly RefBypass[]> {
   const out: RefBypass[] = [];
-  for (const match of body.matchAll(BACKTICK_MD)) {
+  for (const match of body.matchAll(COMPANION_MD[scope])) {
     const path = match[1];
     if (path === undefined) continue;
     if (within(match.index, skip)) continue;

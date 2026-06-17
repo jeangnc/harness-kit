@@ -22,6 +22,7 @@ interface LocalSkillFile {
   readonly plugin: string;
   readonly skill: string;
   readonly body: string;
+  readonly description?: string;
   readonly companions?: readonly LocalCompanionFile[];
 }
 
@@ -72,7 +73,11 @@ async function withLocalSrcFixture<T>(
     const skillDir = join(srcRoot, "plugins", file.plugin, "skills", file.skill);
     mkdirSync(skillDir, { recursive: true });
     const companions = file.companions ?? [];
-    const lines = ["---", `name: ${file.skill}`, "description: x"];
+    const lines = [
+      "---",
+      `name: ${file.skill}`,
+      `description: ${JSON.stringify(file.description ?? "x")}`,
+    ];
     if (companions.length > 0) {
       lines.push("companions:");
       for (const c of companions) {
@@ -266,7 +271,7 @@ test("check reports line:col into the source file for an external warning", asyn
   });
 });
 
-test("check counts each scanned skill body as a checked file", async () => {
+test("check counts each scanned skill file once, regardless of how many bodies it yields", async () => {
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withLocalSrcFixture(
       {
@@ -755,6 +760,141 @@ test("check flags a backticked sibling companion .md inside a companion summary"
       assert.equal(refs.length, 1);
       assert.equal(refs[0]!.token, "details.md");
       assert.match(refs[0]!.file, /SKILL\.md$/);
+    },
+  );
+});
+
+test("check flags an unresolved reference inside the skill description", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          description: "Pairs with {{skill:foo:ghost}}.",
+          body: "x\n",
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      const unresolved = result.violations.filter((v) => v.kind === "unresolved");
+      assert.equal(unresolved.length, 1);
+      assert.equal(unresolved[0]!.token, "{{skill:foo:ghost}}");
+      assert.match(unresolved[0]!.file, /SKILL\.md$/);
+      assert.equal(unresolved[0]!.line, 3);
+    },
+  );
+});
+
+test("check warns about a bareword reference inside the skill description", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          description: "Pairs with foo:helper.",
+          body: "x\n",
+        },
+      ],
+      agents: [{ plugin: "foo", agent: "helper", body: "z\n" }],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      const bypass = result.warnings.filter((w) => w.kind === "bypass");
+      assert.equal(bypass.length, 1);
+      assert.equal(bypass[0]!.id, "foo:helper");
+      assert.match(bypass[0]!.file, /SKILL\.md$/);
+      assert.equal(bypass[0]!.line, 3);
+    },
+  );
+});
+
+test("check flags a bare companion .md path referenced in prose", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "see details.md for more\n",
+          companions: [{ file: "details.md", body: "y\n", summary: "Deep dive." }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      const refs = result.violations.filter((v) => v.kind === "ref-bareword");
+      assert.equal(refs.length, 1);
+      assert.equal(refs[0]!.token, "details.md");
+      assert.match(refs[0]!.file, /SKILL\.md$/);
+    },
+  );
+});
+
+test("check does not flag a companion .md path used as a markdown link target", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "see [the details](details.md) for more\n",
+          companions: [{ file: "details.md", body: "y\n", summary: "Deep dive." }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      assert.deepEqual(
+        result.violations.filter((v) => v.kind === "ref-bareword"),
+        [],
+      );
+    },
+  );
+});
+
+test("check does not flag a companion .md path in a reference-style link definition", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "see [the details][d] for more\n\n[d]: details.md\n",
+          companions: [{ file: "details.md", body: "y\n", summary: "Deep dive." }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      assert.deepEqual(
+        result.violations.filter((v) => v.kind === "ref-bareword"),
+        [],
+      );
+    },
+  );
+});
+
+test("check does not flag a companion .md path in an angle-bracket link target", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "see [the details](<details.md>) for more\n",
+          companions: [{ file: "details.md", body: "y\n", summary: "Deep dive." }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      assert.deepEqual(
+        result.violations.filter((v) => v.kind === "ref-bareword"),
+        [],
+      );
     },
   );
 });
