@@ -15,6 +15,7 @@ const NO_INSTALLED: readonly PluginSource[] = [];
 interface LocalCompanionFile {
   readonly file: string;
   readonly body: string;
+  readonly summary?: string;
 }
 
 interface LocalSkillFile {
@@ -74,7 +75,8 @@ async function withLocalSrcFixture<T>(
     const lines = ["---", `name: ${file.skill}`, "description: x"];
     if (companions.length > 0) {
       lines.push("companions:");
-      for (const c of companions) lines.push(`  - file: ${c.file}`, `    summary: ${c.file}`);
+      for (const c of companions)
+        {lines.push(`  - file: ${c.file}`, `    summary: ${JSON.stringify(c.summary ?? c.file)}`);}
     }
     lines.push("---", "", "");
     writeFileSync(join(skillDir, "SKILL.md"), `${lines.join("\n")}${file.body}`);
@@ -681,6 +683,77 @@ test("check warns about a bypass reference inside a declared companion file", as
       assert.equal(bypass[0]!.id, "foo:bar");
       assert.equal(bypass[0]!.prefix, "agent");
       assert.match(bypass[0]!.file, /details\.md$/);
+    },
+  );
+});
+
+test("check warns about a bareword reference inside a companion summary", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "x\n",
+          companions: [{ file: "details.md", body: "y\n", summary: "Pairs with foo:helper." }],
+        },
+      ],
+      agents: [{ plugin: "foo", agent: "helper", body: "z\n" }],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      const bypass = result.warnings.filter((w) => w.kind === "bypass");
+      assert.equal(bypass.length, 1);
+      assert.equal(bypass[0]!.id, "foo:helper");
+      assert.match(bypass[0]!.file, /SKILL\.md$/);
+      assert.equal(bypass[0]!.line, 6);
+    },
+  );
+});
+
+test("check scans every companion summary, even when two share identical text", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "x\n",
+          companions: [
+            { file: "one.md", body: "a\n", summary: "Pairs with foo:helper." },
+            { file: "two.md", body: "b\n", summary: "Pairs with foo:helper." },
+          ],
+        },
+      ],
+      agents: [{ plugin: "foo", agent: "helper", body: "z\n" }],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      const bypass = result.warnings.filter((w) => w.kind === "bypass");
+      assert.equal(bypass.length, 2);
+      assert.deepEqual(bypass.map((b) => b.line).sort(), [6, 8]);
+    },
+  );
+});
+
+test("check flags a backticked sibling companion .md inside a companion summary", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "see {{ref:details.md}}\n",
+          companions: [{ file: "details.md", body: "y\n", summary: "Deep dive in `details.md`." }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      const refs = result.violations.filter((v) => v.kind === "ref-bareword");
+      assert.equal(refs.length, 1);
+      assert.equal(refs[0]!.token, "details.md");
+      assert.match(refs[0]!.file, /SKILL\.md$/);
     },
   );
 });

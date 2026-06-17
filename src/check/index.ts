@@ -9,6 +9,7 @@ import {
   findSkillFile,
   formatLoadSkillError,
   loadSkill,
+  type Companion,
 } from "../skill/index.js";
 import {
   collectLocalIds,
@@ -215,8 +216,9 @@ async function collectBodySources(adapter: LayoutAdapter): Promise<readonly Body
   const seen = new Set<string>();
   const out: BodySource[] = [];
   const push = async (file: PluginBody): Promise<void> => {
-    if (seen.has(file.filePath)) return;
-    seen.add(file.filePath);
+    const key = `${file.filePath}:${file.bodyOffset}:${file.body.length}`;
+    if (seen.has(key)) return;
+    seen.add(key);
     const fileText = await readFile(file.filePath, "utf8");
     out.push({
       body: file.body,
@@ -297,7 +299,27 @@ async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]>
       return { filePath, body: await readFile(filePath, "utf8"), bodyOffset: 0, origin };
     }),
   );
-  return [primary, ...companions];
+  if (loaded.value.source !== "md") return [primary, ...companions];
+  const skillText = await readFile(loaded.value.skillFilePath, "utf8");
+  const summaries = summaryBodies(skillText, loaded.value.skillFilePath, declared, origin);
+  return [primary, ...companions, ...summaries];
+}
+
+function summaryBodies(
+  skillText: string,
+  skillFilePath: string,
+  declared: readonly Companion[],
+  origin: BodyOrigin,
+): readonly PluginBody[] {
+  const bodies: PluginBody[] = [];
+  let cursor = 0;
+  for (const companion of declared) {
+    const at = skillText.indexOf(companion.summary, cursor);
+    if (at === -1) continue;
+    cursor = at + companion.summary.length;
+    bodies.push({ filePath: skillFilePath, body: companion.summary, bodyOffset: at, origin });
+  }
+  return bodies;
 }
 
 interface ValidatedBody {
