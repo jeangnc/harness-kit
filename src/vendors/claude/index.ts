@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { runIgnoreFailure } from "../../install/runner.js";
@@ -10,6 +10,7 @@ import {
   readInstalledPlugins,
   writeInstalledPlugins,
 } from "./installedPlugins.js";
+import type { InstalledPlugins } from "./installedPlugins.js";
 import { defaultEmitMarketplaceManifest, defaultEmitPluginManifest } from "../shared.js";
 import type {
   DiscoveredVendorPlugin,
@@ -22,6 +23,7 @@ import type {
 } from "../../vendor/schema.js";
 
 const VENDOR_DIR = "claude";
+const STAGING_ROOT_DIR = ".staging";
 const PLUGIN_MANIFEST_REL = ".claude-plugin/plugin.json";
 const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.claude-plugin/marketplace.json`;
 
@@ -104,28 +106,28 @@ export function makeClaudeVendor(home: string): Vendor {
       if (ctx.plugins.length === 0) return;
       const { enabled, disabled } = partitionByEnabled(ctx);
       ctx.log(
-        `[claude] refreshing ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace} (${ctx.mode})`,
+        `[claude] installing ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace} (${ctx.mode})`,
       );
-      for (const plugin of ctx.plugins) {
-        await runIgnoreFailure(ctx.run, "claude", [
-          "plugin",
-          "uninstall",
-          pluginKey(plugin.name, ctx.marketplace),
-        ]);
-        await rm(pluginCacheDir(home, ctx.marketplace, plugin.name), {
-          recursive: true,
-          force: true,
-        });
-      }
       await refreshMarketplace(ctx);
       await pruneStagingDirs(home);
       ctx.log(`[claude] refreshed marketplace ${ctx.marketplace}`);
       for (const plugin of disabled) {
         ctx.log(`[claude] skipped ${plugin.name} (disabled in settings)`);
       }
+      const installed = await readInstalledPlugins(home);
+      const now = new Date().toISOString();
       for (const plugin of enabled) {
-        await ctx.run("claude", ["plugin", "install", pluginKey(plugin.name, ctx.marketplace)]);
-        ctx.log(`[claude] installed ${plugin.name}`);
+        const key = pluginKey(plugin.name, ctx.marketplace);
+        if (installed.plugins[key] === undefined) {
+          await ctx.run("claude", ["plugin", "install", key]);
+          if ((await readInstalledPlugins(home)).plugins[key] === undefined) {
+            throw new Error(
+              `claude plugin install ${key} did not register the plugin; marketplace ${ctx.marketplace} may be unavailable`,
+            );
+          }
+          ctx.log(`[claude] installed ${plugin.name}`);
+        }
+        await refreshPlugin(home, ctx, plugin, now);
       }
     },
     async refresh(ctx: VendorInstallContext): Promise<void> {
@@ -174,25 +176,108 @@ export function makeClaudeVendor(home: string): Vendor {
 }
 
 async function refreshPlugins(home: string, ctx: VendorInstallContext, now: string): Promise<void> {
-  let registry = await readInstalledPlugins(home);
+  const registry = await readInstalledPlugins(home);
   for (const plugin of ctx.plugins) {
-    const key = pluginKey(plugin.name, ctx.marketplace);
-    if (registry.plugins[key] === undefined) {
+    if (registry.plugins[pluginKey(plugin.name, ctx.marketplace)] === undefined) {
       ctx.log(`[claude] skipped ${plugin.name} (not installed)`);
       continue;
     }
-    const dest = versionedCacheDir(home, ctx.marketplace, plugin.name, plugin.version);
-    await rm(pluginCacheDir(home, ctx.marketplace, plugin.name), { recursive: true, force: true });
-    await mkdir(dirname(dest), { recursive: true });
-    await cp(plugin.path, dest, { recursive: true });
-    registry = patchInstalledEntries(registry, key, {
-      installPath: dest,
-      version: plugin.version,
-      lastUpdated: now,
-    });
-    await writeInstalledPlugins(home, registry);
-    ctx.log(`[claude] refreshed ${plugin.name}@${plugin.version}`);
+    await refreshPlugin(home, ctx, plugin, now);
   }
+}
+
+async function refreshPlugin(
+  home: string,
+  ctx: VendorInstallContext,
+  plugin: DiscoveredVendorPlugin,
+  now: string,
+): Promise<void> {
+  const key = pluginKey(plugin.name, ctx.marketplace);
+  const dest = versionedCacheDir(home, ctx.marketplace, plugin.name, plugin.version);
+  await stageIntoPlace(home, plugin.path, dest);
+  const patched = patchInstalledEntries(await readInstalledPlugins(home), key, {
+    installPath: dest,
+    version: plugin.version,
+    lastUpdated: now,
+  });
+  await writeInstalledPlugins(home, patched);
+  await pruneOtherVersions(home, ctx.marketplace, plugin.name, dest, referencedPaths(patched));
+  ctx.log(`[claude] refreshed ${plugin.name}@${plugin.version}`);
+}
+
+export async function stageIntoPlace(home: string, source: string, dest: string): Promise<void> {
+  const root = await stagingRoot(home);
+  const incoming = await mkdtemp(join(root, "incoming-"));
+  const staged = join(incoming, "payload");
+  try {
+    await cp(source, staged, { recursive: true });
+  } catch (cause) {
+    await rm(incoming, { recursive: true, force: true });
+    throw new Error(`cannot copy plugin from ${source}`, { cause });
+  }
+  try {
+    await mkdir(dirname(dest), { recursive: true });
+    const displaced = await displace(root, dest);
+    try {
+      await rename(staged, dest);
+    } catch (cause) {
+      await restore(displaced, dest);
+      throw new Error(`cannot stage plugin into ${dest}`, { cause });
+    }
+    await discard(displaced);
+  } finally {
+    await rm(incoming, { recursive: true, force: true });
+  }
+}
+
+async function displace(root: string, dest: string): Promise<string | null> {
+  if (!(await pathExists(dest))) return null;
+  const holding = await mkdtemp(join(root, "displaced-"));
+  try {
+    await rename(dest, join(holding, "payload"));
+  } catch (cause) {
+    await rm(holding, { recursive: true, force: true });
+    throw cause;
+  }
+  return holding;
+}
+
+async function restore(displaced: string | null, dest: string): Promise<void> {
+  if (displaced === null) return;
+  await rename(join(displaced, "payload"), dest);
+  await rm(displaced, { recursive: true, force: true });
+}
+
+async function discard(displaced: string | null): Promise<void> {
+  if (displaced === null) return;
+  await rm(displaced, { recursive: true, force: true });
+}
+
+async function stagingRoot(home: string): Promise<string> {
+  const root = join(home, "plugins", STAGING_ROOT_DIR);
+  await mkdir(root, { recursive: true });
+  return root;
+}
+
+async function pruneOtherVersions(
+  home: string,
+  marketplace: string,
+  name: string,
+  keep: string,
+  referenced: ReadonlySet<string>,
+): Promise<void> {
+  const root = pluginCacheDir(home, marketplace, name);
+  for (const entry of await readdirOrEmpty(root)) {
+    const dir = join(root, entry);
+    if (dir === keep || referenced.has(dir)) continue;
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function referencedPaths(registry: InstalledPlugins): ReadonlySet<string> {
+  return new Set(
+    Object.values(registry.plugins).flatMap((entries) => entries.map((e) => e.installPath)),
+  );
 }
 
 function pluginCacheDir(home: string, marketplace: string, name: string): string {
