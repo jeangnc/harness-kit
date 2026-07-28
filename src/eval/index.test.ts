@@ -70,3 +70,26 @@ test("enabledPluginKeys skips an entry whose marketplace is empty", () => {
   const keys = enabledPluginKeys([routing({ first: "dev-tools:code-review" })], idx);
   assert.deepEqual([...keys], []);
 });
+
+test("enabledPluginKeys maps an expected command to its plugin@marketplace key", () => {
+  const idx: InstalledIndex = {
+    skills: new Map(),
+    commands: new Map([
+      [
+        "dev-tools:post-review",
+        [
+          {
+            source: "claude" as const,
+            marketplace: "market-a",
+            path: "p",
+            plugin: "dev-tools",
+            command: "post-review",
+          },
+        ],
+      ],
+    ]),
+    agents: new Map(),
+  };
+  const keys = enabledPluginKeys([routing({ first: "dev-tools:post-review" })], idx);
+  assert.deepEqual([...keys], ["dev-tools@market-a"]);
+});
