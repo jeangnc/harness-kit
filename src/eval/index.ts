@@ -79,7 +79,7 @@ export function enabledPluginKeys(
   const keys = new Set<string>();
   for (const evalCase of selected) {
     for (const id of caseExpectedSkills(evalCase)) {
-      for (const entry of index.skills.get(id) ?? []) {
+      for (const entry of [...(index.skills.get(id) ?? []), ...(index.commands.get(id) ?? [])]) {
         if (entry.source === EVAL_VENDOR && entry.marketplace) {
           keys.add(`${entry.plugin}@${entry.marketplace}`);
         }
