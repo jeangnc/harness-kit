@@ -1079,14 +1079,32 @@ test("check resolves a {{ref:}} to a companion file that exists", async () => {
   );
 });
 
-test("check fails on a {{ref:}} whose target does not exist", async () => {
+test("check allows a {{ref:}} up to a shared file inside its own plugin", async () => {
   await withLocalSrcFixture(
-    { skills: [{ plugin: "foo", skill: "bar", body: "see {{ref:ghost.md}}\n" }] },
+    { skills: [{ plugin: "foo", skill: "bar", body: "see {{ref:../../shared/thing.md}}\n" }] },
     async (srcRoot) => {
+      mkdirSync(join(srcRoot, "plugins/foo/shared"), { recursive: true });
+      writeFileSync(join(srcRoot, "plugins/foo/shared/thing.md"), "shared\n");
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      assert.deepEqual([...result.violations], []);
+    },
+  );
+});
+
+test("check does not treat a sibling plugin sharing a name prefix as inside", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        { plugin: "foo", skill: "bar", body: "see {{ref:../../../foo-extra/shared/thing.md}}\n" },
+        { plugin: "foo-extra", skill: "qux", body: "body\n" },
+      ],
+    },
+    async (srcRoot) => {
+      mkdirSync(join(srcRoot, "plugins/foo-extra/shared"), { recursive: true });
+      writeFileSync(join(srcRoot, "plugins/foo-extra/shared/thing.md"), "shared\n");
       const result = await check({ srcRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
-      assert.equal(result.violations[0]!.kind, "unresolved");
-      assert.match(result.violations[0]!.token, /ghost\.md/);
+      assert.match(result.violations[0]!.message, /outside its plugin/i);
     },
   );
 });

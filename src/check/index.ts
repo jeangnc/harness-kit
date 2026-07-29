@@ -1,5 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { pathExists } from "../fs.js";
 import { FQ_ID } from "../ids.js";
@@ -135,7 +135,7 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
     for (const violation of await findRefBypasses(source, options.srcRoot, skip)) {
       violations.push(violation);
     }
-    for (const violation of await findUnresolvedRefs(source)) {
+    for (const violation of findEscapingRefs(source)) {
       violations.push(violation);
     }
     for (const warning of findBypasses(source, haystacks)) {
@@ -218,14 +218,12 @@ async function findRefBypasses(
   });
 }
 
-async function findUnresolvedRefs(source: BodySource): Promise<readonly ReferenceViolation[]> {
+function findEscapingRefs(source: BodySource): readonly ReferenceViolation[] {
   const violations: ReferenceViolation[] = [];
   const sourceDir = dirname(source.filePath);
   for (const token of parsePlaceholders(source.body)) {
     if (token.prefix !== "ref" || token.value === null) continue;
-    const target = resolve(sourceDir, token.value);
-    const problem = await refProblem(target, source.pluginDir);
-    if (problem === null) continue;
+    if (!escapesPlugin(resolve(sourceDir, token.value), source.pluginDir)) continue;
     const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + token.start);
     violations.push({
       kind: "unresolved",
@@ -233,19 +231,15 @@ async function findUnresolvedRefs(source: BodySource): Promise<readonly Referenc
       file: source.filePath,
       line,
       column,
-      message: `\`${token.value}\` ref ${problem}`,
+      message: `\`${token.value}\` ref resolves outside its plugin — \`{{ref:}}\` renders a relative runtime path and is same-plugin only; the installed layout nests each plugin under a version directory that \`src/\` does not have, so this resolves in \`src/\` and breaks once installed`,
     });
   }
   return violations;
 }
 
-async function refProblem(target: string, pluginDir: string): Promise<string | null> {
-  const inPlugin = target === pluginDir || target.startsWith(`${pluginDir}/`);
-  if (!inPlugin) {
-    return "resolves outside its plugin — `{{ref:}}` is same-plugin only, and the installed layout nests each plugin under a version directory that `src/` does not have";
-  }
-  if (!(await pathExists(target))) return "points at a file that does not exist";
-  return null;
+function escapesPlugin(target: string, pluginDir: string): boolean {
+  const rel = relative(pluginDir, target);
+  return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 }
 
 async function collectBodySources(adapter: LayoutAdapter): Promise<readonly BodySource[]> {
