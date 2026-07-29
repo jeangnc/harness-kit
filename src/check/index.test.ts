@@ -1059,3 +1059,53 @@ test("check does not flag an already-templated companion ref or a generic .md me
     },
   );
 });
+
+test("check resolves a {{ref:}} to a companion file that exists", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        {
+          plugin: "foo",
+          skill: "bar",
+          body: "see {{ref:procedure.md}}\n",
+          companions: [{ file: "procedure.md", body: "steps\n" }],
+        },
+      ],
+    },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      assert.deepEqual([...result.violations], []);
+    },
+  );
+});
+
+test("check fails on a {{ref:}} whose target does not exist", async () => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "bar", body: "see {{ref:ghost.md}}\n" }] },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      assert.equal(result.violations.length, 1);
+      assert.equal(result.violations[0]!.kind, "unresolved");
+      assert.match(result.violations[0]!.token, /ghost\.md/);
+    },
+  );
+});
+
+test("check fails on a {{ref:}} that escapes its own plugin", async () => {
+  await withLocalSrcFixture(
+    {
+      skills: [
+        { plugin: "foo", skill: "bar", body: "see {{ref:../../../baz/shared/thing.md}}\n" },
+        { plugin: "baz", skill: "qux", body: "body\n" },
+      ],
+    },
+    async (srcRoot) => {
+      mkdirSync(join(srcRoot, "plugins/baz/shared"), { recursive: true });
+      writeFileSync(join(srcRoot, "plugins/baz/shared/thing.md"), "shared\n");
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      assert.equal(result.violations.length, 1);
+      assert.equal(result.violations[0]!.kind, "unresolved");
+      assert.match(result.violations[0]!.message, /outside its plugin/i);
+    },
+  );
+});

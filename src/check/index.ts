@@ -1,5 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { pathExists } from "../fs.js";
 import { FQ_ID } from "../ids.js";
@@ -97,6 +97,7 @@ interface BodySource {
   readonly bodyOffset: number;
   readonly fileText: string;
   readonly filePath: string;
+  readonly pluginDir: string;
   readonly origin: BodyOrigin;
   readonly frontmatter: boolean;
 }
@@ -132,6 +133,9 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
       violations.push(violation);
     }
     for (const violation of await findRefBypasses(source, options.srcRoot, skip)) {
+      violations.push(violation);
+    }
+    for (const violation of await findUnresolvedRefs(source)) {
       violations.push(violation);
     }
     for (const warning of findBypasses(source, haystacks)) {
@@ -214,6 +218,36 @@ async function findRefBypasses(
   });
 }
 
+async function findUnresolvedRefs(source: BodySource): Promise<readonly ReferenceViolation[]> {
+  const violations: ReferenceViolation[] = [];
+  const sourceDir = dirname(source.filePath);
+  for (const token of parsePlaceholders(source.body)) {
+    if (token.prefix !== "ref" || token.value === null) continue;
+    const target = resolve(sourceDir, token.value);
+    const problem = await refProblem(target, source.pluginDir);
+    if (problem === null) continue;
+    const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + token.start);
+    violations.push({
+      kind: "unresolved",
+      token: token.value,
+      file: source.filePath,
+      line,
+      column,
+      message: `\`${token.value}\` ref ${problem}`,
+    });
+  }
+  return violations;
+}
+
+async function refProblem(target: string, pluginDir: string): Promise<string | null> {
+  const inPlugin = target === pluginDir || target.startsWith(`${pluginDir}/`);
+  if (!inPlugin) {
+    return "resolves outside its plugin — `{{ref:}}` is same-plugin only, and the installed layout nests each plugin under a version directory that `src/` does not have";
+  }
+  if (!(await pathExists(target))) return "points at a file that does not exist";
+  return null;
+}
+
 async function collectBodySources(adapter: LayoutAdapter): Promise<readonly BodySource[]> {
   const seen = new Set<string>();
   const out: BodySource[] = [];
@@ -227,6 +261,7 @@ async function collectBodySources(adapter: LayoutAdapter): Promise<readonly Body
       bodyOffset: file.bodyOffset,
       fileText,
       filePath: file.filePath,
+      pluginDir: file.pluginDir,
       origin: file.origin,
       frontmatter: file.frontmatter ?? false,
     });
@@ -245,6 +280,7 @@ interface PluginBody {
   readonly filePath: string;
   readonly body: string;
   readonly bodyOffset: number;
+  readonly pluginDir: string;
   readonly origin: BodyOrigin;
   readonly frontmatter?: boolean;
 }
@@ -257,14 +293,14 @@ async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly Plu
       const skillDir = join(plugin.skillsDir, entry.name);
       const found = await findSkillFile(skillDir);
       if (!found.ok || !found.value) continue;
-      out.push(...(await loadSkillBodies(skillDir)));
+      out.push(...(await loadSkillBodies(skillDir, plugin.pluginDir)));
     }
   }
   for await (const filePath of walkMarkdown(plugin.pluginDir)) {
     if (filePath.startsWith(plugin.skillsDir)) continue;
     const body = await readFile(filePath, "utf8");
     const role = filePath.startsWith(plugin.commandsDir) ? "command" : "doc";
-    out.push({ filePath, body, bodyOffset: 0, origin: { role } });
+    out.push({ filePath, body, bodyOffset: 0, pluginDir: plugin.pluginDir, origin: { role } });
   }
   return out;
 }
@@ -278,7 +314,10 @@ async function* walkMarkdown(dir: string): AsyncGenerator<string> {
   }
 }
 
-async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]> {
+async function loadSkillBodies(
+  skillDir: string,
+  pluginDir: string,
+): Promise<readonly PluginBody[]> {
   const loaded = await loadSkill(skillDir);
   if (!loaded.ok) {
     throw new Error(
@@ -287,7 +326,7 @@ async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]>
   }
   const { skill, body, bodyFilePath, bodyOffset, skillDir: dir } = loaded.value;
   const origin = { role: "skill", ownLeaf: basename(dir) } as const;
-  const primary: PluginBody = { filePath: bodyFilePath, body, bodyOffset, origin };
+  const primary: PluginBody = { filePath: bodyFilePath, body, bodyOffset, pluginDir, origin };
   const declared = skill.companions ?? [];
   const present = await Promise.all(declared.map(async (c) => pathExists(join(dir, c.file))));
   const missing = checkCompanionFiles(
@@ -300,7 +339,13 @@ async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]>
   const companions = await Promise.all(
     declared.map(async (companion): Promise<PluginBody> => {
       const filePath = join(dir, companion.file);
-      return { filePath, body: await readFile(filePath, "utf8"), bodyOffset: 0, origin };
+      return {
+        filePath,
+        body: await readFile(filePath, "utf8"),
+        bodyOffset: 0,
+        pluginDir,
+        origin,
+      };
     }),
   );
   if (loaded.value.source !== "md") return [primary, ...companions];
@@ -310,6 +355,7 @@ async function loadSkillBodies(skillDir: string): Promise<readonly PluginBody[]>
     loaded.value.skillFilePath,
     [skill.description, ...declared.map((c) => c.summary)],
     origin,
+    pluginDir,
   );
   return [primary, ...companions, ...frontmatter];
 }
@@ -319,6 +365,7 @@ function frontmatterBodies(
   skillFilePath: string,
   values: readonly string[],
   origin: BodyOrigin,
+  pluginDir: string,
 ): readonly PluginBody[] {
   const bodies: PluginBody[] = [];
   let cursor = 0;
@@ -330,6 +377,7 @@ function frontmatterBodies(
       filePath: skillFilePath,
       body: value,
       bodyOffset: at,
+      pluginDir,
       origin,
       frontmatter: true,
     });
