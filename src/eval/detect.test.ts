@@ -22,6 +22,8 @@ function streamDelta(partialJson: string): string {
 
 const messageStop = JSON.stringify({ type: "stream_event", event: { type: "message_stop" } });
 
+const resultEvent = JSON.stringify({ type: "result" });
+
 function run(lines: string[], reason: ExitReason = "stream-end", stopAfter = 1) {
   const detector = createDetector(stopAfter);
   for (const line of lines) {
@@ -59,6 +61,23 @@ test("detect, when a non-Skill tool fires first, records no skill", () => {
 
 test("detect, when no tool fires and the message stops, reports no skill", () => {
   const out = run([messageStop], "no-skill");
+  assert.equal(out.firstSkill, null);
+  assert.equal(out.exitReason, "no-skill");
+});
+
+test("detect, when the skill fires in a later turn, still captures it", () => {
+  const out = run([
+    streamStart("Read"),
+    messageStop,
+    streamStart("Skill"),
+    streamDelta('{"skill":"alpha:plan"}'),
+  ]);
+  assert.equal(out.firstSkill, "alpha:plan");
+  assert.equal(out.exitReason, "skill");
+});
+
+test("detect, when the session ends with no skill, reports no skill", () => {
+  const out = run([streamStart("Read"), messageStop, resultEvent], "no-skill");
   assert.equal(out.firstSkill, null);
   assert.equal(out.exitReason, "no-skill");
 });

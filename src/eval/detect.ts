@@ -83,11 +83,8 @@ export function createDetector(stopAfter = 1): Detector {
             if (typeof partial === "string") pendingSkillJson += partial;
             if (skillIdInJson(pendingSkillJson) !== null) flushPending();
           }
-        } else if (seType === "content_block_stop") {
+        } else if (seType === "content_block_stop" || seType === "message_stop") {
           flushPending();
-        } else if (seType === "message_stop") {
-          flushPending();
-          finished = true;
         }
         return;
       }
