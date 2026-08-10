@@ -1127,3 +1127,54 @@ test("check fails on a {{ref:}} that escapes its own plugin", async () => {
     },
   );
 });
+
+test("check ignores docs outside src/ when no doc roots are given", async () => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "bar", body: "body\n" }] },
+    async (srcRoot) => {
+      const docsDir = join(srcRoot, "..", "docs");
+      mkdirSync(docsDir, { recursive: true });
+      writeFileSync(join(docsDir, "reference.md"), "invoke `bar` to do the thing\n");
+      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      assert.equal(result.violations.length, 0);
+    },
+  );
+});
+
+test("check flags a bareword skill name in a doc root outside src/", async () => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "bar", body: "body\n" }] },
+    async (srcRoot) => {
+      const docsDir = join(srcRoot, "..", "docs");
+      mkdirSync(docsDir, { recursive: true });
+      writeFileSync(join(docsDir, "reference.md"), "invoke `bar` to do the thing\n");
+      const result = await check({ srcRoot, docRoots: [docsDir], sources: NO_INSTALLED });
+      assert.equal(result.violations.length, 1);
+      assert.equal(result.violations[0]!.kind, "bareword");
+      assert.equal(result.violations[0]!.token, "bar");
+    },
+  );
+});
+
+test("check flags an unresolved reference in a single-file doc root", async () => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "bar", body: "body\n" }] },
+    async (srcRoot) => {
+      const readme = join(srcRoot, "..", "README.md");
+      writeFileSync(readme, "see {{skill:foo:ghost}}\n");
+      const result = await check({ srcRoot, docRoots: [readme], sources: NO_INSTALLED });
+      assert.equal(result.violations.length, 1);
+      assert.equal(result.violations[0]!.kind, "unresolved");
+    },
+  );
+});
+
+test("check does not double-report a doc root that overlaps a plugin dir", async () => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "bar", body: "invoke `bar-baz` here\n" }] },
+    async (srcRoot) => {
+      const result = await check({ srcRoot, docRoots: [srcRoot], sources: NO_INSTALLED });
+      assert.equal(result.violations.length, 0);
+    },
+  );
+});

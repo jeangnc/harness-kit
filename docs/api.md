@@ -110,6 +110,8 @@ for (const v of result.violations) {
 
 References resolve against the union of local artifacts and the installed-plugin index. An unresolved reference into a **local** plugin (artifact missing) is a `violation`; an unresolved reference into an **external** plugin is an `unresolved-external` entry in `warnings`. Pass `sources` to override the installed-plugin index (defaults to the vendor homes).
 
+Pass `docRoots` to scan files outside `srcRoot` — repo docs that name skills but would otherwise keep stale names through a rename. Each entry is a directory (walked for `.md`) or a single file; paths already inside a plugin directory are skipped. Docs own no plugin, so the `{{ref:}}` plugin-boundary rule does not apply to them.
+
 ## Installed index
 
 Discover and index plugins already installed under a vendor home. Useful for the `sources` override on `check` and for ad-hoc tooling that needs to enumerate installed skills/agents/commands.

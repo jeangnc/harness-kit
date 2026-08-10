@@ -44,7 +44,10 @@ Runs against `plugins/**/*.md` with these overrides:
 Validates `{{skill:...}}`, `{{command:...}}`, and `{{agent:...}}` references.
 
 - `--src <path>` (default `./src`).
+- `--docs <paths>` — comma-separated files or directories outside `--src` to scan as well.
 - `--silent`.
+
+By default only files under `--src` are scanned, so repo docs that name skills — a `README.md`, a `docs/` reference table — keep stale names indefinitely: a rename updates every `{{…}}` placeholder in `src/` and silently leaves the docs pointing at an artifact that no longer exists. `--docs` brings those files into the same check. A path may be a directory (walked for `.md`) or a single file; anything already inside a plugin directory is skipped rather than scanned twice. Docs own no plugin, so the `{{ref:}}` plugin-boundary rule does not apply to them.
 
 References resolve against the union of this marketplace's local artifacts and the installed plugins. A malformed reference (not `<plugin>:<name>` shape) is always a violation and exits non-zero. An unresolved reference is classified by who owns its plugin: if the plugin belongs to **this marketplace** (the artifact is just missing), it's a violation and exits non-zero; if the plugin is **external** (vendor, installed, or unknown), it's a warning that never affects the exit code.
 

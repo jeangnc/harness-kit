@@ -8,10 +8,11 @@ import { z } from "zod";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import { commaSeparated, parsePositiveInt, parseTier } from "./args/index.js";
 import { compile } from "./compile.js";
 import { check, type ReferenceViolation, type Warning } from "./check/index.js";
 import { formatConsole, runEval, toJson } from "./eval/index.js";
-import { TIERS, type Tier } from "./eval/schema.js";
+import { TIERS } from "./eval/schema.js";
 import { initHarness } from "./init/index.js";
 import { formatUpdateError, install, uninstall, update } from "./install/index.js";
 import { parseInstallMode } from "./install/mode.js";
@@ -129,10 +130,7 @@ const initCmd = defineCommand({
     silent: { type: "boolean", default: false, description: "suppress success log" },
   },
   run: async ({ args }) => {
-    const vendors = args.vendors
-      .split(",")
-      .map((v) => v.trim())
-      .filter((v) => v.length > 0);
+    const vendors = commaSeparated(args.vendors);
     if (vendors.length === 0) throw new Error("--vendors must list at least one vendor");
     resolveVendors(vendors, builtinVendors());
     await initHarness({
@@ -151,10 +149,15 @@ const checkCmd = defineCommand({
   },
   args: {
     src: { type: "string", default: "./src", description: "source root" },
+    docs: {
+      type: "string",
+      description:
+        "comma-separated files or directories outside src/ to check for stale references",
+    },
     silent: { type: "boolean", default: false, description: "suppress non-error output" },
   },
   run: async ({ args }) => {
-    const result = await check({ srcRoot: args.src });
+    const result = await check({ srcRoot: args.src, docRoots: commaSeparated(args.docs) });
     if (!args.silent) {
       const breakdown = result.indexedSources.map((s) => `${s.source}=${s.skillCount}`).join(", ");
       const total = result.indexedSources.reduce((acc, s) => acc + s.skillCount, 0);
@@ -207,19 +210,6 @@ const lintCmd = defineCommand({
     if (result.errorCount > 0) process.exit(1);
   },
 });
-
-function parseTier(value: string): Tier {
-  if ((TIERS as readonly string[]).includes(value)) return value as Tier;
-  throw new Error(`Unknown tier "${value}". Valid: ${TIERS.join(", ")}`);
-}
-
-function parsePositiveInt(value: string, flag: string): number {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new Error(`--${flag} must be a positive integer, got "${value}"`);
-  }
-  return parsed;
-}
 
 const evalCmd = defineCommand({
   meta: {

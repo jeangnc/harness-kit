@@ -1,4 +1,5 @@
-import { readFile, readdir } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { pathExists } from "../fs.js";
@@ -40,6 +41,7 @@ import { closestMatch } from "./suggest.js";
 
 export interface CheckOptions {
   readonly srcRoot: string;
+  readonly docRoots?: readonly string[];
   readonly sources?: readonly PluginSource[];
 }
 
@@ -92,12 +94,14 @@ type BodyOrigin =
   | { readonly role: "command" }
   | { readonly role: "doc" };
 
+type RefBoundary = string | null;
+
 interface BodySource {
   readonly body: string;
   readonly bodyOffset: number;
   readonly fileText: string;
   readonly filePath: string;
-  readonly pluginDir: string;
+  readonly refBoundary: RefBoundary;
   readonly origin: BodyOrigin;
   readonly frontmatter: boolean;
 }
@@ -121,7 +125,7 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
   const haystacks = bypassHaystacks(kinds);
   const leafIndex = buildLeafIndex(haystacks);
 
-  const bodies = await collectBodySources(localAdapter);
+  const bodies = await collectBodySources(localAdapter, options.docRoots ?? []);
   const violations: ReferenceViolation[] = [];
   const warnings: Warning[] = [];
   for (const source of bodies) {
@@ -219,11 +223,13 @@ async function findRefBypasses(
 }
 
 function findEscapingRefs(source: BodySource): readonly ReferenceViolation[] {
+  const boundary = source.refBoundary;
+  if (boundary === null) return [];
   const violations: ReferenceViolation[] = [];
   const sourceDir = dirname(source.filePath);
   for (const token of parsePlaceholders(source.body)) {
     if (token.prefix !== "ref" || token.value === null) continue;
-    if (!escapesPlugin(resolve(sourceDir, token.value), source.pluginDir)) continue;
+    if (!escapesPlugin(resolve(sourceDir, token.value), boundary)) continue;
     const { line, column } = offsetToLineCol(source.fileText, source.bodyOffset + token.start);
     violations.push({
       kind: "unresolved",
@@ -237,25 +243,27 @@ function findEscapingRefs(source: BodySource): readonly ReferenceViolation[] {
   return violations;
 }
 
-function escapesPlugin(target: string, pluginDir: string): boolean {
-  const rel = relative(pluginDir, target);
+function escapesPlugin(target: string, boundary: string): boolean {
+  const rel = relative(boundary, target);
   return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 }
 
-async function collectBodySources(adapter: LayoutAdapter): Promise<readonly BodySource[]> {
+async function collectBodySources(
+  adapter: LayoutAdapter,
+  docRoots: readonly string[],
+): Promise<readonly BodySource[]> {
   const seen = new Set<string>();
   const out: BodySource[] = [];
-  const push = async (file: PluginBody): Promise<void> => {
+  const push = async (file: CollectedBody): Promise<void> => {
     const key = `${file.filePath}:${file.bodyOffset}:${file.body.length}`;
     if (seen.has(key)) return;
     seen.add(key);
-    const fileText = await readFile(file.filePath, "utf8");
     out.push({
       body: file.body,
       bodyOffset: file.bodyOffset,
-      fileText,
+      fileText: await readFile(file.filePath, "utf8"),
       filePath: file.filePath,
-      pluginDir: file.pluginDir,
+      refBoundary: file.refBoundary,
       origin: file.origin,
       frontmatter: file.frontmatter ?? false,
     });
@@ -267,20 +275,65 @@ async function collectBodySources(adapter: LayoutAdapter): Promise<readonly Body
     }
   }
 
+  for (const file of await collectDocBodies(docRoots, adapter)) {
+    await push(file);
+  }
+
   return out;
 }
 
-interface PluginBody {
+async function collectDocBodies(
+  docRoots: readonly string[],
+  adapter: LayoutAdapter,
+): Promise<readonly CollectedBody[]> {
+  const ownedByPlugin = pluginOwnershipTest(adapter);
+  const out: CollectedBody[] = [];
+  for (const root of docRoots) {
+    for await (const filePath of markdownUnder(resolve(root))) {
+      if (ownedByPlugin(filePath)) continue;
+      out.push({
+        filePath,
+        body: await readFile(filePath, "utf8"),
+        bodyOffset: 0,
+        refBoundary: null,
+        origin: { role: "doc" },
+      });
+    }
+  }
+  return out;
+}
+
+function pluginOwnershipTest(adapter: LayoutAdapter): (filePath: string) => boolean {
+  const pluginDirs = adapter.plugins.map((plugin) => `${resolve(plugin.pluginDir)}${sep}`);
+  return (filePath) => pluginDirs.some((dir) => filePath.startsWith(dir));
+}
+
+async function* markdownUnder(target: string): AsyncGenerator<string> {
+  const stats = await statOrNull(target);
+  if (stats === null) return;
+  if (stats.isDirectory()) yield* walkMarkdown(target);
+  else if (target.endsWith(".md")) yield target;
+}
+
+async function statOrNull(target: string): Promise<Stats | null> {
+  try {
+    return await stat(target);
+  } catch {
+    return null;
+  }
+}
+
+interface CollectedBody {
   readonly filePath: string;
   readonly body: string;
   readonly bodyOffset: number;
-  readonly pluginDir: string;
+  readonly refBoundary: RefBoundary;
   readonly origin: BodyOrigin;
   readonly frontmatter?: boolean;
 }
 
-async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly PluginBody[]> {
-  const out: PluginBody[] = [];
+async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly CollectedBody[]> {
+  const out: CollectedBody[] = [];
   if (await pathExists(plugin.skillsDir)) {
     for (const entry of await readdir(plugin.skillsDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
@@ -294,7 +347,13 @@ async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly Plu
     if (filePath.startsWith(plugin.skillsDir)) continue;
     const body = await readFile(filePath, "utf8");
     const role = filePath.startsWith(plugin.commandsDir) ? "command" : "doc";
-    out.push({ filePath, body, bodyOffset: 0, pluginDir: plugin.pluginDir, origin: { role } });
+    out.push({
+      filePath,
+      body,
+      bodyOffset: 0,
+      refBoundary: plugin.pluginDir,
+      origin: { role },
+    });
   }
   return out;
 }
@@ -310,8 +369,8 @@ async function* walkMarkdown(dir: string): AsyncGenerator<string> {
 
 async function loadSkillBodies(
   skillDir: string,
-  pluginDir: string,
-): Promise<readonly PluginBody[]> {
+  refBoundary: string,
+): Promise<readonly CollectedBody[]> {
   const loaded = await loadSkill(skillDir);
   if (!loaded.ok) {
     throw new Error(
@@ -320,7 +379,7 @@ async function loadSkillBodies(
   }
   const { skill, body, bodyFilePath, bodyOffset, skillDir: dir } = loaded.value;
   const origin = { role: "skill", ownLeaf: basename(dir) } as const;
-  const primary: PluginBody = { filePath: bodyFilePath, body, bodyOffset, pluginDir, origin };
+  const primary: CollectedBody = { filePath: bodyFilePath, body, bodyOffset, refBoundary, origin };
   const declared = skill.companions ?? [];
   const present = await Promise.all(declared.map(async (c) => pathExists(join(dir, c.file))));
   const missing = checkCompanionFiles(
@@ -331,13 +390,13 @@ async function loadSkillBodies(
     throw new Error(`failed to load skill at ${dir}:\n  - ${missing.join("\n  - ")}`);
   }
   const companions = await Promise.all(
-    declared.map(async (companion): Promise<PluginBody> => {
+    declared.map(async (companion): Promise<CollectedBody> => {
       const filePath = join(dir, companion.file);
       return {
         filePath,
         body: await readFile(filePath, "utf8"),
         bodyOffset: 0,
-        pluginDir,
+        refBoundary,
         origin,
       };
     }),
@@ -349,7 +408,7 @@ async function loadSkillBodies(
     loaded.value.skillFilePath,
     [skill.description, ...declared.map((c) => c.summary)],
     origin,
-    pluginDir,
+    refBoundary,
   );
   return [primary, ...companions, ...frontmatter];
 }
@@ -359,9 +418,9 @@ function frontmatterBodies(
   skillFilePath: string,
   values: readonly string[],
   origin: BodyOrigin,
-  pluginDir: string,
-): readonly PluginBody[] {
-  const bodies: PluginBody[] = [];
+  refBoundary: string,
+): readonly CollectedBody[] {
+  const bodies: CollectedBody[] = [];
   let cursor = 0;
   for (const value of values) {
     const at = skillText.indexOf(value, cursor);
@@ -371,7 +430,7 @@ function frontmatterBodies(
       filePath: skillFilePath,
       body: value,
       bodyOffset: at,
-      pluginDir,
+      refBoundary,
       origin,
       frontmatter: true,
     });
