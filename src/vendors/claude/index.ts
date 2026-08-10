@@ -8,6 +8,7 @@ import { errnoCode, pathExists, readdirOrEmpty } from "../../fs.js";
 import {
   patchInstalledEntries,
   readInstalledPlugins,
+  removeInstalledEntries,
   writeInstalledPlugins,
 } from "./installedPlugins.js";
 import type { InstalledPlugins } from "./installedPlugins.js";
@@ -136,11 +137,7 @@ export function makeClaudeVendor(home: string): Vendor {
     },
     async uninstall(ctx: VendorInstallContext): Promise<void> {
       for (const plugin of ctx.plugins) {
-        await runIgnoreFailure(ctx.run, "claude", [
-          "plugin",
-          "uninstall",
-          pluginKey(plugin.name, ctx.marketplace),
-        ]);
+        await uninstallOne(ctx, plugin.name);
         ctx.log(`[claude] uninstalled ${plugin.name}`);
       }
       await runIgnoreFailure(ctx.run, "claude", [
@@ -151,6 +148,17 @@ export function makeClaudeVendor(home: string): Vendor {
       ]);
     },
     partitionPlugins: partitionByEnabled,
+    async pruneStale(ctx: VendorInstallContext, names: readonly string[]): Promise<void> {
+      for (const name of names) {
+        await uninstallOne(ctx, name);
+        const key = pluginKey(name, ctx.marketplace);
+        await writeInstalledPlugins(
+          home,
+          removeInstalledEntries(await readInstalledPlugins(home), [key]),
+        );
+        await rm(join(cacheDir(home, ctx.marketplace), name), { recursive: true, force: true });
+      }
+    },
     async isInstalled(ctx: VendorInstallContext): Promise<boolean> {
       const cached = await readdirOrEmpty(cacheDir(home, ctx.marketplace));
       return cached.length > 0;
@@ -173,6 +181,14 @@ export function makeClaudeVendor(home: string): Vendor {
       return versions;
     },
   };
+}
+
+async function uninstallOne(ctx: VendorInstallContext, name: string): Promise<void> {
+  await runIgnoreFailure(ctx.run, "claude", [
+    "plugin",
+    "uninstall",
+    pluginKey(name, ctx.marketplace),
+  ]);
 }
 
 async function refreshPlugins(home: string, ctx: VendorInstallContext, now: string): Promise<void> {

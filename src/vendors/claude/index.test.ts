@@ -973,3 +973,121 @@ test("claudeVendor.partitionPlugins treats a plugin disabled under a different m
     assert.equal(result.disabled.length, 0);
   });
 });
+
+function seedInstalled(
+  home: string,
+  marketplace: string,
+  name: string,
+  version: string,
+  options: { keepExisting?: boolean } = {},
+): void {
+  const cached = join(home, "plugins/cache", marketplace, name, version, ".claude-plugin");
+  mkdirSync(cached, { recursive: true });
+  writeFileSync(join(cached, "plugin.json"), JSON.stringify({ name, version }));
+  const registryDir = join(home, "plugins");
+  mkdirSync(registryDir, { recursive: true });
+  const registryPath = join(registryDir, "installed_plugins.json");
+  const existing =
+    options.keepExisting === true
+      ? (JSON.parse(readFileSync(registryPath, "utf8")) as { plugins: Record<string, unknown> })
+          .plugins
+      : {};
+  const installPath = join(home, "plugins/cache", marketplace, name, version);
+  writeFileSync(
+    registryPath,
+    JSON.stringify({
+      version: 2,
+      plugins: {
+        ...existing,
+        [`${name}@${marketplace}`]: [
+          { scope: "user", installPath, version },
+          { scope: "local", projectPath: "/repo", installPath, version },
+        ],
+      },
+    }),
+  );
+}
+
+test("claudeVendor.pruneStale removes the cache dir and every registry scope entry", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-prunestale-"));
+  try {
+    seedInstalled(home, "test-market", "legacy", "0.9.0");
+    const vendor = makeClaudeVendor(home);
+    const { run, calls } = recordingRunner();
+
+    await vendor.pruneStale(ctx({ run, marketplace: "test-market" }), ["legacy"]);
+
+    assert.equal(
+      existsSync(join(home, "plugins/cache/test-market/legacy")),
+      false,
+      "the cache dir is gone",
+    );
+    const registry = JSON.parse(
+      readFileSync(join(home, "plugins/installed_plugins.json"), "utf8"),
+    ) as { plugins: Record<string, unknown> };
+    assert.deepEqual(Object.keys(registry.plugins), [], "every scope entry is gone");
+    assert.deepEqual(calls[0], {
+      cmd: "claude",
+      args: ["plugin", "uninstall", "legacy@test-market"],
+    });
+    assert.deepEqual(
+      await vendor.installedVersions(ctx({ run, marketplace: "test-market" })),
+      new Map(),
+      "the pruned plugin can never be reported again",
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("claudeVendor.pruneStale spares a plugin it was not asked to remove", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-prunespare-"));
+  try {
+    seedInstalled(home, "test-market", "keeper", "1.0.0");
+    const vendor = makeClaudeVendor(home);
+    const { run } = recordingRunner();
+
+    await vendor.pruneStale(ctx({ run, marketplace: "test-market" }), []);
+
+    assert.deepEqual(
+      await vendor.installedVersions(ctx({ run, marketplace: "test-market" })),
+      new Map([["keeper", "1.0.0"]]),
+      "an empty stale set removes nothing",
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("claudeVendor.pruneStale leaves no plugin half-removed when a later removal fails", async () => {
+  const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-pruneorder-"));
+  try {
+    seedInstalled(home, "test-market", "first", "0.9.0");
+    seedInstalled(home, "test-market", "second", "0.8.0", { keepExisting: true });
+    const vendor = makeClaudeVendor(home);
+    const { run } = recordingRunner();
+    const corruptRegistryAfterFirst: CommandRunner = async (cmd, args) => {
+      await run(cmd, args);
+      if (args.includes("second@test-market")) {
+        writeFileSync(join(home, "plugins/installed_plugins.json"), "{ not json");
+      }
+    };
+
+    await assert.rejects(
+      async () =>
+        vendor.pruneStale(ctx({ run: corruptRegistryAfterFirst, marketplace: "test-market" }), [
+          "first",
+          "second",
+        ]),
+      "the failure surfaces rather than passing silently",
+    );
+
+    assert.deepEqual(
+      await vendor.installedVersions(ctx({ marketplace: "test-market" })),
+      new Map([["second", "0.8.0"]]),
+      "the failed plugin keeps its cache dir, so the next update still reports it",
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

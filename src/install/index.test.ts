@@ -23,14 +23,20 @@ function recordingRunner(): { run: CommandRunner; calls: CommandCall[] } {
   };
 }
 
+interface PruneCall {
+  readonly ctx: VendorInstallContext;
+  readonly names: readonly string[];
+}
+
 interface VendorRecord {
   readonly installs: VendorInstallContext[];
   readonly refreshes: VendorInstallContext[];
   readonly uninstalls: VendorInstallContext[];
+  readonly prunes: PruneCall[];
 }
 
 function emptyRecord(): VendorRecord {
-  return { installs: [], refreshes: [], uninstalls: [] };
+  return { installs: [], refreshes: [], uninstalls: [], prunes: [] };
 }
 
 function makeRecordingVendor(
@@ -61,6 +67,9 @@ function makeRecordingVendor(
     partitionPlugins: (ctx) => ({ enabled: ctx.plugins, disabled: [] }),
     isInstalled: async () => true,
     installedVersions: async () => new Map(),
+    pruneStale: async (ctx, names) => {
+      record.prunes.push({ ctx, names });
+    },
     ...extra,
   };
 }
@@ -619,6 +628,114 @@ test("update reports a plugin that is no longer shipped as removed", async () =>
       );
 
       assert.match(logs.join("\n"), /removed legacy \(was 0\.9\.0\)/);
+    },
+  );
+});
+
+test("update, without --prune, points at --prune instead of removing the stale plugin", async () => {
+  await withInstallFixture(
+    {
+      marketplaceName: "shop",
+      plugins: [{ name: "alpha", vendor: "claude", version: "1.0.0" }],
+    },
+    async ({ distRoot, sandbox }) => {
+      const record = emptyRecord();
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
+        installedVersions: async () => new Map([["legacy", "0.9.0"]]),
+      });
+      const logs: string[] = [];
+
+      await updateWithRunner(
+        { distRoot, vendors: [claude], log: (m) => logs.push(m) },
+        recordingRunner().run,
+      );
+
+      assert.equal(record.prunes.length, 0, "nothing is removed without the flag");
+      assert.match(logs.join("\n"), /--prune/, "the report names the flag that would remove it");
+    },
+  );
+});
+
+test("update --prune removes a plugin that is no longer shipped", async () => {
+  await withInstallFixture(
+    {
+      marketplaceName: "shop",
+      plugins: [{ name: "alpha", vendor: "claude", version: "1.0.0" }],
+    },
+    async ({ distRoot, sandbox }) => {
+      const record = emptyRecord();
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
+        installedVersions: async () =>
+          new Map([
+            ["alpha", "1.0.0"],
+            ["legacy", "0.9.0"],
+          ]),
+      });
+      const logs: string[] = [];
+
+      await updateWithRunner(
+        { distRoot, vendors: [claude], prune: true, log: (m) => logs.push(m) },
+        recordingRunner().run,
+      );
+
+      assert.deepEqual(
+        record.prunes.map((p) => p.names),
+        [["legacy"]],
+        "only the unshipped plugin is pruned",
+      );
+      assert.match(logs.join("\n"), /pruned legacy \(was 0\.9\.0\)/);
+    },
+  );
+});
+
+test("update --prune leaves a shipped plugin alone", async () => {
+  await withInstallFixture(
+    {
+      marketplaceName: "shop",
+      plugins: [{ name: "alpha", vendor: "claude", version: "1.0.0" }],
+    },
+    async ({ distRoot, sandbox }) => {
+      const record = emptyRecord();
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
+        installedVersions: async () => new Map([["alpha", "1.0.0"]]),
+      });
+
+      await updateWithRunner({ distRoot, vendors: [claude], prune: true }, recordingRunner().run);
+
+      assert.equal(record.prunes.length, 0, "vendor.pruneStale is not called with nothing stale");
+    },
+  );
+});
+
+test("update --prune --dry-run reports the prune without performing it", async () => {
+  await withInstallFixture(
+    {
+      marketplaceName: "shop",
+      plugins: [{ name: "alpha", vendor: "claude", version: "1.0.0" }],
+    },
+    async ({ distRoot, sandbox }) => {
+      const record = emptyRecord();
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
+        installedVersions: async () => new Map([["legacy", "0.9.0"]]),
+      });
+      const logs: string[] = [];
+
+      await updateWithRunner(
+        { distRoot, vendors: [claude], prune: true, dryRun: true, log: (m) => logs.push(m) },
+        recordingRunner().run,
+      );
+
+      assert.equal(record.prunes.length, 0, "a dry run performs no removal");
+      assert.match(
+        logs.join("\n"),
+        /would prune legacy \(was 0\.9\.0\)/,
+        "a dry run states the intent, never a completed removal",
+      );
+      assert.doesNotMatch(
+        logs.join("\n"),
+        /\bpruned legacy\b/,
+        "a dry run never claims the removal happened",
+      );
     },
   );
 });

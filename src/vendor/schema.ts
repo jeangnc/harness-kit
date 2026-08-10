@@ -57,4 +57,5 @@ export interface Vendor {
   readonly partitionPlugins: (ctx: VendorInstallContext) => PluginPartition;
   readonly isInstalled: (ctx: VendorInstallContext) => Promise<boolean>;
   readonly installedVersions: (ctx: VendorInstallContext) => Promise<ReadonlyMap<string, string>>;
+  readonly pruneStale: (ctx: VendorInstallContext, names: readonly string[]) => Promise<void>;
 }

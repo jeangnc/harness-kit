@@ -93,6 +93,11 @@ const updateCmd = defineCommand({
   args: {
     ...installArgs,
     mode: { type: "string", default: "local", description: "install source: local | remote" },
+    prune: {
+      type: "boolean",
+      default: false,
+      description: "remove installed plugins that are no longer shipped",
+    },
   },
   run: async ({ args }) => {
     const mode = parseInstallMode(args.mode);
@@ -104,6 +109,7 @@ const updateCmd = defineCommand({
       mode,
       silent: args.silent,
       dryRun: args["dry-run"],
+      prune: args.prune,
     });
     if (!result.ok) {
       console.error(formatUpdateError(result.error));

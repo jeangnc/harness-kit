@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   patchInstalledEntries,
   readInstalledPlugins,
+  removeInstalledEntries,
   writeInstalledPlugins,
 } from "./installedPlugins.js";
 
@@ -96,6 +97,43 @@ test("patchInstalledEntries leaves the registry untouched when the key is absent
     lastUpdated: "2026-06-17T00:00:00.000Z",
   });
   assert.deepEqual(patched, registry);
+});
+
+test("removeInstalledEntries drops every scope entry for the removed key", () => {
+  const registry = {
+    version: 2 as const,
+    plugins: {
+      "gone@market": [
+        { scope: "user" as const, installPath: "/c/market/gone/1.0.0", version: "1.0.0" },
+        {
+          scope: "local" as const,
+          projectPath: "/repo",
+          installPath: "/c/market/gone/1.0.0",
+          version: "1.0.0",
+        },
+      ],
+      "kept@market": [
+        { scope: "user" as const, installPath: "/c/market/kept/2.0.0", version: "2.0.0" },
+      ],
+    },
+  };
+
+  const pruned = removeInstalledEntries(registry, ["gone@market"]);
+
+  assert.deepEqual(Object.keys(pruned.plugins), ["kept@market"]);
+});
+
+test("removeInstalledEntries leaves the registry untouched when the key is absent", () => {
+  const registry = {
+    version: 2 as const,
+    plugins: {
+      "kept@market": [
+        { scope: "user" as const, installPath: "/c/market/kept/2.0.0", version: "2.0.0" },
+      ],
+    },
+  };
+
+  assert.deepEqual(removeInstalledEntries(registry, ["absent@market"]), registry);
 });
 
 test("readInstalledPlugins preserves unknown top-level keys claude may add", async () => {

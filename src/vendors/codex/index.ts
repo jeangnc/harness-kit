@@ -58,6 +58,11 @@ export function makeCodexVendor(home: string): Vendor {
       ctx.log(`[codex] removed ${ctx.marketplace} cache`);
     },
     partitionPlugins: defaultPartition,
+    async pruneStale(ctx: VendorInstallContext, names: readonly string[]): Promise<void> {
+      for (const name of names) {
+        await rm(join(cacheDir(home, ctx.marketplace), name), { recursive: true, force: true });
+      }
+    },
     async isInstalled(ctx: VendorInstallContext): Promise<boolean> {
       const entries = await readdirOrEmpty(cacheDir(home, ctx.marketplace));
       return entries.length > 0;

@@ -212,3 +212,34 @@ test("codexVendor.uninstall removes marketplace cache + calls codex CLI", async 
     assert.deepEqual(cmds, ["codex plugin marketplace remove test-market"]);
   });
 });
+
+test("codexVendor.pruneStale removes only the named plugin's cache dir", async () => {
+  await withSandbox(async ({ distRoot, codexHome }) => {
+    const cacheRoot = join(codexHome, "plugins/cache/test-market");
+    for (const { name, version } of [
+      { name: "legacy", version: "0.9.0" },
+      { name: "keeper", version: "1.0.0" },
+    ]) {
+      mkdirSync(join(cacheRoot, name, version), { recursive: true });
+    }
+    const vendor = makeCodexVendor(codexHome);
+    const { run } = recordingRunner();
+    const base: VendorInstallContext = {
+      distRoot,
+      marketplace: "test-market",
+      plugins: [],
+      mode: "local",
+      run,
+      log: () => undefined,
+    };
+
+    await vendor.pruneStale(base, ["legacy"]);
+
+    assert.equal(existsSync(join(cacheRoot, "legacy")), false, "the stale plugin is gone");
+    assert.deepEqual(
+      await vendor.installedVersions(base),
+      new Map([["keeper", "1.0.0"]]),
+      "the shipped plugin is untouched",
+    );
+  });
+});

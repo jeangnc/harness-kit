@@ -14,6 +14,7 @@ export interface InstallOptions {
   readonly mode?: InstallMode;
   readonly silent?: boolean;
   readonly dryRun?: boolean;
+  readonly prune?: boolean;
   readonly log?: (msg: string) => void;
 }
 
@@ -34,6 +35,8 @@ export type PluginChange =
   | { readonly kind: "changed"; readonly name: string; readonly from: string; readonly to: string }
   | { readonly kind: "unchanged"; readonly name: string; readonly at: string }
   | { readonly kind: "removed"; readonly name: string; readonly from: string };
+
+type StaleDisposition = "reported" | "pruned" | "would-prune";
 
 export interface UpdateReport {
   readonly changes: readonly PluginChange[];
@@ -97,13 +100,23 @@ export async function updateWithRunner(
   const refreshable = candidates.filter((c) => c.installed);
   if (refreshable.length === 0) return err({ kind: "not-installed" });
 
+  const prune = options.prune ?? false;
+  const disposition: StaleDisposition = !prune
+    ? "reported"
+    : options.dryRun
+      ? "would-prune"
+      : "pruned";
   const changes: PluginChange[] = [];
   for (const { vendor, plugins, vendorCtx } of refreshable) {
     const before = await vendor.installedVersions(vendorCtx);
-    changes.push(...diffPlugins({ before, shipped: plugins }));
-    if (!options.dryRun) await vendor.refresh(vendorCtx);
+    const vendorChanges = diffPlugins({ before, shipped: plugins });
+    changes.push(...vendorChanges);
+    if (options.dryRun) continue;
+    await vendor.refresh(vendorCtx);
+    const stale = staleNames(vendorChanges);
+    if (prune && stale.length > 0) await vendor.pruneStale(vendorCtx, stale);
   }
-  for (const change of changes) ctx.log(formatPluginChange(change));
+  for (const change of changes) ctx.log(formatPluginChange(change, disposition));
   return ok({ changes });
 }
 
@@ -126,7 +139,18 @@ function diffPlugins({ before, shipped }: DiffInput): readonly PluginChange[] {
   return changes;
 }
 
-function formatPluginChange(change: PluginChange): string {
+function staleNames(changes: readonly PluginChange[]): readonly string[] {
+  return changes.filter((change) => change.kind === "removed").map((change) => change.name);
+}
+
+const STALE_MESSAGES = {
+  reported: (name: string, from: string) =>
+    `[update] removed ${name} (was ${from}) — run \`harness update --prune\` to remove it`,
+  pruned: (name: string, from: string) => `[update] pruned ${name} (was ${from})`,
+  "would-prune": (name: string, from: string) => `[update] would prune ${name} (was ${from})`,
+} as const satisfies Record<StaleDisposition, (name: string, from: string) => string>;
+
+function formatPluginChange(change: PluginChange, stale: StaleDisposition): string {
   switch (change.kind) {
     case "added":
       return `[update] added ${change.name} ${change.to}`;
@@ -135,7 +159,7 @@ function formatPluginChange(change: PluginChange): string {
     case "unchanged":
       return `[update] ${change.name} unchanged (${change.at})`;
     case "removed":
-      return `[update] removed ${change.name} (was ${change.from})`;
+      return STALE_MESSAGES[stale](change.name, change.from);
   }
 }
 

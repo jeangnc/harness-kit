@@ -19,6 +19,7 @@ export function makeFakeVendor(name: string, overrides: Partial<Vendor> = {}): V
     partitionPlugins: (ctx) => ({ enabled: ctx.plugins, disabled: [] }),
     isInstalled: async () => true,
     installedVersions: async () => new Map(),
+    pruneStale: async () => undefined,
     ...overrides,
   };
 }

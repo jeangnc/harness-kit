@@ -73,7 +73,13 @@ Same flags as `install`. Reverses each vendor's `install` hook.
 
 ## `harness update`
 
-Refreshes plugins for an **already-installed** harness. Same flags as `install`. Skips the config-link bootstrap (step 1 of install), so a symlinked `settings.json` and its `enabledPlugins` are left untouched, and runs only the per-vendor plugin refresh. Refuses with an error if no vendor reports an existing install, and reports a per-plugin version diff (`added` / `→` / `unchanged` / `removed`) against the versions currently cached.
+Refreshes plugins for an **already-installed** harness. Same flags as `install`, plus `--prune`. Skips the config-link bootstrap (step 1 of install), so a symlinked `settings.json` and its `enabledPlugins` are left untouched, and runs only the per-vendor plugin refresh. Refuses with an error if no vendor reports an existing install, and reports a per-plugin version diff (`added` / `→` / `unchanged` / `removed`) against the versions currently cached.
+
+- `--prune` — remove plugins that are still installed but no longer shipped from `--dist`.
+
+A plugin deleted from source stays in the vendor's cache, and `update` reads that cache to build the diff — so it reports `removed` on every run and nothing acts on it. `--prune` is what acts: it uninstalls the plugin, drops its registry entry (all scopes), then deletes its cache directory. Without the flag the report names it and points here, because removal is destructive and a plugin absent from *this* dist tree may still be shipped by another. With `--dry-run` the line reads `would prune` and nothing is touched.
+
+The registry entry goes before the cache directory on purpose. Detection reads the cache, so a removal that fails midway leaves the plugin still cached and therefore still reported on the next run — never a registry orphan that no `update` can see.
 
 ## `harness eval`
 

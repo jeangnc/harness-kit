@@ -67,6 +67,17 @@ export function patchInstalledEntries(
   return { ...registry, plugins: { ...registry.plugins, [key]: patched } };
 }
 
+export function removeInstalledEntries(
+  registry: InstalledPlugins,
+  keys: readonly string[],
+): InstalledPlugins {
+  const dropped = new Set(keys);
+  const plugins = Object.fromEntries(
+    Object.entries(registry.plugins).filter(([key]) => !dropped.has(key)),
+  );
+  return { ...registry, plugins };
+}
+
 export async function writeInstalledPlugins(
   home: string,
   registry: InstalledPlugins,
