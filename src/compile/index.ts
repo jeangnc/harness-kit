@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { compileTree, type WarningSink } from "./emit.js";
-import { checkHookRootReads } from "./hooks.js";
+import { checkHookRootReads, checkHookSkillMirror } from "./hooks.js";
 import { throwInvariantViolations } from "./discovery.js";
 import { pathExists } from "../fs.js";
 import { PluginManifestSchema } from "../install/discovery.js";
@@ -52,6 +52,7 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
     (await loadInstalledIndex(options.sources ?? defaultSources(vendors)));
   checkHookRequires(adapter, localIds);
   await checkHookRootReads(adapter);
+  await checkHookSkillMirror(adapter);
 
   const skipRelPaths: ReadonlySet<string> = new Set(vendors.map((v) => v.pluginManifestPath));
   for (const vendor of vendors) {

@@ -73,6 +73,79 @@ async function withHookFixture<T>(
 
 const ROOT_ASSIGN = `root="\${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set}"`;
 
+async function withLangSkillsFixture<T>(
+  hookScript: string,
+  langSkills: string,
+  fn: (srcRoot: string, distRoot: string) => Promise<T>,
+): Promise<T> {
+  const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_mirror_"));
+  const srcRoot = join(sandbox, "src");
+  const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
+  const pluginDir = join(srcRoot, "plugins/foo");
+  mkdirSync(join(pluginDir, "hooks"), { recursive: true });
+  mkdirSync(join(pluginDir, "shared"), { recursive: true });
+  writeFileSync(join(pluginDir, "hooks/require-skill.sh"), hookScript);
+  writeFileSync(join(pluginDir, "shared/lang-skills.md"), langSkills);
+  ensurePluginInMarketplace(srcRoot, "foo");
+  return fn(srcRoot, distRoot).finally(() => {
+    rmSync(sandbox, { recursive: true, force: true });
+    rmSync(distRoot, { recursive: true, force: true });
+  });
+}
+
+const LANG_SKILLS_TABLE = `| File pattern | Skills in force |
+| --- | --- |
+| \`*.rb\` | {{skill:foo:ruby}} |
+| \`*.tsx\` | {{skill:foo:react}} |
+`;
+
+test("compile fails when a hook names a skill that shared/lang-skills.md does not resolve", async () => {
+  const script = `#!/usr/bin/env bash
+skills="foo:react-components"
+`;
+  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (srcRoot, distRoot) => {
+    await assert.rejects(
+      compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+      /foo:react-components/,
+    );
+  });
+});
+
+test("compile accepts a hook whose skill names all appear in shared/lang-skills.md", async () => {
+  const script = `#!/usr/bin/env bash
+case "$rule_key" in
+  ruby)  skills="foo:ruby" ;;
+  react) skills="foo:react" ;;
+esac
+`;
+  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (srcRoot, distRoot) => {
+    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
+  });
+});
+
+test("compile ignores a colon-shaped literal whose prefix is not a plugin in the marketplace", async () => {
+  const script = `#!/usr/bin/env bash
+url="https://example.com/x"
+note="unrelated:token"
+skills="foo:ruby"
+`;
+  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (srcRoot, distRoot) => {
+    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
+  });
+});
+
+test("compile skips the skill-mirror check for a plugin with no shared/lang-skills.md", async () => {
+  const script = `#!/usr/bin/env bash
+skills="foo:not-in-any-table"
+`;
+  await withHookFixture(script, async (srcRoot, distRoot) => {
+    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
+  });
+});
+
 test("compile fails when a hook reads $root/.fragments/foo.md — a dot-segment path the compiler never emits to dist", async () => {
   const script = `#!/usr/bin/env bash
 set -euo pipefail
