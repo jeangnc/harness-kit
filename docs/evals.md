@@ -59,8 +59,8 @@ its own auth — `ANTHROPIC_API_KEY` is scrubbed from the subprocess env, not re
 spawned session is pinned to `--permission-mode bypassPermissions` so it runs to completion
 unattended regardless of the launcher's mode (a session in plan mode would otherwise write
 plan files instead of the code under test). The judge model is separate from the session
-model and defaults to `claude-haiku-4-5`:
+model and defaults to the `opus` tier alias — judging a rubric is judgment work, and a pinned id rots:
 
 ```sh
-harness eval --tier solving --model claude-opus-4-8 --judge-model claude-sonnet-4-5
+harness eval --tier solving --model opus --judge-model fable
 ```

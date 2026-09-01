@@ -250,7 +250,7 @@ const evalCmd = defineCommand({
     },
     "judge-model": {
       type: "string",
-      description: "model for the solving-tier LLM judge (default: claude-haiku-4-5)",
+      description: "model for the solving-tier LLM judge (default: opus)",
     },
     "solving-timeout": {
       type: "string",

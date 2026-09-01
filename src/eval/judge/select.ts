@@ -2,7 +2,7 @@ import { createClaudeCliRunner } from "./claude-cli.js";
 import { createSubagentJudge, VERDICT_SCHEMA } from "./subagent.js";
 import type { Judge } from "./verdict.js";
 
-export const DEFAULT_JUDGE_MODEL = "claude-haiku-4-5";
+export const DEFAULT_JUDGE_MODEL = "opus";
 
 export interface SelectJudgeOptions {
   readonly model: string;

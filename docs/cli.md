@@ -93,7 +93,7 @@ Runs routing (*did the right skill fire?*) and solving (*graded behavior*) evals
 - `--runs <n>` — runs per case (overrides the per-case default).
 - `--concurrency <n>` (default `1`) — max concurrent sessions. Parallel sessions interfere with routing detection, so the default is serial.
 - `--model <model>` — model for the `claude -p` sessions (default: the user's configured model).
-- `--judge-model <model>` (default `claude-haiku-4-5`) — model for the solving-tier LLM judge.
+- `--judge-model <model>` (default `opus`) — model for the solving-tier LLM judge.
 - `--solving-timeout <seconds>` (default `300`) — per-case timeout for solving sessions.
 - `--json <path>` — write machine-readable results to this path.
 

@@ -9,8 +9,8 @@ test("defaults to the subagent judge so no API key is required", () => {
   assert.equal(typeof judge, "function");
 });
 
-test("defaults the judge model to a cheap tier", () => {
-  assert.match(DEFAULT_JUDGE_MODEL, /haiku/);
+test("defaults the judge model to a tier alias, never a pinned id", () => {
+  assert.equal(DEFAULT_JUDGE_MODEL, "opus");
 });
 
 test("uses an explicitly provided judge verbatim", () => {
