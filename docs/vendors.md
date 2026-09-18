@@ -17,11 +17,17 @@ interface Vendor {
   readonly vendorOutDir: (outRoot: string) => string;
   readonly pluginOutDir: (outRoot: string, pluginName: string) => string;
   readonly configsOutDir: (outRoot: string) => string;
+  readonly configPlacement: (destRel: string) => ConfigPlacement;
   readonly aliases?: (linkedFile: LinkedFile) => readonly string[];
   readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;
   readonly emitMarketplaceManifest: (ctx: VendorMarketplaceContext) => Promise<void>;
   readonly install: (ctx: VendorInstallContext) => Promise<void>;
   readonly uninstall: (ctx: VendorInstallContext) => Promise<void>;
+}
+
+interface ConfigPlacement {
+  readonly strategy: "link" | "merge";
+  readonly destAbs: string;
 }
 
 interface LinkedFile {
@@ -60,6 +66,7 @@ interface VendorEmitContext {
 - **`vendorOutDir(outRoot)`** — root of this vendor's dist subtree (typically `<outRoot>/<name>`).
 - **`pluginOutDir(outRoot, pluginName)`** — destination for a compiled plugin (typically `<outRoot>/<name>/plugins/<pluginName>`).
 - **`configsOutDir(outRoot)`** — destination for vendor-specific configs (typically `<outRoot>/<name>/configs`).
+- **`configPlacement`** — where a config file lands and how. `link` symlinks it into place; `merge` merges a TOML file's keys into an existing file the vendor app also writes. Codex merges `config.toml`; everything else links.
 - **`aliases`** _(optional)_ — given a linked config file, return additional symlink destinations. Claude uses this to add a `CLAUDE.md` alias whenever an `AGENTS.md` config is linked.
 - **`emitPluginManifest`** — write the per-vendor manifest into `ctx.pluginOutDir` during compile. The shared `Plugin` shape is provided; the vendor decides how (or whether) to translate it.
 - **`emitMarketplaceManifest`** — write the per-vendor marketplace manifest. Relative `source` values are rewritten to `./plugins/<name>` so they resolve under the new dist layout.

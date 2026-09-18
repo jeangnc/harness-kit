@@ -62,6 +62,22 @@ test("codexVendor declares no aliases hook", () => {
   assert.equal(v.aliases, undefined);
 });
 
+test("codexVendor merges config.toml into its home", () => {
+  const v = makeCodexVendor("/home/test/.codex");
+  assert.deepEqual(v.configPlacement("config.toml"), {
+    strategy: "merge",
+    destAbs: "/home/test/.codex/config.toml",
+  });
+});
+
+test("codexVendor links every other config file into its home", () => {
+  const v = makeCodexVendor("/home/test/.codex");
+  assert.deepEqual(v.configPlacement("AGENTS.md"), {
+    strategy: "link",
+    destAbs: "/home/test/.codex/AGENTS.md",
+  });
+});
+
 test("codexVendor.install primes cache + registers marketplace", async () => {
   await withSandbox(async ({ distRoot, codexHome }) => {
     const alphaPath = makePluginDir(distRoot, "alpha", "alpha-content");

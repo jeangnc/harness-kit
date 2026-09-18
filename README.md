@@ -38,7 +38,7 @@ Created by `harness init`. Read automatically by `compile`, `install`, and `unin
 A vendor is a named target with a home directory, a per-vendor manifest path, an `emitPluginManifest` hook, `install`/`uninstall` hooks, and an optional `aliases` hook for fan-out symlink destinations. Built-in:
 
 - **claude** — registers plugins via `claude plugin install`; creates a `CLAUDE.md` symlink whenever an `AGENTS.md` config file is linked.
-- **codex** — primes the local cache by copying compiled plugins, then runs `codex plugin marketplace add`.
+- **codex** — primes the local cache by copying compiled plugins, then runs `codex plugin marketplace add`; merges `config.toml` into `~/.codex/config.toml` instead of linking it, so the app's own state never lands in the repo.
 
 Writing your own vendor: see [docs/vendors.md](./docs/vendors.md).
 

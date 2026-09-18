@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { applyConfigLinks, formatPlannedLink, planConfigLinks } from "./links.js";
+import { applyConfigs, formatPlannedConfig, planConfigs } from "./links.js";
 import { discoverPluginsForVendor, readMarketplaceName } from "./discovery.js";
 import { type InstallMode } from "./mode.js";
 import { defaultRunner, type CommandRunner } from "./runner.js";
@@ -63,7 +63,12 @@ export async function installWithRunner(
     await runDryRun(ctx);
     return;
   }
-  await applyConfigLinks({ repoRoot: ctx.repoRoot, distRoot: ctx.distRoot, vendors: ctx.vendors });
+  await applyConfigs({
+    repoRoot: ctx.repoRoot,
+    distRoot: ctx.distRoot,
+    vendors: ctx.vendors,
+    log: ctx.log,
+  });
   for (const vendor of ctx.vendors) {
     const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);
     await vendor.install(buildVendorContext(ctx, plugins));
@@ -234,14 +239,14 @@ async function runUninstallDryRun(ctx: ResolvedContext): Promise<void> {
 }
 
 async function runDryRun(ctx: ResolvedContext): Promise<void> {
-  const plan = await planConfigLinks({
+  const plan = await planConfigs({
     repoRoot: ctx.repoRoot,
     distRoot: ctx.distRoot,
     vendors: ctx.vendors,
   });
   if (plan.length > 0) {
-    ctx.log("[dry-run] config links:");
-    for (const entry of plan) ctx.log(`  ${formatPlannedLink(entry, ctx.repoRoot)}`);
+    ctx.log("[dry-run] configs:");
+    for (const entry of plan) ctx.log(`  ${formatPlannedConfig(entry, ctx.repoRoot)}`);
   }
   for (const vendor of ctx.vendors) {
     const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);

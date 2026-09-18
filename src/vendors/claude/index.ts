@@ -94,6 +94,9 @@ export function makeClaudeVendor(home: string): Vendor {
     configsOutDir(outRoot) {
       return join(outRoot, VENDOR_DIR, "configs");
     },
+    configPlacement(destRel) {
+      return { strategy: "link", destAbs: join(home, destRel) };
+    },
     aliases(file: LinkedFile): readonly string[] {
       return file.basename === "AGENTS.md" ? [join(home, "CLAUDE.md")] : [];
     },

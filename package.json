@@ -71,6 +71,7 @@
     "citty": "^0.2.2",
     "js-yaml": "^4.1.1",
     "markdownlint-cli2": "^0.18.1",
+    "smol-toml": "^1.8.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

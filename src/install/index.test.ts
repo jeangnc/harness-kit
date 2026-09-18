@@ -53,6 +53,7 @@ function makeRecordingVendor(
     vendorOutDir: (outRoot) => join(outRoot, name),
     pluginOutDir: (outRoot, pluginName) => join(outRoot, name, "plugins", pluginName),
     configsOutDir: (outRoot) => join(outRoot, name, "configs"),
+    configPlacement: (destRel) => ({ strategy: "link", destAbs: join(home, destRel) }),
     emitPluginManifest: async () => undefined,
     emitMarketplaceManifest: async () => undefined,
     install: async (ctx) => {

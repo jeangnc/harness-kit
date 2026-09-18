@@ -16,7 +16,7 @@ A top-level `dist/configs.json` link manifest enumerates the symlinks `harness i
 
 `harness install` reads `harness.yaml`, then:
 
-1. Applies links from `dist/configs.json`. Existing symlinks are replaced. Regular files are renamed to `<dest>.backup` (incrementing to `.backup.2`, `.backup.3`, …) before the symlink is created. Orphan symlinks pointing back into the repo are swept before applying.
+1. Applies links from `dist/configs.json`. Existing symlinks are replaced. Regular files are renamed to `<dest>.backup` (incrementing to `.backup.2`, `.backup.3`, …) before the symlink is created. Orphan symlinks pointing back into the repo are swept before applying. A file the vendor places as `merge` (codex `config.toml`) is merged instead of linked: repo keys overwrite, every other key the app wrote is kept, and keys the repo stopped owning are removed via a ledger at `<home>/.harness-kit/<file>.owned.json`. A merge destination that is still a symlink into `dist/` is adopted as a real file.
 2. For each declared vendor, discovers compiled plugins under `dist/<vendor>/plugins/` and calls the vendor's `install` hook.
 
 `--mode` selects where Claude resolves plugins from: `local` (default) registers the freshly compiled `dist/claude/` tree as a local-scoped marketplace, so uncommitted builds install without publishing; `remote` pulls from the published marketplace. Codex is local-only and ignores the flag.

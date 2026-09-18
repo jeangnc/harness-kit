@@ -6,6 +6,7 @@ import { z } from "zod";
 import { formatZodIssues } from "../errors/index.js";
 import { errnoCode, pathExists, readdirOrEmpty } from "../fs.js";
 import { applyLink } from "../link/applier.js";
+import { applyMerge } from "../link/merger.js";
 import type { Vendor } from "../vendor/schema.js";
 
 const ConfigsManifestSchema = z.object({
@@ -19,22 +20,24 @@ const ConfigsManifestSchema = z.object({
   ),
 });
 
-export interface ApplyConfigLinksOptions {
+export interface PlanConfigsOptions {
   readonly repoRoot: string;
   readonly distRoot: string;
   readonly vendors: readonly Vendor[];
 }
 
-export interface PlannedLink {
+export interface ApplyConfigsOptions extends PlanConfigsOptions {
+  readonly log: (msg: string) => void;
+}
+
+export interface PlannedConfig {
   readonly srcAbs: string;
   readonly destAbs: string;
   readonly vendor: string;
-  readonly reason: "link" | "alias";
+  readonly reason: "link" | "alias" | "merge";
 }
 
-export async function planConfigLinks(
-  options: ApplyConfigLinksOptions,
-): Promise<readonly PlannedLink[]> {
+export async function planConfigs(options: PlanConfigsOptions): Promise<readonly PlannedConfig[]> {
   const manifestPath = join(options.distRoot, "configs.json");
   if (!(await pathExists(manifestPath))) return [];
   const raw = await readFile(manifestPath, "utf8");
@@ -45,14 +48,14 @@ export async function planConfigLinks(
     );
   }
   const vendorsByName = new Map(options.vendors.map((v) => [v.name, v]));
-  const plan: PlannedLink[] = [];
+  const plan: PlannedConfig[] = [];
   for (const link of parsed.data.links) {
     const srcAbs = join(options.distRoot, link.src);
     for (const vendorName of link.vendors) {
       const vendor = vendorsByName.get(vendorName);
       if (!vendor) continue;
-      const destAbs = join(vendor.home, link.destRel);
-      plan.push({ srcAbs, destAbs, vendor: vendor.name, reason: "link" });
+      const { strategy, destAbs } = vendor.configPlacement(link.destRel);
+      plan.push({ srcAbs, destAbs, vendor: vendor.name, reason: strategy });
       const aliasDests =
         vendor.aliases?.({
           srcAbs,
@@ -68,17 +71,28 @@ export async function planConfigLinks(
   return plan;
 }
 
-export async function applyConfigLinks(options: ApplyConfigLinksOptions): Promise<void> {
-  const plan = await planConfigLinks(options);
+export async function applyConfigs(options: ApplyConfigsOptions): Promise<void> {
+  const plan = await planConfigs(options);
   await sweepOrphanLinks(plan, options);
   for (const entry of plan) {
-    await applyLink({ srcAbs: entry.srcAbs, destAbs: entry.destAbs });
+    await applyPlannedConfig(entry, options);
   }
 }
 
+async function applyPlannedConfig(
+  entry: PlannedConfig,
+  options: ApplyConfigsOptions,
+): Promise<void> {
+  if (entry.reason === "merge") {
+    await applyMerge({ ...entry, managedRoot: options.distRoot, log: options.log });
+    return;
+  }
+  await applyLink(entry);
+}
+
 async function sweepOrphanLinks(
-  plan: readonly PlannedLink[],
-  options: ApplyConfigLinksOptions,
+  plan: readonly PlannedConfig[],
+  options: PlanConfigsOptions,
 ): Promise<void> {
   const managedRoot = options.distRoot + "/";
   const planned = new Set(plan.map((p) => p.destAbs));
@@ -111,8 +125,8 @@ async function readlinkOrNull(path: string): Promise<string | null> {
   }
 }
 
-export function formatPlannedLink(entry: PlannedLink, repoRoot: string): string {
+export function formatPlannedConfig(entry: PlannedConfig, repoRoot: string): string {
   const src = relative(repoRoot, entry.srcAbs);
-  const tag = entry.reason === "alias" ? " (alias)" : "";
+  const tag = entry.reason === "link" ? "" : ` (${entry.reason})`;
   return `[${entry.vendor}] ${src} → ${entry.destAbs}${tag}`;
 }

@@ -19,6 +19,7 @@ import type {
 const VENDOR_DIR = "codex";
 const PLUGIN_MANIFEST_REL = ".codex-plugin/plugin.json";
 const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.codex-plugin/marketplace.json`;
+const CONFIG_FILE = "config.toml";
 
 export function makeCodexVendor(home: string): Vendor {
   return {
@@ -34,6 +35,9 @@ export function makeCodexVendor(home: string): Vendor {
     },
     configsOutDir(outRoot) {
       return join(outRoot, VENDOR_DIR, "configs");
+    },
+    configPlacement(destRel) {
+      return { strategy: destRel === CONFIG_FILE ? "merge" : "link", destAbs: join(home, destRel) };
     },
     async emitPluginManifest(ctx: VendorEmitContext): Promise<void> {
       await defaultEmitPluginManifest(PLUGIN_MANIFEST_REL, ctx);
