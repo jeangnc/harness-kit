@@ -13,6 +13,12 @@ export interface CaseScore {
   readonly histogram: ReadonlyMap<string, number>;
 }
 
+export interface ErroredRun {
+  readonly error: string;
+}
+
+export type RoutingRun = DetectionResult | ErroredRun;
+
 export function matchesExpectation(expectation: Expectation, run: DetectionResult): boolean {
   if (violatesNot(expectation, run)) return false;
 
@@ -30,10 +36,12 @@ export function matchesExpectation(expectation: Expectation, run: DetectionResul
 
 export function scoreCase(
   expectation: Expectation,
-  runs: readonly DetectionResult[],
+  runs: readonly RoutingRun[],
   threshold = DEFAULT_THRESHOLD,
 ): CaseScore {
-  const matched = runs.filter((run) => matchesExpectation(expectation, run)).length;
+  const matched = runs.filter(
+    (run) => !isErrored(run) && matchesExpectation(expectation, run),
+  ).length;
   const triggerRate = runs.length === 0 ? 0 : matched / runs.length;
   return {
     matched,
@@ -46,7 +54,7 @@ export function scoreCase(
 }
 
 export type SolvingRunResult =
-  | { readonly found: false }
+  | { readonly found: false; readonly error?: string }
   | {
       readonly found: true;
       readonly assertions: readonly AssertionResult[];
@@ -91,11 +99,20 @@ function isOrderedSubsequence(needle: readonly string[], haystack: readonly stri
   return cursor === needle.length;
 }
 
-function histogramOf(runs: readonly DetectionResult[]): ReadonlyMap<string, number> {
+function isErrored(run: RoutingRun): run is ErroredRun {
+  return "error" in run;
+}
+
+function histogramOf(runs: readonly RoutingRun[]): ReadonlyMap<string, number> {
   const counts = new Map<string, number>();
   for (const run of runs) {
-    const key = run.firstSkill ?? "(no skill)";
+    const key = histogramKey(run);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return counts;
+}
+
+function histogramKey(run: RoutingRun): string {
+  if (isErrored(run)) return `(error) ${run.error.split("\n")[0] ?? ""}`;
+  return run.firstSkill ?? "(no skill)";
 }

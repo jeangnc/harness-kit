@@ -142,7 +142,7 @@ function solvingFailures(solving: SolvingBreakdown): string[] {
   solving.perRun.forEach((run, index) => {
     const prefix = solving.perRun.length > 1 ? `run ${index + 1} ` : "";
     if (!run.found) {
-      lines.push(`${INDENT}${prefix}no answer block in output`);
+      lines.push(`${INDENT}${prefix}${run.error ?? "no answer block in output"}`);
       return;
     }
     for (const a of run.assertions) {
@@ -161,7 +161,7 @@ function solvingFailures(solving: SolvingBreakdown): string[] {
 
 function jsonSolving(solving: SolvingBreakdown): unknown {
   return solving.perRun.map((run) => {
-    if (!run.found) return { found: false };
+    if (!run.found) return { found: false, ...(run.error !== undefined && { error: run.error }) };
     return {
       found: true,
       assertions: run.assertions.map((a) => ({

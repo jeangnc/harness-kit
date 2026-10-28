@@ -1,6 +1,11 @@
+import { fileURLToPath } from "node:url";
+
+import promptfoo, { type EvaluateResult, type EvaluateTestSuite } from "promptfoo";
+
 import {
   defaultSources,
   discoverInstalled,
+  discoverPluginRoots,
   indexInstalled,
   localSources,
   mergeArtifacts,
@@ -8,12 +13,26 @@ import {
   type InstalledIndex,
 } from "../installed.js";
 import { err, ok, type Result } from "../result.js";
-import { loadCases, unresolvedSkills, type CaseLoadError, type LoadedCase } from "./cases.js";
-import { caseExpectedSkills } from "./schema.js";
-import { gradeResults } from "./grade/index.js";
-import { DEFAULT_JUDGE_MODEL, selectJudge, type Judge } from "./judge/index.js";
+import {
+  loadCases,
+  unresolvedSkills,
+  type CaseLoadError,
+  type LoadedCase,
+  type LoadedRoutingCase,
+  type LoadedSolvingCase,
+} from "./cases.js";
+import { compileRouting, compileSolving, type CompileOptions } from "./compile.js";
+import { runMetrics } from "./metrics.js";
+import { reportCases } from "./outcomes.js";
 import { buildReport, type EvalReport } from "./report.js";
-import { runCases, type RunnerOptions } from "./runner.js";
+import { caseExpectedSkills } from "./schema.js";
+import { claude, type EvalVendor } from "./vendors.js";
+
+const DEFAULT_CONCURRENCY = 1;
+const DEFAULT_JUDGE_MODEL = "opus";
+const ROUTING_TIMEOUT_MS = 60_000;
+const DEFAULT_SOLVING_TIMEOUT_MS = 300_000;
+const VENDOR_PACKAGE_ROOT = fileURLToPath(new URL("../..", import.meta.url));
 
 export interface EvalOptions {
   readonly casesDir: string;
@@ -27,8 +46,6 @@ export interface EvalOptions {
   readonly model?: string;
   readonly judgeModel?: string;
   readonly solvingTimeoutMs?: number;
-  readonly judge?: Judge;
-  readonly onRun?: RunnerOptions["onRun"];
 }
 
 export async function runEval(options: EvalOptions): Promise<Result<EvalReport, CaseLoadError[]>> {
@@ -41,26 +58,35 @@ export async function runEval(options: EvalOptions): Promise<Result<EvalReport, 
   }
 
   const installed = indexInstalled(await resolveArtifacts(options.distRoot));
-  const installedIds = new Set(installed.skills.keys());
-  const unresolved = unresolvedSkills(selected, installedIds);
+  const unresolved = unresolvedSkills(selected, new Set(installed.skills.keys()));
   if (unresolved.length > 0) return err(unresolved);
 
-  const judge = resolveJudge(selected, options);
-  const enabledPlugins = enabledPluginKeys(selected, installed);
-
-  const runnerOptions: RunnerOptions = {
+  const vendor = claude;
+  const compileOptions: CompileOptions = {
+    vendor,
     cwd: options.cwd,
-    ...(options.runs !== undefined && { runs: options.runs }),
-    ...(options.concurrency !== undefined && { concurrency: options.concurrency }),
+    judgeModel: options.judgeModel ?? DEFAULT_JUDGE_MODEL,
+    pluginRoots: await localPluginRoots(vendor, options.distRoot),
+    enabledPlugins: enabledPluginKeys(selected, installed, vendor),
     ...(options.model !== undefined && { model: options.model }),
-    ...(options.solvingTimeoutMs !== undefined && { solvingTimeoutMs: options.solvingTimeoutMs }),
-    ...(options.onRun !== undefined && { onRun: options.onRun }),
-    ...(enabledPlugins.size > 0 && { enabledPlugins }),
+    ...(options.runs !== undefined && { runs: options.runs }),
   };
-  const { results, metrics } = await runCases(selected, runnerOptions);
-  const reports = await gradeResults(results, judge);
+  const routing = selected.filter((c): c is LoadedRoutingCase => c.tier === "routing");
+  const solving = selected.filter((c): c is LoadedSolvingCase => c.tier === "solving");
+  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
 
-  return ok(buildReport(reports, metrics));
+  const rows = [
+    ...(await evaluateTier(routing, compileRouting(routing, compileOptions), {
+      concurrency,
+      timeoutMs: ROUTING_TIMEOUT_MS,
+    })),
+    ...(await evaluateTier(solving, compileSolving(solving, compileOptions), {
+      concurrency,
+      timeoutMs: options.solvingTimeoutMs ?? DEFAULT_SOLVING_TIMEOUT_MS,
+    })),
+  ];
+
+  return ok(buildReport(reportCases(selected, rows), rows.map(runMetrics)));
 }
 
 async function resolveArtifacts(distRoot?: string): Promise<InstalledArtifacts> {
@@ -70,17 +96,23 @@ async function resolveArtifacts(distRoot?: string): Promise<InstalledArtifacts> 
   return mergeArtifacts(cache, local);
 }
 
-const EVAL_VENDOR = "claude";
+async function localPluginRoots(vendor: EvalVendor, distRoot?: string): Promise<string[]> {
+  if (distRoot === undefined) return [];
+  const sources = (await localSources(distRoot)).filter((source) => source.name === vendor.name);
+  const roots = await Promise.all(sources.map(discoverPluginRoots));
+  return roots.flat().map((plugin) => plugin.root);
+}
 
 export function enabledPluginKeys(
   selected: readonly LoadedCase[],
   index: InstalledIndex,
+  vendor: Pick<EvalVendor, "name"> = claude,
 ): Set<string> {
   const keys = new Set<string>();
   for (const evalCase of selected) {
     for (const id of caseExpectedSkills(evalCase)) {
       for (const entry of [...(index.skills.get(id) ?? []), ...(index.commands.get(id) ?? [])]) {
-        if (entry.source === EVAL_VENDOR && entry.marketplace) {
+        if (entry.source === vendor.name && entry.marketplace) {
           keys.add(`${entry.plugin}@${entry.marketplace}`);
         }
       }
@@ -89,16 +121,26 @@ export function enabledPluginKeys(
   return keys;
 }
 
-function needsJudge(cases: readonly LoadedCase[]): boolean {
-  return cases.some((c) => c.tier === "solving" && c.rubric !== undefined);
+interface TierRun {
+  readonly concurrency: number;
+  readonly timeoutMs: number;
 }
 
-function resolveJudge(cases: readonly LoadedCase[], options: EvalOptions): Judge | undefined {
-  if (!needsJudge(cases)) return undefined;
-  return selectJudge({
-    model: options.judgeModel ?? DEFAULT_JUDGE_MODEL,
-    ...(options.judge !== undefined && { override: options.judge }),
-  });
+async function evaluateTier(
+  cases: readonly LoadedCase[],
+  suite: EvaluateTestSuite,
+  run: TierRun,
+): Promise<EvaluateResult[]> {
+  if (cases.length === 0) return [];
+  const evaluation = await promptfoo.evaluate(
+    { ...suite, basePath: VENDOR_PACKAGE_ROOT },
+    {
+      maxConcurrency: run.concurrency,
+      timeoutMs: run.timeoutMs,
+      cache: false,
+    },
+  );
+  return (await evaluation.toEvaluateSummary()).results;
 }
 
 function select(cases: readonly LoadedCase[], options: EvalOptions): LoadedCase[] {

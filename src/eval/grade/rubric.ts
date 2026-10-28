@@ -1,5 +1,9 @@
-import type { Judge, Verdict } from "../judge/index.js";
 import type { CombineRule, Rubric } from "../schema.js";
+
+export interface Verdict {
+  readonly pass: boolean | "unknown";
+  readonly evidence: string;
+}
 
 export interface DimensionResult {
   readonly dimension: string;
@@ -11,17 +15,14 @@ export interface RubricResult {
   readonly pass: boolean;
 }
 
-export async function gradeRubric(
+export function combineRubric(
   rubric: Rubric,
-  output: string,
-  judge: Judge,
-): Promise<RubricResult> {
-  const dimensions = await Promise.all(
-    rubric.dimensions.map(async ({ dimension, criterion }) => ({
-      dimension,
-      verdict: await judge({ dimension, criterion, output }),
-    })),
-  );
+  verdicts: ReadonlyArray<Verdict | undefined>,
+): RubricResult {
+  const dimensions = rubric.dimensions.map(({ dimension }, index) => ({
+    dimension,
+    verdict: verdicts[index] ?? { pass: "unknown" as const, evidence: "judge returned no verdict" },
+  }));
   return { dimensions, pass: combine(rubric.combine, dimensions) };
 }
 

@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import { gradeRubric } from "./rubric.js";
-import type { Judge, JudgeRequest, Verdict } from "../judge/index.js";
+import { combineRubric, type Verdict } from "./rubric.js";
 import type { Rubric } from "../schema.js";
 
 function rubric(combine: Rubric["combine"], ...dimensions: string[]): Rubric {
@@ -12,75 +11,44 @@ function rubric(combine: Rubric["combine"], ...dimensions: string[]): Rubric {
   };
 }
 
-function judgeReturning(verdicts: Record<string, Verdict>): {
-  judge: Judge;
-  calls: JudgeRequest[];
-} {
-  const calls: JudgeRequest[] = [];
-  const judge: Judge = async (request) => {
-    calls.push(request);
-    return verdicts[request.dimension] ?? { pass: "unknown", evidence: "no stub" };
-  };
-  return { judge, calls };
-}
+const yes: Verdict = { pass: true, evidence: "" };
+const no: Verdict = { pass: false, evidence: "" };
+const unsure: Verdict = { pass: "unknown", evidence: "cannot tell" };
 
-test("gradeRubric calls the judge once per dimension in isolation", async () => {
-  const { judge, calls } = judgeReturning({
-    clarity: { pass: true, evidence: "a" },
-    accuracy: { pass: true, evidence: "b" },
-  });
-  await gradeRubric(rubric({ combine: "all" }, "clarity", "accuracy"), "out", judge);
-
-  assert.equal(calls.length, 2);
-  assert.deepEqual(calls.map((c) => c.dimension).sort(), ["accuracy", "clarity"]);
-  for (const call of calls) {
-    assert.equal(call.output, "out");
-    assert.equal(call.criterion, `${call.dimension} criterion`);
-  }
+test("combineRubric names each verdict after its dimension in rubric order", () => {
+  const result = combineRubric(rubric({ combine: "all" }, "clarity", "accuracy"), [yes, no]);
+  assert.deepEqual(
+    result.dimensions.map((d) => [d.dimension, d.verdict.pass]),
+    [
+      ["clarity", true],
+      ["accuracy", false],
+    ],
+  );
 });
 
-test("combine all passes only when every dimension passes", async () => {
-  const allPass = judgeReturning({
-    clarity: { pass: true, evidence: "a" },
-    accuracy: { pass: true, evidence: "b" },
-  });
-  const r = rubric({ combine: "all" }, "clarity", "accuracy");
-  assert.equal((await gradeRubric(r, "o", allPass.judge)).pass, true);
-
-  const oneFails = judgeReturning({
-    clarity: { pass: true, evidence: "a" },
-    accuracy: { pass: false, evidence: "b" },
-  });
-  assert.equal((await gradeRubric(r, "o", oneFails.judge)).pass, false);
+test("combine all passes when every dimension passes", () => {
+  assert.equal(combineRubric(rubric({ combine: "all" }, "a", "b"), [yes, yes]).pass, true);
 });
 
-test("an abstain verdict never counts as a pass under combine all", async () => {
-  const { judge } = judgeReturning({
-    clarity: { pass: true, evidence: "a" },
-    accuracy: { pass: "unknown", evidence: "cannot tell" },
-  });
-  const result = await gradeRubric(rubric({ combine: "all" }, "clarity", "accuracy"), "o", judge);
-  assert.equal(result.pass, false);
-  const abstained = result.dimensions.find((d) => d.dimension === "accuracy");
-  assert.equal(abstained!.verdict.pass, "unknown");
+test("combine all fails when one dimension fails", () => {
+  assert.equal(combineRubric(rubric({ combine: "all" }, "a", "b"), [yes, no]).pass, false);
 });
 
-test("combine fraction passes when the pass ratio meets the threshold", async () => {
-  const { judge } = judgeReturning({
-    a: { pass: true, evidence: "" },
-    b: { pass: true, evidence: "" },
-    c: { pass: false, evidence: "" },
-  });
+test("an abstain verdict never counts as a pass under combine all", () => {
+  assert.equal(combineRubric(rubric({ combine: "all" }, "a", "b"), [yes, unsure]).pass, false);
+});
+
+test("a missing verdict abstains", () => {
+  const result = combineRubric(rubric({ combine: "all" }, "a"), []);
+  assert.equal(result.dimensions[0]!.verdict.pass, "unknown");
+});
+
+test("combine fraction passes when the pass ratio meets the threshold", () => {
   const r = rubric({ combine: "fraction", threshold: 0.5 }, "a", "b", "c");
-  assert.equal((await gradeRubric(r, "o", judge)).pass, true);
+  assert.equal(combineRubric(r, [yes, yes, no]).pass, true);
 });
 
-test("combine fraction fails below the threshold and counts abstain in the denominator", async () => {
-  const { judge } = judgeReturning({
-    a: { pass: true, evidence: "" },
-    b: { pass: "unknown", evidence: "" },
-    c: { pass: false, evidence: "" },
-  });
+test("combine fraction fails below the threshold and counts abstain in the denominator", () => {
   const r = rubric({ combine: "fraction", threshold: 0.5 }, "a", "b", "c");
-  assert.equal((await gradeRubric(r, "o", judge)).pass, false);
+  assert.equal(combineRubric(r, [yes, unsure, no]).pass, false);
 });

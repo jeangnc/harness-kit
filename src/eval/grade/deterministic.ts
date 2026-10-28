@@ -8,15 +8,11 @@ export interface AssertionResult {
   readonly evidence: string;
 }
 
-export function gradeAssertions(
-  assertions: readonly Assertion[],
+export function gradeAssertion(
+  assertion: Assertion,
   capture: SolvingCapture,
   answer: string,
-): AssertionResult[] {
-  return assertions.map((assertion) => grade(assertion, capture, answer));
-}
-
-function grade(assertion: Assertion, capture: SolvingCapture, answer: string): AssertionResult {
+): AssertionResult {
   switch (assertion.kind) {
     case "outputMatches":
       return matchOutput(assertion, answer, {

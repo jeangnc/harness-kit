@@ -15,7 +15,6 @@ function fired(...observed: string[]): DetectionResult {
   return {
     observed,
     firstSkill: observed[0] ?? null,
-    exitReason: observed.length > 0 ? "skill" : "no-skill",
   };
 }
 
@@ -78,6 +77,12 @@ test("scoreCase histogram labels a no-skill run", () => {
   const score = scoreCase({ noSkill: true }, [fired()]);
   assert.equal(score.histogram.get("(no skill)"), 1);
   assert.equal(score.pass, true);
+});
+
+test("scoreCase never matches an errored run, even against noSkill", () => {
+  const score = scoreCase({ noSkill: true }, [{ error: "session failed" }]);
+  assert.equal(score.matched, 0);
+  assert.equal(score.histogram.get("(error) session failed"), 1);
 });
 
 function solvingRun(assertionPass: boolean, rubricPass: boolean | null = null): SolvingRunResult {

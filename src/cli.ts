@@ -228,7 +228,7 @@ const evalCmd = defineCommand({
       default: "./evals/cases",
       description: "directory of eval case files",
     },
-    cwd: { type: "string", default: ".", description: "working directory for claude -p sessions" },
+    cwd: { type: "string", default: ".", description: "working directory for agent sessions" },
     dist: {
       type: "string",
       default: "./dist",
@@ -246,7 +246,7 @@ const evalCmd = defineCommand({
     },
     model: {
       type: "string",
-      description: "model for claude -p (default: user's configured model)",
+      description: "model for agent sessions (default: user's configured model)",
     },
     "judge-model": {
       type: "string",

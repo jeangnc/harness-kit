@@ -1,41 +1,18 @@
-import { asRecord } from "./detect.js";
+import type { EvaluateResult } from "promptfoo";
+
+import { asRecord } from "./trajectory.js";
 
 export interface RunMetrics {
   readonly rateLimited: boolean;
   readonly durationMs: number | null;
 }
 
-interface Metrics {
-  readonly push: (line: string) => void;
-  readonly result: () => RunMetrics;
-}
+const RATE_LIMITED = /rate.?limit|429/i;
 
-export function createMetrics(): Metrics {
-  let rateLimited = false;
-  let durationMs: number | null = null;
-
+export function runMetrics(row: EvaluateResult): RunMetrics {
+  const reported = asRecord(row.response?.metadata)["durationMs"];
   return {
-    push(line: string) {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(trimmed);
-      } catch {
-        return;
-      }
-      const event = asRecord(parsed);
-
-      if (event["type"] === "rate_limit_event") {
-        if (asRecord(event["rate_limit_info"])["status"] === "rejected") rateLimited = true;
-        return;
-      }
-
-      if (event["type"] === "result") {
-        const ms = event["duration_ms"];
-        if (typeof ms === "number") durationMs = ms;
-      }
-    },
-    result: () => ({ rateLimited, durationMs }),
+    rateLimited: RATE_LIMITED.test(row.error ?? ""),
+    durationMs: typeof reported === "number" ? reported : row.latencyMs,
   };
 }
