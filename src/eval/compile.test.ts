@@ -57,9 +57,13 @@ function providersOf(suite: CompiledSuite) {
   return suite.providers as ReadonlyArray<ReturnType<typeof claude.agent>>;
 }
 
-function context(output: string, toolCalls: unknown[] = []): AssertionValueFunctionContext {
+function context(raw: string, toolCalls: unknown[] = []): AssertionValueFunctionContext {
   return {
-    providerResponse: { output, metadata: { toolCalls } },
+    providerResponse: {
+      output: "transformed",
+      providerTransformedOutput: raw,
+      metadata: { toolCalls },
+    },
   } as unknown as AssertionValueFunctionContext;
 }
 
@@ -80,17 +84,20 @@ function byMetric(
   return compileSolving([evalCase], opts).tests[0]?.assert?.find((a) => a.metric === metric);
 }
 
-test("compileRouting labels one provider per case with the case id", () => {
-  const suite = compileRouting([routing({ id: "a" }), routing({ id: "b" })], options);
+test("compileRouting labels providers by position so case ids never act as provider refs", () => {
+  const suite = compileRouting([routing({ id: "anthropic" }), routing({ id: "b" })], options);
   assert.deepEqual(
     providersOf(suite).map((p) => p.label),
-    ["a", "b"],
+    ["case-0", "case-1"],
   );
 });
 
 test("compileRouting restricts each test to its own case provider", () => {
-  const [testCase] = compileRouting([routing({ id: "a" })], options).tests;
-  assert.deepEqual(testCase!.providers, ["a"]);
+  const suite = compileRouting([routing({ id: "a" }), routing({ id: "b" })], options);
+  assert.deepEqual(
+    suite.tests.map((t) => t.providers),
+    [["case-0"], ["case-1"]],
+  );
 });
 
 test("compileRouting repeats a routing case five times by default", () => {
@@ -110,6 +117,11 @@ test("compileRouting stops a path case after observing every skill in the path",
   await hook!({ session_id: "s" });
   assert.deepEqual(await hook!({ session_id: "s" }), {});
   assert.equal((await hook!({ session_id: "s" })).continue, false);
+});
+
+test("compileRouting resolves a relative base cwd against the process cwd", () => {
+  const suite = compileRouting([routing()], { ...options, cwd: "." });
+  assert.equal(providersOf(suite)[0]!.config.working_dir, process.cwd());
 });
 
 test("compileRouting resolves a relative case cwd against the base cwd", () => {
@@ -195,6 +207,6 @@ test("compileSolving grades each rubric dimension with the vendor judge", () => 
   });
   const rubric = byMetric(evalCase, metricNames.rubric(0));
   assert.equal(rubric?.type, "llm-rubric");
-  assert.equal(rubric?.value, "is clear");
+  assert.match(rubric?.value as string, /Dimension: clarity\nCriterion: is clear$/);
   assert.deepEqual(rubric?.provider, claude.judge("opus"));
 });

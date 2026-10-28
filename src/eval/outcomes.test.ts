@@ -44,17 +44,26 @@ function component(
   };
 }
 
-function row(label: string, partial: Partial<EvaluateResult> = {}): EvaluateResult {
-  return { provider: { id: "agent", label }, latencyMs: 10, ...partial } as EvaluateResult;
+function row(caseId: string, partial: Partial<EvaluateResult> = {}): EvaluateResult {
+  return {
+    provider: { id: "agent", label: "case-0" },
+    testCase: { metadata: { caseId } },
+    latencyMs: 10,
+    ...partial,
+  } as EvaluateResult;
 }
 
-function skillRow(label: string, ...skills: string[]): EvaluateResult {
+function skillRow(caseId: string, ...skills: string[]): EvaluateResult {
   const toolCalls = skills.map((skill) => ({ name: "Skill", input: { skill } }));
-  return row(label, { response: { output: "", metadata: { toolCalls } } });
+  return row(caseId, { response: { output: "", metadata: { toolCalls } } });
 }
 
-function graded(label: string, components: GradingResult[], partial: Partial<EvaluateResult> = {}) {
-  return row(label, {
+function graded(
+  caseId: string,
+  components: GradingResult[],
+  partial: Partial<EvaluateResult> = {},
+) {
+  return row(caseId, {
     gradingResult: { pass: true, score: 1, reason: "", componentResults: components },
     ...partial,
   });

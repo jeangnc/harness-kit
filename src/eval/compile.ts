@@ -77,8 +77,9 @@ export function compileSolving(
 function suiteOf<Case extends LoadedCase>(
   cases: readonly Case[],
   options: CompileOptions,
-  toTest: (evalCase: Case) => CompiledTest,
+  toTest: (evalCase: Case) => Omit<CompiledTest, "providers">,
 ): CompiledSuite {
+  const sessions = cases.map((evalCase, index) => ({ evalCase, label: `case-${index}` }));
   const prompts = new Map(cases.map((evalCase) => [evalCase.id, evalCase.prompt]));
   return {
     prompts: [
@@ -88,16 +89,16 @@ function suiteOf<Case extends LoadedCase>(
         function: async ({ vars }) => Promise.resolve(prompts.get(String(vars["caseId"])) ?? ""),
       },
     ],
-    providers: cases.map((evalCase) => providerOf(evalCase, options)),
-    tests: cases.map(toTest),
+    providers: sessions.map(({ evalCase, label }) => providerOf(evalCase, label, options)),
+    tests: sessions.map(({ evalCase, label }) => ({ ...toTest(evalCase), providers: [label] })),
     env: { PROMPTFOO_DISABLE_TEMPLATING: "true", PROMPTFOO_DISABLE_TELEMETRY: "true" },
     writeLatestResults: false,
   };
 }
 
-function providerOf(evalCase: LoadedCase, options: CompileOptions) {
+function providerOf(evalCase: LoadedCase, label: string, options: CompileOptions) {
   return options.vendor.agent({
-    label: evalCase.id,
+    label,
     cwd: caseCwd(evalCase, options),
     pluginRoots: options.pluginRoots,
     enabledPlugins: options.enabledPlugins,
@@ -110,18 +111,21 @@ function skillsToObserve(evalCase: LoadedRoutingCase): number {
   return "path" in evalCase.expect ? evalCase.expect.path.length : 1;
 }
 
-function testOf(evalCase: LoadedCase, options: CompileOptions, defaultRuns: number): CompiledTest {
+function testOf(
+  evalCase: LoadedCase,
+  options: CompileOptions,
+  defaultRuns: number,
+): Omit<CompiledTest, "providers"> {
   return {
     description: evalCase.id,
     vars: { caseId: evalCase.id },
-    providers: [evalCase.id],
     metadata: { caseId: evalCase.id },
     options: { repeat: evalCase.runs ?? options.runs ?? defaultRuns },
   };
 }
 
 function caseCwd(evalCase: LoadedCase, options: CompileOptions): string {
-  return evalCase.cwd === undefined ? options.cwd : resolve(options.cwd, evalCase.cwd);
+  return resolve(options.cwd, evalCase.cwd ?? ".");
 }
 
 function answerText(evalCase: LoadedSolvingCase, output: unknown): string {
@@ -151,14 +155,21 @@ function solvingAssertions(
       }),
     ),
     ...(evalCase.rubric?.dimensions ?? []).map(
-      ({ criterion }, index): PromptfooAssertion => ({
+      ({ dimension, criterion }, index): PromptfooAssertion => ({
         type: "llm-rubric",
         metric: metricNames.rubric(index),
-        value: criterion,
+        value: rubricOf(dimension, criterion),
         provider: judge,
       }),
     ),
   ];
+}
+
+function rubricOf(dimension: string, criterion: string): string {
+  return (
+    "Grade strictly and in isolation: pass only if the criterion is clearly met, and cite " +
+    `concrete evidence from the output.\n\nDimension: ${dimension}\nCriterion: ${criterion}`
+  );
 }
 
 function answerPresence(evalCase: LoadedSolvingCase, raw: string): GradingResult {
@@ -190,7 +201,7 @@ async function gradeRun(assertion: Assertion, run: RunContext): Promise<GradingR
 }
 
 function rawOutput(context: GradingContext): string {
-  return textOf(context.providerResponse?.output);
+  return textOf(context.providerResponse?.providerTransformedOutput);
 }
 
 function textOf(value: unknown): string {

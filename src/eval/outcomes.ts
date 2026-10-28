@@ -17,7 +17,7 @@ export function reportCases(
   return cases.map((evalCase) =>
     reportCase(
       evalCase,
-      rows.filter((row) => row.provider.label === evalCase.id),
+      rows.filter((row) => row.testCase.metadata?.["caseId"] === evalCase.id),
     ),
   );
 }
