@@ -68,9 +68,11 @@
     ]
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.283",
     "citty": "^0.2.2",
     "js-yaml": "^4.1.1",
     "markdownlint-cli2": "^0.18.1",
+    "promptfoo": "0.124.1",
     "smol-toml": "^1.8.0",
     "zod": "^3.24.0"
   },

@@ -105,11 +105,7 @@ export async function discoverInstalled(
   const commands: InstalledCommand[] = [];
   const agents: InstalledAgent[] = [];
   for (const source of sources) {
-    for await (const pluginRoot of findPluginRoots(
-      source.root,
-      source.manifestRelativePath,
-      source.marketplace,
-    )) {
+    for await (const pluginRoot of pluginRootsOf(source)) {
       for await (const skillFile of collectSkills(pluginRoot.root)) {
         skills.push({
           source: source.name,
@@ -140,6 +136,22 @@ export async function discoverInstalled(
     }
   }
   return { skills, commands, agents };
+}
+
+export interface PluginRoot {
+  readonly name: string;
+  readonly root: string;
+  readonly marketplace: string;
+}
+
+export async function discoverPluginRoots(source: PluginSource): Promise<PluginRoot[]> {
+  const roots: PluginRoot[] = [];
+  for await (const pluginRoot of pluginRootsOf(source)) roots.push(pluginRoot);
+  return roots;
+}
+
+function pluginRootsOf(source: PluginSource): AsyncGenerator<PluginRoot> {
+  return findPluginRoots(source.root, source.manifestRelativePath, source.marketplace);
 }
 
 export function indexInstalled(artifacts: InstalledArtifacts): InstalledIndex {
@@ -181,12 +193,6 @@ function groupBy<T>(items: readonly T[], key: (t: T) => string): ReadonlyMap<str
     else result.set(k, [item]);
   }
   return result;
-}
-
-interface PluginRoot {
-  readonly name: string;
-  readonly root: string;
-  readonly marketplace: string;
 }
 
 async function* findPluginRoots(
