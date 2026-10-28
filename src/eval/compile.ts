@@ -86,14 +86,30 @@ function suiteOf<Case extends LoadedCase>(
       {
         label: "case prompt",
         raw: "case prompt",
-        function: async ({ vars }) => Promise.resolve(prompts.get(String(vars["caseId"])) ?? ""),
+        function: async ({ vars }) => Promise.resolve(promptOf(prompts, vars["caseId"])),
       },
     ],
     providers: sessions.map(({ evalCase, label }) => providerOf(evalCase, label, options)),
     tests: sessions.map(({ evalCase, label }) => ({ ...toTest(evalCase), providers: [label] })),
-    env: { PROMPTFOO_DISABLE_TEMPLATING: "true", PROMPTFOO_DISABLE_TELEMETRY: "true" },
+    env: {
+      PROMPTFOO_DISABLE_TEMPLATING: "true",
+      PROMPTFOO_DISABLE_TELEMETRY: "true",
+      PROMPTFOO_STRIP_RESPONSE_OUTPUT: "false",
+      PROMPTFOO_STRIP_METADATA: "false",
+      PROMPTFOO_STRIP_GRADING_RESULT: "false",
+      PROMPTFOO_STRIP_TEST_VARS: "false",
+      PROMPTFOO_STRIP_PROMPT_TEXT: "false",
+    },
     writeLatestResults: false,
   };
+}
+
+function promptOf(prompts: ReadonlyMap<string, string>, caseId: unknown): string {
+  const prompt = prompts.get(String(caseId));
+  if (prompt === undefined) {
+    throw new Error(`Expected a compiled case for caseId ${String(caseId)}`);
+  }
+  return prompt;
 }
 
 function providerOf(evalCase: LoadedCase, label: string, options: CompileOptions) {

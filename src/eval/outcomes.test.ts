@@ -105,6 +105,15 @@ test("reportCases counts a failed routing session as an unmatched error run", ()
   assert.equal(report!.score.histogram.get("(error) sdk missing"), 1);
 });
 
+test("reportCases scores the skills a failed routing session invoked before failing", () => {
+  const failed = skillRow("r1", "alpha:plan");
+  const [report] = reportCases(
+    [routing()],
+    [{ ...failed, error: "error_max_turns", failureReason: ResultFailureReason.ERROR }],
+  );
+  assert.equal(report!.score.matched, 1);
+});
+
 test("reportCases marks a solving run without an answer as not found", () => {
   const [report] = reportCases([solving()], [graded("s1", [component(metricNames.answer, false)])]);
   assert.deepEqual(report!.solving!.perRun, [{ found: false }]);

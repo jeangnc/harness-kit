@@ -92,6 +92,12 @@ test("compileRouting labels providers by position so case ids never act as provi
   );
 });
 
+test("compileRouting pins promptfoo result stripping off", () => {
+  const { env } = compileRouting([routing()], options);
+  assert.equal(env["PROMPTFOO_STRIP_METADATA"], "false");
+  assert.equal(env["PROMPTFOO_STRIP_GRADING_RESULT"], "false");
+});
+
 test("compileRouting restricts each test to its own case provider", () => {
   const suite = compileRouting([routing({ id: "a" }), routing({ id: "b" })], options);
   assert.deepEqual(

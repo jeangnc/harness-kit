@@ -6,7 +6,7 @@ import { detectSkills } from "./detect.js";
 import { combineRubric, type Verdict } from "./grade/index.js";
 import type { CaseReport } from "./report.js";
 import { scoreCase, scoreSolving, type RoutingRun, type SolvingRunResult } from "./score.js";
-import { trajectoryOf } from "./trajectory.js";
+import { hasTrajectory, trajectoryOf } from "./trajectory.js";
 
 const TIMEOUT_ERROR_PREFIX = "Evaluation timed out";
 
@@ -40,6 +40,7 @@ function routingRun(row: EvaluateResult): RoutingRun {
 
 function isUnobservedFailure(row: EvaluateResult): boolean {
   if (row.failureReason !== ResultFailureReason.ERROR) return false;
+  if (hasTrajectory(row.response?.metadata)) return false;
   return !row.error?.startsWith(TIMEOUT_ERROR_PREFIX);
 }
 
