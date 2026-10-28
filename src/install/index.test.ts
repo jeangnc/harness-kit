@@ -383,6 +383,20 @@ test("install threads the requested mode into the vendor context", async () => {
   );
 });
 
+test("update defaults the vendor context mode to remote", async () => {
+  await withInstallFixture(
+    { marketplaceName: "shop", plugins: [{ name: "alpha", vendor: "claude", version: "1.0.0" }] },
+    async ({ distRoot, sandbox }) => {
+      const record = emptyRecord();
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record);
+
+      await updateWithRunner({ distRoot, vendors: [claude], silent: true }, recordingRunner().run);
+
+      assert.equal(record.refreshes[0]!.mode, "remote");
+    },
+  );
+});
+
 test("update returns a not-installed error when no vendor reports an existing install", async () => {
   await withInstallFixture(
     {

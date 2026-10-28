@@ -35,6 +35,12 @@ test("cli install --help mentions --mode", () => {
   assert.match(stdout, /--mode/);
 });
 
+test("cli update defaults to the remote source", () => {
+  const { status, stdout } = runCli(["update", "--help"]);
+  assert.equal(status, 0);
+  assert.match(stdout, /--mode=<mode>.*Default: remote/);
+});
+
 test("cli install --mode with an unknown value exits non-zero", () => {
   const { status, stderr } = runCli(["install", "--mode=bogus"]);
   assert.notEqual(status, 0);

@@ -59,7 +59,7 @@ Links config files into each vendor's home and registers compiled plugins throug
 
 - `--dist <path>` (default `./dist`).
 - `--repo <path>` (default `.`).
-- `--mode <local|remote>` (default `local`) — install source. `local` registers the compiled `dist/claude/` tree as a local-scoped marketplace, installing uncommitted builds without publishing; `remote` resolves Claude plugins from the published marketplace. Codex is local-only and ignores this flag.
+- `--mode <local|remote>` (default `local`) — install source. `local` registers the compiled vendor tree as a local marketplace, installing uncommitted builds without publishing; `remote` resolves Claude plugins from the published marketplace and refreshes Codex's configured Git marketplace.
 - `--dry-run` — print the plan without touching the filesystem.
 - `--silent`.
 
@@ -73,7 +73,7 @@ Same flags as `install`. Reverses each vendor's `install` hook.
 
 ## `harness update`
 
-Refreshes plugins for an **already-installed** harness. Same flags as `install`, plus `--prune`. Skips the config-link bootstrap (step 1 of install), so a symlinked `settings.json` and its `enabledPlugins` are left untouched, and runs only the per-vendor plugin refresh. Refuses with an error if no vendor reports an existing install, and reports a per-plugin version diff (`added` / `→` / `unchanged` / `removed`) against the versions currently cached.
+Refreshes plugins for an **already-installed** harness. It defaults to `--mode remote`; pass `--mode local` to refresh an uncommitted local build. Otherwise it has the same flags as `install`, plus `--prune`. It skips the config-link bootstrap (step 1 of install), so a symlinked `settings.json` and its `enabledPlugins` are left untouched, and runs only the per-vendor plugin refresh. Refuses with an error if no vendor reports an existing install, and reports a per-plugin version diff (`added` / `→` / `unchanged` / `removed`) against the versions currently cached.
 
 - `--prune` — remove plugins that are still installed but no longer shipped from `--dist`.
 

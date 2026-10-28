@@ -122,7 +122,7 @@ const updateCmd = defineCommand({
   },
   args: {
     ...installArgs,
-    mode: { type: "string", default: "local", description: "install source: local | remote" },
+    mode: { type: "string", default: "remote", description: "install source: local | remote" },
     prune: {
       type: "boolean",
       default: false,

@@ -98,7 +98,7 @@ export async function updateWithRunner(
   options: InstallOptions,
   runner: CommandRunner,
 ): Promise<Result<UpdateReport, UpdateError>> {
-  const ctx = await resolveContext(options, runner);
+  const ctx = await resolveContext(options, runner, "remote");
   if (!options.dryRun) await assertRuntimeDetached(ctx);
   const candidates = await Promise.all(
     ctx.vendors.map(async (vendor) => {
@@ -197,6 +197,7 @@ interface ResolvedContext {
 async function resolveContext(
   options: InstallOptions,
   runner: CommandRunner,
+  defaultMode: InstallMode = "local",
 ): Promise<ResolvedContext> {
   if (options.vendors.length === 0) {
     throw new Error("install requires at least one vendor");
@@ -210,7 +211,7 @@ async function resolveContext(
       if (!silent) console.log(msg);
     });
   const marketplace = await resolveMarketplaceName(distRoot, options.vendors);
-  const mode = options.mode ?? "local";
+  const mode = options.mode ?? defaultMode;
   return { distRoot, repoRoot, vendors: options.vendors, marketplace, mode, run: runner, log };
 }
 
