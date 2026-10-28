@@ -82,7 +82,7 @@ For type safety conventions, see {{skill:dev-tools:typescript}}.
 
 **Cross-reference artifacts by handle.** `{{skill:...}}`, `{{command:...}}`, `{{agent:...}}` resolve against the local marketplace and installed plugins and render the scoped `<plugin>:<name>` handle — internal-missing fails the build, external-missing only warns.
 
-**Evaluate behavior.** `harness eval` runs routing cases (*did the right skill fire?*) and solving cases (*did the agent produce the right thing?*), graded by deterministic assertions plus an optional LLM-judge rubric. No API key — the judge spawns the `claude` CLI on its own auth.
+**Evaluate behavior.** `harness eval` runs routing cases (*did the right skill fire?*) and solving cases (*did the agent produce the right thing?*), graded by deterministic assertions plus an optional LLM-judge rubric. Runs on promptfoo; no API key — sessions and the judge use the `claude` login.
 
 Full authoring guide (skill format, includes, fragments vs companions, TypeScript authoring, placeholder reference): [docs/authoring.md](./docs/authoring.md). Eval format and tiers: [docs/evals.md](./docs/evals.md).
 

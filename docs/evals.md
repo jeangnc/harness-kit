@@ -3,8 +3,10 @@
 `harness eval` runs YAML cases in two tiers. A case file declares its `tier`, and the two
 tiers carry mutually exclusive keys.
 
-**Routing** — *did the right skill fire?* The session is killed on the first `Skill` tool_use;
-the detector scores against an `expect` clause (`first` / `anyOf` / `path` / `noSkill`).
+**Routing** — *did the right skill fire?* The session stops at the first `Skill` call (or after
+`path.length` calls); the detector scores against an `expect` clause (`first` / `anyOf` / `path` /
+`noSkill`). A session that times out counts as a run with no skill; a session that fails for any
+other reason counts as an unmatched `(error)` run, so a broken environment never passes `noSkill`.
 
 **Solving** — *did the agent produce the right thing?* The session runs to completion; the
 final output, tool trajectory, and written files are graded by **deterministic assertions**
@@ -54,11 +56,11 @@ the **full** output, so it can police forbidden text in the preamble or trailer.
 the close marker is not in the region — assert on it explicitly if it matters. A declared `answer`
 whose `start` never appears in the output **fails the run** (the required block is missing).
 
-No API key needed. Both the session and the rubric judge run by spawning the `claude` CLI on
-its own auth — `ANTHROPIC_API_KEY` is scrubbed from the subprocess env, not required. Each
-spawned session is pinned to `--permission-mode bypassPermissions` so it runs to completion
-unattended regardless of the launcher's mode (a session in plan mode would otherwise write
-plan files instead of the code under test). The judge model is separate from the session
+The engine is [promptfoo](https://www.promptfoo.dev) with its `anthropic:claude-agent-sdk`
+provider; the local `dist/` plugins load into every session. No API key needed: the session and
+the rubric judge use the `claude` login, or `ANTHROPIC_API_KEY` when it is set. Each session runs
+with `bypassPermissions` so it completes unattended regardless of the launcher's mode (a session
+in plan mode would otherwise write plan files instead of the code under test). The judge model is separate from the session
 model and defaults to the `opus` tier alias — judging a rubric is judgment work, and a pinned id rots:
 
 ```sh
