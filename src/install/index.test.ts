@@ -1,6 +1,14 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, lstatSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync,
+  lstatSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -481,10 +489,12 @@ test("update reports added, changed, and unchanged plugins against the installed
       const record = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record, {
         installedVersions: async () =>
-          new Map([
-            ["alpha", "1.0.0"],
-            ["beta", "1.0.0"],
-          ]),
+          record.refreshes.length === 0
+            ? new Map([
+                ["alpha", "1.0.0"],
+                ["beta", "1.0.0"],
+              ])
+            : new Map(record.refreshes[0]!.plugins.map((plugin) => [plugin.name, plugin.version])),
       });
       const logs: string[] = [];
 
@@ -549,10 +559,12 @@ test("update reports every shipped plugin regardless of enabled state", async ()
           disabled: c.plugins.filter((p) => p.name === "beta"),
         }),
         installedVersions: async () =>
-          new Map([
-            ["alpha", "1.0.0"],
-            ["beta", "1.0.0"],
-          ]),
+          record.refreshes.length === 0
+            ? new Map([
+                ["alpha", "1.0.0"],
+                ["beta", "1.0.0"],
+              ])
+            : new Map(record.refreshes[0]!.plugins.map((plugin) => [plugin.name, plugin.version])),
       });
       const logs: string[] = [];
 
@@ -766,3 +778,88 @@ test("update --dry-run reports the plan without invoking vendor.refresh", async 
     },
   );
 });
+
+test("update reports only versions present after native refresh", async () => {
+  await withInstallFixture(
+    {
+      marketplaceName: "foo",
+      plugins: [
+        { name: "foo", vendor: "codex", version: "2.0.0" },
+        { name: "bar", vendor: "codex", version: "2.0.0" },
+        { name: "baz", vendor: "codex", version: "2.0.0" },
+      ],
+    },
+    async ({ distRoot, sandbox }) => {
+      const record = emptyRecord();
+      let versions = new Map([
+        ["foo", "1.0.0"],
+        ["bar", "1.0.0"],
+      ]);
+      const vendor = makeRecordingVendor("codex", join(sandbox, "codex"), record, {
+        installedVersions: async () => versions,
+        refresh: async () => {
+          versions = new Map([
+            ["foo", "2.0.0"],
+            ["bar", "1.0.0"],
+          ]);
+        },
+      });
+      const result = await updateWithRunner(
+        { distRoot, vendors: [vendor], silent: true },
+        recordingRunner().run,
+      );
+      assert.deepEqual(result, {
+        ok: true,
+        value: {
+          changes: [
+            { kind: "unchanged", name: "bar", at: "1.0.0" },
+            { kind: "changed", name: "foo", from: "1.0.0", to: "2.0.0" },
+          ],
+        },
+      });
+    },
+  );
+});
+
+test("Codex install dry run leaves plugin selection to the native runtime", async () => {
+  await withInstallFixture(
+    { marketplaceName: "foo", plugins: [{ name: "foo", vendor: "codex", version: "1.0.0" }] },
+    async ({ distRoot, sandbox }) => {
+      const logs: string[] = [];
+      const vendor = makeRecordingVendor("codex", join(sandbox, "codex"), emptyRecord());
+      await installWithRunner(
+        { distRoot, vendors: [vendor], dryRun: true, log: (message) => logs.push(message) },
+        recordingRunner().run,
+      );
+      assert.match(logs.join("\n"), /candidates.*native.*execution/);
+      assert.doesNotMatch(logs.join("\n"), /would install/);
+    },
+  );
+});
+
+for (const operation of [installWithRunner, updateWithRunner, uninstallWithRunner]) {
+  test(`${operation.name} rejects a managed runtime link before mutation`, async () => {
+    await withInstallFixture(
+      { marketplaceName: "foo", plugins: [{ name: "foo", vendor: "codex", version: "1.0.0" }] },
+      async ({ distRoot, sandbox }) => {
+        const home = join(sandbox, "codex");
+        const source = join(distRoot, "config.toml");
+        mkdirSync(home);
+        writeFileSync(source, "preserved");
+        symlinkSync(source, join(home, "config.toml"));
+        const record = emptyRecord();
+        const vendor = makeRecordingVendor("codex", home, record);
+        await assert.rejects(
+          operation({ distRoot, vendors: [vendor], silent: true }, recordingRunner().run),
+          /migrate-runtime/,
+        );
+        assert.deepEqual(record, emptyRecord());
+        await operation(
+          { distRoot, vendors: [vendor], silent: true, dryRun: true },
+          recordingRunner().run,
+        );
+        assert.deepEqual(record, emptyRecord());
+      },
+    );
+  });
+}

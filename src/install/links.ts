@@ -54,7 +54,9 @@ export async function planConfigs(options: PlanConfigsOptions): Promise<readonly
     for (const vendorName of link.vendors) {
       const vendor = vendorsByName.get(vendorName);
       if (!vendor) continue;
-      const { strategy, destAbs } = vendor.configPlacement(link.destRel);
+      const placement = vendor.configPlacement(link.destRel);
+      if (placement === null) continue;
+      const { strategy, destAbs } = placement;
       plan.push({ srcAbs, destAbs, vendor: vendor.name, reason: strategy });
       const aliasDests =
         vendor.aliases?.({
@@ -97,7 +99,7 @@ async function sweepOrphanLinks(
   const managedRoot = options.distRoot + "/";
   const planned = new Set(plan.map((p) => p.destAbs));
   const scanDirs = new Set<string>([
-    ...options.vendors.map((v) => v.home),
+    ...options.vendors.filter((v) => v.name !== "codex").map((v) => v.home),
     ...plan.map((p) => dirname(p.destAbs)),
   ]);
 
@@ -106,6 +108,11 @@ async function sweepOrphanLinks(
     for (const name of entries) {
       const path = join(dir, name);
       if (planned.has(path)) continue;
+      if (
+        options.vendors.some((v) => v.name === "claude" && path === join(v.home, "settings.json"))
+      ) {
+        continue;
+      }
       const target = await readlinkOrNull(path);
       if (target === null) continue;
       const absTarget = resolve(dir, target);

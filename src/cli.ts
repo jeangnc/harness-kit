@@ -9,6 +9,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 import { commaSeparated, parsePositiveInt, parseTier } from "./args/index.js";
+import { migrateRuntime, installDefaults } from "./install/runtime.js";
 import { compile } from "./compile.js";
 import { check, type ReferenceViolation, type Warning } from "./check/index.js";
 import { formatConsole, runEval, toJson } from "./eval/index.js";
@@ -49,6 +50,35 @@ const installArgs = {
   silent: { type: "boolean", default: false, description: "suppress success log" },
   "dry-run": { type: "boolean", default: false, description: "print plan without applying" },
 } as const;
+
+const migrateRuntimeCmd = defineCommand({
+  meta: {
+    name: "migrate-runtime",
+    description: "Detach legacy runtime links while preserving contents",
+  },
+  args: { ...installArgs, vendor: { type: "string", required: true } },
+  run: async ({ args }) => {
+    const vendors = resolveVendors([args.vendor], builtinVendors());
+    const changes = await migrateRuntime({ distRoot: args.dist, vendors, dryRun: args["dry-run"] });
+    for (const change of changes) {
+      console.log(`${change.path} → regular copy; backup: ${change.backup}`);
+    }
+  },
+});
+
+const installDefaultsCmd = defineCommand({
+  meta: {
+    name: "install-defaults",
+    description: "Publish Codex machine defaults separately from runtime settings",
+  },
+  args: { ...installArgs, vendor: { type: "string", required: true } },
+  run: async ({ args }) => {
+    if (args.vendor !== "codex") throw new Error("install-defaults supports only codex");
+    const backup = await installDefaults({ distRoot: args.dist, dryRun: args["dry-run"] });
+    if (backup) console.log(`Previous defaults preserved at ${backup}`);
+    console.log(`${args["dry-run"] ? "Would publish" : "Published"} /etc/codex/config.toml`);
+  },
+});
 
 const installCmd = defineCommand({
   meta: { name: "install", description: "Link configs + register plugins per declared vendor" },
@@ -302,6 +332,8 @@ const main = defineCommand({
     eval: evalCmd,
     init: initCmd,
     install: installCmd,
+    "migrate-runtime": migrateRuntimeCmd,
+    "install-defaults": installDefaultsCmd,
     lint: lintCmd,
     uninstall: uninstallCmd,
     update: updateCmd,

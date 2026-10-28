@@ -1,5 +1,7 @@
 import { resolve } from "node:path";
 
+import { assertRuntimeDetached } from "./runtime.js";
+
 import { applyConfigs, formatPlannedConfig, planConfigs } from "./links.js";
 import { discoverPluginsForVendor, readMarketplaceName } from "./discovery.js";
 import { type InstallMode } from "./mode.js";
@@ -59,6 +61,7 @@ export async function installWithRunner(
   runner: CommandRunner,
 ): Promise<void> {
   const ctx = await resolveContext(options, runner);
+  if (!options.dryRun) await assertRuntimeDetached(ctx);
   if (options.dryRun) {
     await runDryRun(ctx);
     return;
@@ -80,6 +83,7 @@ export async function uninstallWithRunner(
   runner: CommandRunner,
 ): Promise<void> {
   const ctx = await resolveContext(options, runner);
+  if (!options.dryRun) await assertRuntimeDetached(ctx);
   if (options.dryRun) {
     await runUninstallDryRun(ctx);
     return;
@@ -95,6 +99,7 @@ export async function updateWithRunner(
   runner: CommandRunner,
 ): Promise<Result<UpdateReport, UpdateError>> {
   const ctx = await resolveContext(options, runner);
+  if (!options.dryRun) await assertRuntimeDetached(ctx);
   const candidates = await Promise.all(
     ctx.vendors.map(async (vendor) => {
       const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);
@@ -115,9 +120,20 @@ export async function updateWithRunner(
   for (const { vendor, plugins, vendorCtx } of refreshable) {
     const before = await vendor.installedVersions(vendorCtx);
     const vendorChanges = diffPlugins({ before, shipped: plugins });
-    changes.push(...vendorChanges);
-    if (options.dryRun) continue;
+    if (options.dryRun) {
+      changes.push(...vendorChanges);
+      continue;
+    }
     await vendor.refresh(vendorCtx);
+    const after = await vendor.installedVersions(vendorCtx);
+    const refreshed = plugins.flatMap((plugin) => {
+      const version = after.get(plugin.name);
+      return version === undefined ? [] : [{ ...plugin, version }];
+    });
+    changes.push(
+      ...diffPlugins({ before, shipped: refreshed }).filter((change) => change.kind !== "removed"),
+      ...vendorChanges.filter((change) => change.kind === "removed"),
+    );
     const stale = staleNames(vendorChanges);
     if (prune && stale.length > 0) await vendor.pruneStale(vendorCtx, stale);
   }
@@ -252,6 +268,13 @@ async function runDryRun(ctx: ResolvedContext): Promise<void> {
     const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);
     if (plugins.length === 0) {
       ctx.log(`[dry-run] ${vendor.name}: no plugins`);
+      continue;
+    }
+    if (vendor.name === "codex") {
+      ctx.log(
+        `[dry-run] codex: ${plugins.length} plugin candidates; native selection is resolved at execution:`,
+      );
+      for (const plugin of plugins) ctx.log(`  ${plugin.name}@${plugin.version}`);
       continue;
     }
     const { enabled, disabled } = vendor.partitionPlugins(buildVendorContext(ctx, plugins));

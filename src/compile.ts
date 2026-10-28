@@ -1,3 +1,4 @@
+import { assertRuntimeDetached } from "./install/runtime.js";
 import { rm } from "node:fs/promises";
 import { resolve, join, dirname } from "node:path";
 
@@ -23,6 +24,7 @@ export async function compile(options: CompileOptions = {}): Promise<void> {
   const outRoot = resolve(options.outRoot ?? "./dist");
   const repoRoot = resolve(options.repoRoot ?? dirname(srcRoot));
   const vendors = options.vendors ?? (await resolveVendorsForRepo(repoRoot));
+  await assertRuntimeDetached({ distRoot: outRoot, vendors });
   const namedRoots = await resolveRootsForRepo(repoRoot);
   const adapter = await loadAdapter(srcRoot);
   const localIds = await collectLocalIds(adapter);

@@ -1,261 +1,227 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { codexVendor, makeCodexVendor } from "./index.js";
-import type { CommandRunner } from "../../install/runner.js";
 import type { VendorInstallContext } from "../../vendor/schema.js";
 
-interface Call {
-  readonly cmd: string;
-  readonly args: readonly string[];
-}
-
-function recordingRunner(): { run: CommandRunner; calls: Call[] } {
-  const calls: Call[] = [];
-  const run: CommandRunner = async (cmd, args) => {
-    calls.push({ cmd, args });
+function fixture(
+  entries: ReadonlyArray<{
+    name: string;
+    enabled: boolean;
+    installed: boolean;
+    version: string;
+  }> = [],
+) {
+  const calls: string[][] = [];
+  const ctx: VendorInstallContext = {
+    distRoot: "/tmp/foo/dist",
+    marketplace: "foo-market",
+    mode: "local",
+    plugins: [{ name: "foo", version: "2.0.0", path: "/tmp/foo/dist/codex/plugins/foo" }],
+    run: async (cmd, args) => {
+      calls.push([cmd, ...args]);
+      if (args.includes("list")) {
+        return JSON.stringify({
+          installed: entries
+            .filter((p) => p.installed)
+            .map((p) => ({ ...p, marketplaceName: "foo-market" })),
+          available: entries
+            .filter((p) => !p.installed)
+            .map((p) => ({ ...p, marketplaceName: "foo-market" })),
+        });
+      }
+      if (args[1] === "add") return JSON.stringify({ version: "2.0.0" });
+      return JSON.stringify({ errors: [] });
+    },
+    log: () => undefined,
   };
-  return { run, calls };
+  return { ctx, calls, vendor: makeCodexVendor("/tmp/foo/home") };
 }
 
-function makePluginDir(root: string, name: string, fileContent: string): string {
-  const dir = join(root, "plugins", "codex", name);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "marker.txt"), fileContent);
-  return dir;
-}
-
-async function withSandbox(
-  fn: (ctx: { distRoot: string; codexHome: string }) => Promise<void>,
-): Promise<void> {
-  const root = mkdtempSync(join(tmpdir(), "harness-codex-test-"));
-  const distRoot = join(root, "dist");
-  const codexHome = join(root, "home");
-  mkdirSync(distRoot, { recursive: true });
-  mkdirSync(codexHome, { recursive: true });
-  try {
-    await fn({ distRoot, codexHome });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
+test("Codex leaves every runtime config user-owned", () => {
+  for (const name of ["config.toml", "AGENTS.md", "hooks.json", "foo.config.toml"]) {
+    assert.equal(codexVendor.configPlacement(name), null);
   }
-}
-
-test("codexVendor default home is ~/.codex", () => {
-  assert.equal(codexVendor.name, "codex");
-  assert.match(codexVendor.home, /\.codex$/);
-  assert.equal(codexVendor.pluginManifestPath, ".codex-plugin/plugin.json");
 });
 
-test("codexVendor.pluginOutDir places plugins under <outRoot>/codex/plugins/<plugin>", () => {
-  assert.equal(codexVendor.pluginOutDir("/tmp/dist", "alpha"), "/tmp/dist/codex/plugins/alpha");
+test("Codex emits a marketplace at a native-supported location", () => {
+  assert.equal(codexVendor.marketplaceManifestPath, "codex/.claude-plugin/marketplace.json");
 });
 
-test("codexVendor.configsOutDir places configs under <outRoot>/codex/configs", () => {
-  assert.equal(codexVendor.configsOutDir("/tmp/dist"), "/tmp/dist/codex/configs");
+test("local installation registers the vendor catalog before installing enabled plugins", async () => {
+  const { ctx, calls, vendor } = fixture([
+    { name: "foo", enabled: true, installed: false, version: "2.0.0" },
+  ]);
+  await vendor.install(ctx);
+  assert.deepEqual(calls[0], [
+    "codex",
+    "plugin",
+    "marketplace",
+    "add",
+    "/tmp/foo/dist/codex",
+    "--json",
+  ]);
+  assert.ok(calls.some((call) => call.join(" ") === "codex plugin add foo@foo-market --json"));
 });
 
-test("codexVendor declares no aliases hook", () => {
-  const v = makeCodexVendor("/home/test/.codex");
-  assert.equal(v.aliases, undefined);
+test("installation leaves disabled plugins unchanged", async () => {
+  const { ctx, calls, vendor } = fixture([
+    { name: "foo", enabled: false, installed: false, version: "2.0.0" },
+  ]);
+  await vendor.install(ctx);
+  assert.equal(
+    calls.some((call) => call[2] === "add"),
+    false,
+  );
 });
 
-test("codexVendor merges config.toml into its home", () => {
-  const v = makeCodexVendor("/home/test/.codex");
-  assert.deepEqual(v.configPlacement("config.toml"), {
-    strategy: "merge",
-    destAbs: "/home/test/.codex/config.toml",
-  });
+test("refresh refuses to re-enable a disabled installed plugin", async () => {
+  const { ctx, calls, vendor } = fixture([
+    { name: "foo", enabled: false, installed: true, version: "1.0.0" },
+  ]);
+  await assert.rejects(vendor.refresh(ctx), /disabled.*foo/);
+  assert.equal(
+    calls.some((call) => call[2] === "add"),
+    false,
+  );
 });
 
-test("codexVendor links every other config file into its home", () => {
-  const v = makeCodexVendor("/home/test/.codex");
-  assert.deepEqual(v.configPlacement("AGENTS.md"), {
-    strategy: "link",
-    destAbs: "/home/test/.codex/AGENTS.md",
-  });
+test("refresh leaves a current disabled plugin unchanged", async () => {
+  const { ctx, calls, vendor } = fixture([
+    { name: "foo", enabled: false, installed: true, version: "2.0.0" },
+  ]);
+  await vendor.refresh(ctx);
+  assert.equal(
+    calls.some((call) => call[2] === "add"),
+    false,
+  );
 });
 
-test("codexVendor.install primes cache + registers marketplace", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    const alphaPath = makePluginDir(distRoot, "alpha", "alpha-content");
-    const { run, calls } = recordingRunner();
-    const ctx: VendorInstallContext = {
-      distRoot,
-      marketplace: "test-market",
-      plugins: [{ name: "alpha", path: alphaPath, version: "1.2.3" }],
+test("refresh installs the new version of an enabled plugin through Codex", async () => {
+  const { ctx, calls, vendor } = fixture([
+    { name: "foo", enabled: true, installed: true, version: "1.0.0" },
+  ]);
+  await vendor.refresh(ctx);
+  assert.ok(calls.some((call) => call.join(" ") === "codex plugin add foo@foo-market --json"));
+});
+
+test("remote installation refreshes its configured Git marketplace", async () => {
+  const { ctx, calls, vendor } = fixture([]);
+  await vendor.install({ ...ctx, mode: "remote" });
+  assert.deepEqual(calls[0], ["codex", "plugin", "marketplace", "upgrade", "foo-market", "--json"]);
+  assert.equal(
+    calls.some((call) => call.includes(ctx.distRoot)),
+    false,
+  );
+});
+
+test("native command failures stop installation", async () => {
+  const { ctx, vendor } = fixture();
+  await assert.rejects(
+    vendor.install({
+      ...ctx,
+      run: async () => {
+        throw new Error("foo failed");
+      },
+    }),
+    /foo failed/,
+  );
+});
+
+test("invalid native output is rejected before plugin mutation", async () => {
+  const { ctx, vendor } = fixture();
+  await assert.rejects(vendor.install({ ...ctx, run: async () => "invalid" }), /Codex plugin list/);
+});
+
+test("installed versions come from the native registry", async () => {
+  const { ctx, vendor } = fixture([
+    { name: "foo", enabled: false, installed: true, version: "1.0.0" },
+  ]);
+  assert.deepEqual(await vendor.installedVersions(ctx), new Map([["foo", "1.0.0"]]));
+  assert.equal(await vendor.isInstalled(ctx), true);
+});
+
+test("uninstall delegates plugin and marketplace removal", async () => {
+  const { ctx, calls, vendor } = fixture([
+    { name: "foo", enabled: false, installed: true, version: "1.0.0" },
+  ]);
+  await vendor.uninstall(ctx);
+  assert.ok(calls.some((call) => call.join(" ") === "codex plugin remove foo@foo-market --json"));
+  assert.deepEqual(calls.at(-1), [
+    "codex",
+    "plugin",
+    "marketplace",
+    "remove",
+    "foo-market",
+    "--json",
+  ]);
+});
+
+test("pruning delegates only the named plugin removal", async () => {
+  const { ctx, calls, vendor } = fixture();
+  await vendor.pruneStale(ctx, ["bar"]);
+  assert.deepEqual(calls, [["codex", "plugin", "remove", "bar@foo-market", "--json"]]);
+});
+
+test("installation does not write user files or delete cached content itself", async () => {
+  const home = await mkdtemp(join(tmpdir(), "harness-native-"));
+  try {
+    const cache = join(home, "plugins/cache/foo-market/foo/1.0.0");
+    await mkdir(cache, { recursive: true });
+    await writeFile(join(cache, "foo"), "foo");
+    await writeFile(join(home, "config.toml"), "foo = true\n");
+    const { ctx } = fixture([{ name: "foo", enabled: true, installed: true, version: "1.0.0" }]);
+    await makeCodexVendor(home).install(ctx);
+    assert.equal(await readFile(join(cache, "foo"), "utf8"), "foo");
+    assert.equal(await readFile(join(home, "config.toml"), "utf8"), "foo = true\n");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("remote marketplace errors stop plugin installation", async () => {
+  const { ctx, vendor } = fixture();
+  await assert.rejects(
+    vendor.install({
+      ...ctx,
       mode: "remote",
-      run,
-      log: () => undefined,
-    };
-    await makeCodexVendor(codexHome).install(ctx);
+      run: async () => JSON.stringify({ errors: ["foo"] }),
+    }),
+    /marketplace upgrade/,
+  );
+});
 
-    const cached = join(codexHome, "plugins/cache/test-market/alpha/1.2.3/marker.txt");
-    assert.equal(existsSync(cached), true);
-    assert.equal(readFileSync(cached, "utf8"), "alpha-content");
-    const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.deepEqual(cmds, [`codex plugin marketplace add ${distRoot}`]);
+test("native installation rejects an unexpected installed version", async () => {
+  const { ctx, vendor } = fixture([
+    { name: "foo", enabled: true, installed: false, version: "2.0.0" },
+  ]);
+  const run = ctx.run;
+  await assert.rejects(
+    vendor.install({
+      ...ctx,
+      run: async (cmd, args) =>
+        args[1] === "add" ? JSON.stringify({ version: "1.0.0" }) : run(cmd, args),
+    }),
+    /expected foo@2.0.0/,
+  );
+});
+
+test("native commands target the vendor's configured home", async () => {
+  const { ctx, vendor } = fixture();
+  const run = ctx.run;
+  await vendor.install({
+    ...ctx,
+    run: async (cmd, args, options) => {
+      assert.equal(options?.env["CODEX_HOME"], vendor.home);
+      assert.equal(options?.cwd, "/");
+      return run(cmd, args);
+    },
   });
 });
 
-test("codexVendor.install is a no-op when no plugins", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    const { run, calls } = recordingRunner();
-    await makeCodexVendor(codexHome).install({
-      distRoot,
-      marketplace: "m",
-      plugins: [],
-      mode: "remote",
-      run,
-      log: () => undefined,
-    });
-    assert.equal(calls.length, 0);
-  });
-});
-
-test("codexVendor.install wipes any pre-existing marketplace cache", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    const stale = join(codexHome, "plugins/cache/test-market/stale-plugin/9.9.9");
-    mkdirSync(stale, { recursive: true });
-    writeFileSync(join(stale, "old.txt"), "old");
-    const alphaPath = makePluginDir(distRoot, "alpha", "fresh");
-    const { run } = recordingRunner();
-    await makeCodexVendor(codexHome).install({
-      distRoot,
-      marketplace: "test-market",
-      plugins: [{ name: "alpha", path: alphaPath, version: "1.0.0" }],
-      mode: "remote",
-      run,
-      log: () => undefined,
-    });
-    assert.equal(existsSync(stale), false);
-    assert.equal(
-      existsSync(join(codexHome, "plugins/cache/test-market/alpha/1.0.0/marker.txt")),
-      true,
-    );
-  });
-});
-
-test("codexVendor.refresh primes the cache identically to install", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    const alphaPath = makePluginDir(distRoot, "alpha", "alpha-content");
-    const { run, calls } = recordingRunner();
-    const ctx: VendorInstallContext = {
-      distRoot,
-      marketplace: "test-market",
-      plugins: [{ name: "alpha", path: alphaPath, version: "1.2.3" }],
-      mode: "remote",
-      run,
-      log: () => undefined,
-    };
-    await makeCodexVendor(codexHome).refresh(ctx);
-
-    const cached = join(codexHome, "plugins/cache/test-market/alpha/1.2.3/marker.txt");
-    assert.equal(existsSync(cached), true);
-    assert.equal(readFileSync(cached, "utf8"), "alpha-content");
-    const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.deepEqual(cmds, [`codex plugin marketplace add ${distRoot}`]);
-  });
-});
-
-test("codexVendor.isInstalled is true when the marketplace cache exists", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    mkdirSync(join(codexHome, "plugins/cache/test-market/alpha/1.0.0"), { recursive: true });
-    const { run } = recordingRunner();
-    const installed = await makeCodexVendor(codexHome).isInstalled({
-      distRoot,
-      marketplace: "test-market",
-      plugins: [],
-      mode: "remote",
-      run,
-      log: () => undefined,
-    });
-    assert.equal(installed, true);
-  });
-});
-
-test("codexVendor.isInstalled is false when no marketplace cache exists", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    const { run } = recordingRunner();
-    const installed = await makeCodexVendor(codexHome).isInstalled({
-      distRoot,
-      marketplace: "test-market",
-      plugins: [],
-      mode: "remote",
-      run,
-      log: () => undefined,
-    });
-    assert.equal(installed, false);
-  });
-});
-
-test("codexVendor.installedVersions reads the version from the cache directory name", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    mkdirSync(join(codexHome, "plugins/cache/test-market/alpha/2.5.0"), { recursive: true });
-    mkdirSync(join(codexHome, "plugins/cache/test-market/beta/0.1.0"), { recursive: true });
-    const { run } = recordingRunner();
-    const versions = await makeCodexVendor(codexHome).installedVersions({
-      distRoot,
-      marketplace: "test-market",
-      plugins: [],
-      mode: "remote",
-      run,
-      log: () => undefined,
-    });
-    assert.equal(versions.get("alpha"), "2.5.0");
-    assert.equal(versions.get("beta"), "0.1.0");
-  });
-});
-
-test("codexVendor.uninstall removes marketplace cache + calls codex CLI", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    const cacheDir = join(codexHome, "plugins/cache/test-market");
-    mkdirSync(cacheDir, { recursive: true });
-    writeFileSync(join(cacheDir, "stale.txt"), "x");
-    const { run, calls } = recordingRunner();
-    await makeCodexVendor(codexHome).uninstall({
-      distRoot,
-      marketplace: "test-market",
-      plugins: [],
-      mode: "remote",
-      run,
-      log: () => undefined,
-    });
-    assert.equal(existsSync(cacheDir), false);
-    const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.deepEqual(cmds, ["codex plugin marketplace remove test-market"]);
-  });
-});
-
-test("codexVendor.pruneStale removes only the named plugin's cache dir", async () => {
-  await withSandbox(async ({ distRoot, codexHome }) => {
-    const cacheRoot = join(codexHome, "plugins/cache/test-market");
-    for (const { name, version } of [
-      { name: "legacy", version: "0.9.0" },
-      { name: "keeper", version: "1.0.0" },
-    ]) {
-      mkdirSync(join(cacheRoot, name, version), { recursive: true });
-    }
-    const vendor = makeCodexVendor(codexHome);
-    const { run } = recordingRunner();
-    const base: VendorInstallContext = {
-      distRoot,
-      marketplace: "test-market",
-      plugins: [],
-      mode: "local",
-      run,
-      log: () => undefined,
-    };
-
-    await vendor.pruneStale(base, ["legacy"]);
-
-    assert.equal(existsSync(join(cacheRoot, "legacy")), false, "the stale plugin is gone");
-    assert.deepEqual(
-      await vendor.installedVersions(base),
-      new Map([["keeper", "1.0.0"]]),
-      "the shipped plugin is untouched",
-    );
-  });
+test("relative Codex homes are resolved before changing command directories", () => {
+  assert.equal(makeCodexVendor("foo").home, resolve("foo"));
 });

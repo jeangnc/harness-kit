@@ -1,103 +1,152 @@
 import { homedir } from "node:os";
-import { cp, mkdir, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join, parse, resolve } from "node:path";
+import { z } from "zod";
 
-import { runIgnoreFailure } from "../../install/runner.js";
-import { readdirOrEmpty } from "../../fs.js";
 import {
   defaultEmitMarketplaceManifest,
   defaultEmitPluginManifest,
   defaultPartition,
 } from "../shared.js";
-import type {
-  Vendor,
-  VendorEmitContext,
-  VendorInstallContext,
-  VendorMarketplaceEmitContext,
-} from "../../vendor/schema.js";
+import type { Vendor, VendorInstallContext } from "../../vendor/schema.js";
 
 const VENDOR_DIR = "codex";
 const PLUGIN_MANIFEST_REL = ".codex-plugin/plugin.json";
-const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.codex-plugin/marketplace.json`;
-const CONFIG_FILE = "config.toml";
+const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.claude-plugin/marketplace.json`;
+const pluginEntry = z.object({
+  name: z.string(),
+  marketplaceName: z.string(),
+  version: z.string(),
+  installed: z.boolean(),
+  enabled: z.boolean(),
+});
+const pluginList = z.object({
+  installed: z.array(pluginEntry),
+  available: z.array(pluginEntry),
+});
 
-export function makeCodexVendor(home: string): Vendor {
+export function makeCodexVendor(homePath: string): Vendor {
+  const home = resolve(homePath);
+  const inHome = (ctx: VendorInstallContext): VendorInstallContext => ({
+    ...ctx,
+    run: async (cmd, args) =>
+      ctx.run(cmd, args, { env: { CODEX_HOME: home }, cwd: parse(resolve(home)).root }),
+  });
   return {
     name: "codex",
     home,
     pluginManifestPath: PLUGIN_MANIFEST_REL,
     marketplaceManifestPath: MARKETPLACE_MANIFEST_REL,
-    vendorOutDir(outRoot) {
-      return join(outRoot, VENDOR_DIR);
-    },
-    pluginOutDir(outRoot, pluginName) {
-      return join(outRoot, VENDOR_DIR, "plugins", pluginName);
-    },
-    configsOutDir(outRoot) {
-      return join(outRoot, VENDOR_DIR, "configs");
-    },
-    configPlacement(destRel) {
-      return { strategy: destRel === CONFIG_FILE ? "merge" : "link", destAbs: join(home, destRel) };
-    },
-    async emitPluginManifest(ctx: VendorEmitContext): Promise<void> {
-      await defaultEmitPluginManifest(PLUGIN_MANIFEST_REL, ctx);
-    },
-    async emitMarketplaceManifest(ctx: VendorMarketplaceEmitContext): Promise<void> {
-      await defaultEmitMarketplaceManifest(MARKETPLACE_MANIFEST_REL, ctx);
-    },
-    async install(ctx: VendorInstallContext): Promise<void> {
-      await primeCache(home, ctx);
-    },
-    async refresh(ctx: VendorInstallContext): Promise<void> {
-      await primeCache(home, ctx);
-    },
-    async uninstall(ctx: VendorInstallContext): Promise<void> {
-      await runIgnoreFailure(ctx.run, "codex", [
-        "plugin",
-        "marketplace",
-        "remove",
-        ctx.marketplace,
-      ]);
-      await rm(cacheDir(home, ctx.marketplace), { recursive: true, force: true });
-      ctx.log(`[codex] removed ${ctx.marketplace} cache`);
+    vendorOutDir: (outRoot) => join(outRoot, VENDOR_DIR),
+    pluginOutDir: (outRoot, pluginName) => join(outRoot, VENDOR_DIR, "plugins", pluginName),
+    configsOutDir: (outRoot) => join(outRoot, VENDOR_DIR, "configs"),
+    configPlacement: () => null,
+    emitPluginManifest: async (ctx) => defaultEmitPluginManifest(PLUGIN_MANIFEST_REL, ctx),
+    emitMarketplaceManifest: async (ctx) =>
+      defaultEmitMarketplaceManifest(MARKETPLACE_MANIFEST_REL, ctx),
+    install: async (ctx) => refreshPlugins(inHome(ctx)),
+    refresh: async (ctx) => refreshPlugins(inHome(ctx)),
+    async uninstall(context) {
+      const ctx = inHome(context);
+      for (const plugin of (await listPlugins(ctx)).filter((entry) => entry.installed)) {
+        await removePlugin(ctx, plugin.name);
+      }
+      await ctx.run("codex", ["plugin", "marketplace", "remove", ctx.marketplace, "--json"]);
     },
     partitionPlugins: defaultPartition,
-    async pruneStale(ctx: VendorInstallContext, names: readonly string[]): Promise<void> {
-      for (const name of names) {
-        await rm(join(cacheDir(home, ctx.marketplace), name), { recursive: true, force: true });
-      }
+    async pruneStale(context, names) {
+      const ctx = inHome(context);
+      for (const name of names) await removePlugin(ctx, name);
     },
-    async isInstalled(ctx: VendorInstallContext): Promise<boolean> {
-      const entries = await readdirOrEmpty(cacheDir(home, ctx.marketplace));
-      return entries.length > 0;
+    async isInstalled(ctx) {
+      return (await listPlugins(inHome(ctx))).some((entry) => entry.installed);
     },
-    async installedVersions(ctx: VendorInstallContext): Promise<ReadonlyMap<string, string>> {
-      const root = cacheDir(home, ctx.marketplace);
-      const versions = new Map<string, string>();
-      for (const name of await readdirOrEmpty(root)) {
-        const [version] = await readdirOrEmpty(join(root, name));
-        if (version !== undefined) versions.set(name, version);
-      }
-      return versions;
+    async installedVersions(ctx) {
+      return new Map(
+        (await listPlugins(inHome(ctx)))
+          .filter((entry) => entry.installed)
+          .map((entry) => [entry.name, entry.version]),
+      );
     },
   };
 }
 
-async function primeCache(home: string, ctx: VendorInstallContext): Promise<void> {
-  if (ctx.plugins.length === 0) return;
-  ctx.log(`[codex] priming ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace}`);
-  await rm(cacheDir(home, ctx.marketplace), { recursive: true, force: true });
-  await runIgnoreFailure(ctx.run, "codex", ["plugin", "marketplace", "add", ctx.distRoot]);
+async function refreshPlugins(ctx: VendorInstallContext): Promise<void> {
+  if (ctx.mode === "local") {
+    await ctx.run("codex", [
+      "plugin",
+      "marketplace",
+      "add",
+      join(ctx.distRoot, VENDOR_DIR),
+      "--json",
+    ]);
+  } else {
+    const output = await ctx.run("codex", [
+      "plugin",
+      "marketplace",
+      "upgrade",
+      ctx.marketplace,
+      "--json",
+    ]);
+    const result = z.object({ errors: z.array(z.unknown()) }).parse(JSON.parse(output ?? ""));
+    if (result.errors.length > 0) {
+      throw new Error(
+        "Codex marketplace upgrade failed; inspect its configured Git source before retrying",
+      );
+    }
+  }
+  const entries = await listPlugins(ctx);
   for (const plugin of ctx.plugins) {
-    const dest = join(cacheDir(home, ctx.marketplace), plugin.name, plugin.version);
-    await mkdir(dirname(dest), { recursive: true });
-    await cp(plugin.path, dest, { recursive: true });
-    ctx.log(`[codex] cached ${plugin.name}@${plugin.version}`);
+    const installed = entries.find((entry) => entry.name === plugin.name && entry.installed);
+    if (installed && !installed.enabled && installed.version !== plugin.version) {
+      throw new Error(
+        `Codex cannot refresh disabled plugin ${plugin.name} without enabling it; leave its installed version unchanged or enable it through Codex first`,
+      );
+    }
+  }
+  for (const plugin of ctx.plugins) {
+    const entry = entries.find((candidate) => candidate.name === plugin.name);
+    if (!entry?.enabled || (entry.installed && entry.version === plugin.version)) continue;
+    const output = await ctx.run("codex", [
+      "plugin",
+      "add",
+      `${plugin.name}@${ctx.marketplace}`,
+      "--json",
+    ]);
+    const result = z.object({ version: z.string() }).parse(JSON.parse(output ?? ""));
+    if (result.version !== plugin.version) {
+      throw new Error(
+        `Codex installed ${plugin.name}@${result.version}; expected ${plugin.name}@${plugin.version}`,
+      );
+    }
+    ctx.log(`[codex] installed ${plugin.name} through Codex`);
   }
 }
 
-function cacheDir(home: string, marketplace: string): string {
-  return join(home, "plugins/cache", marketplace);
+async function listPlugins(ctx: VendorInstallContext): Promise<Array<z.infer<typeof pluginEntry>>> {
+  const output = await ctx.run("codex", [
+    "plugin",
+    "list",
+    "--marketplace",
+    ctx.marketplace,
+    "--available",
+    "--json",
+  ]);
+  try {
+    const result = pluginList.parse(JSON.parse(output ?? ""));
+    return [...result.installed, ...result.available].filter(
+      (entry) => entry.marketplaceName === ctx.marketplace,
+    );
+  } catch (cause) {
+    throw new Error("Codex plugin list did not return the expected native JSON registry", {
+      cause,
+    });
+  }
 }
 
-export const codexVendor: Vendor = makeCodexVendor(join(homedir(), ".codex"));
+async function removePlugin(ctx: VendorInstallContext, name: string): Promise<void> {
+  await ctx.run("codex", ["plugin", "remove", `${name}@${ctx.marketplace}`, "--json"]);
+}
+
+export const codexVendor: Vendor = makeCodexVendor(
+  process.env["CODEX_HOME"] ?? join(homedir(), ".codex"),
+);

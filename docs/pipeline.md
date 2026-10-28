@@ -6,9 +6,11 @@ The mechanics of `harness compile`, `harness install`, and `harness update`. For
 
 `harness compile` reads vendors from `harness.yaml`, validates the marketplace manifest, discovers plugins, and validates each `hookRequires` against the local artifact IDs. For each declared vendor it emits everything under a single top-level `dist/<vendor>/` subtree:
 
-- `dist/<vendor>/.<vendor>-plugin/marketplace.json` — the per-vendor marketplace manifest.
+- `dist/<vendor>/.claude-plugin/marketplace.json` — the per-vendor marketplace manifest.
 - `dist/<vendor>/plugins/<plugin>/` — compiled skills/agents/commands plus the per-vendor plugin manifest.
 - `dist/<vendor>/configs/` — vendor-specific config files (everything under `src/<vendor>/configs/` minus dot-prefixed entries).
+
+Compilation refuses runtime links into `dist/`. Run `harness migrate-runtime --vendor codex` (and `--vendor claude` for Claude settings) before rebuilding a legacy installation. Migration backs up content and detaches links without merging configuration.
 
 A top-level `dist/configs.json` link manifest enumerates the symlinks `harness install` will create.
 
@@ -16,13 +18,13 @@ A top-level `dist/configs.json` link manifest enumerates the symlinks `harness i
 
 `harness install` reads `harness.yaml`, then:
 
-1. Applies links from `dist/configs.json`. Existing symlinks are replaced. Regular files are renamed to `<dest>.backup` (incrementing to `.backup.2`, `.backup.3`, …) before the symlink is created. Orphan symlinks pointing back into the repo are swept before applying. A file the vendor places as `merge` (codex `config.toml`) is merged instead of linked: repo keys overwrite, every other key the app wrote is kept, and keys the repo stopped owning are removed via a ledger at `<home>/.harness-kit/<file>.owned.json`. A merge destination that is still a symlink into `dist/` is adopted as a real file.
+1. Refuses runtime files linked into this generated output. Applies permitted links from `dist/configs.json`: Codex runtime files and Claude `settings.json` are excluded. Other vendor links retain their existing backup and orphan-sweep behavior.
 2. For each declared vendor, discovers compiled plugins under `dist/<vendor>/plugins/` and calls the vendor's `install` hook.
 
-`--mode` selects where Claude resolves plugins from: `local` (default) registers the freshly compiled `dist/claude/` tree as a local-scoped marketplace, so uncommitted builds install without publishing; `remote` pulls from the published marketplace. Codex is local-only and ignores the flag.
+`--mode` selects where Claude resolves plugins from: `local` (default) registers the freshly compiled `dist/claude/` tree as a local-scoped marketplace, so uncommitted builds install without publishing; `remote` pulls from the published marketplace. Codex local mode registers `dist/codex`; remote mode upgrades an already configured Git marketplace. Codex owns plugin cache writes and enabled state.
 
 `--dry-run` prints the plan without touching the filesystem.
 
-`harness update` is the refresh path for an **already-installed** harness: it skips step 1 (no config-link bootstrap, so a symlinked `settings.json` and its `enabledPlugins` are left untouched) and runs step 2 only. It refuses with an error if no vendor reports an existing install, and reports a per-plugin version diff (`added` / `→` / `unchanged` / `removed`) against the versions currently cached.
+`harness update` is the refresh path for an **already-installed** harness: it checks runtime detachment, skips config linking, and refreshes plugins. It refuses with an error if no vendor reports an existing install, and reports a per-plugin version diff (`added` / `→` / `unchanged` / `removed`) against observed versions after refresh. Disabled Codex plugins are skipped unless their installed version needs refreshing, in which case the operation fails before installing any plugin. Native installation would otherwise re-enable them.
 
 > **Known gap — repo-root marketplace symlink.** A consumer repo that publishes its own marketplace from the root expects a `.claude-plugin/marketplace.json` at the repo root pointing at the compiled `dist/<vendor>/.claude-plugin/marketplace.json`. `install` does **not** create that symlink today — it only links into each vendor's home and emits the per-vendor manifest under `dist/`. Repos that need the root manifest currently maintain it by hand, which drifts from the compiled source. Linking it from `install` (the same way configs are linked) is not yet implemented.

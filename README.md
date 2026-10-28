@@ -16,7 +16,7 @@ harness install
 
 ## How it works
 
-You write plugins and configs once under `src/`, declare which vendors to target, and `harness compile` emits a per-vendor `dist/` tree that `harness install` links into each vendor's home.
+You write plugins and configs once under `src/`, declare which vendors to target, and `harness compile` emits a per-vendor `dist/` tree that vendor installers consume. Codex runtime files remain user-owned.
 
 ### `harness.yaml`
 
@@ -38,7 +38,7 @@ Created by `harness init`. Read automatically by `compile`, `install`, and `unin
 A vendor is a named target with a home directory, a per-vendor manifest path, an `emitPluginManifest` hook, `install`/`uninstall` hooks, and an optional `aliases` hook for fan-out symlink destinations. Built-in:
 
 - **claude** — registers plugins via `claude plugin install`; creates a `CLAUDE.md` symlink whenever an `AGENTS.md` config file is linked.
-- **codex** — primes the local cache by copying compiled plugins, then runs `codex plugin marketplace add`; merges `config.toml` into `~/.codex/config.toml` instead of linking it, so the app's own state never lands in the repo.
+- **codex** — uses native plugin commands and respects `CODEX_HOME`. It never links or merges runtime settings. Disabled plugins stay disabled; refreshing an outdated disabled plugin fails because native installation would enable it.
 
 Writing your own vendor: see [docs/vendors.md](./docs/vendors.md).
 
@@ -55,7 +55,7 @@ Under `src/`:
 | `src/plugins/<plugin>/` | A plugin, shared across every declared vendor — `skills/<name>/` (each `SKILL.md`, or `SKILL.ts` + `body.md`), plus optional `agents/`, `commands/`, and `hooks/`. |
 | `src/<root>/` | Any directory mapped under `roots:` in `harness.yaml` (e.g. `shared/`), reachable from skills via `{{include:@<root>/…}}`. |
 
-`compile` reads `src/` and writes a `dist/<vendor>/` subtree per declared vendor; `install` links those into place. Mechanics: [docs/pipeline.md](./docs/pipeline.md). Manifest fields: [docs/marketplace.md](./docs/marketplace.md).
+`compile` reads `src/` and writes a `dist/<vendor>/` subtree per declared vendor; `install` applies vendor-owned config placements and registers plugins. Mechanics: [docs/pipeline.md](./docs/pipeline.md). Manifest fields: [docs/marketplace.md](./docs/marketplace.md).
 
 > **Known gap:** a repo that publishes its own marketplace from the root needs a `.claude-plugin/marketplace.json` symlink at the repo root pointing at the compiled `dist/<vendor>/.claude-plugin/marketplace.json`. `install` does not create it yet — repos that need it maintain it by hand. See [docs/pipeline.md](./docs/pipeline.md#install-pipeline).
 
@@ -95,6 +95,8 @@ harness lint      # lint compiled markdown under dist/
 harness check     # validate plugin references against local + installed sources
 harness install   # bootstrap: link configs + register plugins per declared vendor (--mode=local|remote)
 harness update    # refresh plugins for an already-installed harness; skips config links, reports version diff
+harness migrate-runtime --vendor codex # back up and detach legacy runtime links before compiling
+harness install-defaults --vendor codex # publish static /etc/codex/config.toml separately
 harness uninstall # remove installed plugins per declared vendor
 harness eval      # run routing + solving evals against the installed harness
 ```
@@ -104,6 +106,14 @@ harness eval      # run routing + solving evals against the installed harness
 ## Programmatic API
 
 Everything the CLI does is also a typed module API. See [docs/api.md](./docs/api.md).
+
+## Runtime ownership
+
+Run `harness migrate-runtime --vendor codex --dry-run` before rebuilding an existing linked installation, then repeat without `--dry-run`. Migrate Claude settings separately with `--vendor claude`. Migration preserves file contents and permissions with private backups. Compilation and mutating install commands refuse runtime links into their generated output.
+
+Publish Codex static defaults with `harness install-defaults --vendor codex`; `--dry-run` previews the destination. Only this command needs administrator permission for `/etc/codex/config.toml`. Existing machine defaults are backed up. Never elevate the whole plugin installer. User settings, personal instructions, hooks, and profiles stay in their native user locations and stop receiving automatic template updates.
+
+Local mode registers `dist/codex` through Codex. Remote mode requires an already configured Git marketplace and refreshes it through Codex. Use native marketplace registration first for a new remote source. Native commands run outside the invoking project and only select plugins enabled at user/system scope. Project and named-profile enablement is never promoted to a global setting. Unsupported native refreshes fail explicitly instead of editing settings or caches. Run `node scripts/smoke-codex.mjs` after compiling the toolkit to verify native CLI integration in an isolated temporary home.
 
 ## Requirements
 
