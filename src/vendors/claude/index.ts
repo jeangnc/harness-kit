@@ -34,20 +34,7 @@ function pluginKey(name: string, marketplace: string): string {
 
 export function readDisabledPluginKeys(configsDir: string): ReadonlySet<string> {
   const settingsPath = join(configsDir, "settings.json");
-  let raw: string;
-  try {
-    raw = readFileSync(settingsPath, "utf8");
-  } catch (cause) {
-    if (errnoCode(cause) === "ENOENT") return new Set();
-    throw new Error(`cannot read claude settings.json at ${settingsPath}`, { cause });
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (cause) {
-    throw new Error(`invalid claude settings.json at ${settingsPath}`, { cause });
-  }
-  const enabledPlugins = isRecord(parsed) ? parsed["enabledPlugins"] : undefined;
+  const enabledPlugins = readSettings(settingsPath)["enabledPlugins"];
   if (enabledPlugins === undefined) return new Set();
   if (!isRecord(enabledPlugins)) {
     throw new Error(`claude settings.json "enabledPlugins" must be an object at ${settingsPath}`);
@@ -62,6 +49,33 @@ export function readDisabledPluginKeys(configsDir: string): ReadonlySet<string> 
     if (!value) disabled.add(key);
   }
   return disabled;
+}
+
+function readSettings(settingsPath: string): Record<string, unknown> {
+  let raw: string;
+  try {
+    raw = readFileSync(settingsPath, "utf8");
+  } catch (cause) {
+    if (errnoCode(cause) === "ENOENT") return {};
+    throw new Error(`cannot read claude settings.json at ${settingsPath}`, { cause });
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`invalid claude settings.json at ${settingsPath}`, { cause });
+  }
+  return isRecord(parsed) ? parsed : {};
+}
+
+function declaredMarketplaceSource(ctx: VendorInstallContext): string | undefined {
+  const settings = readSettings(join(ctx.distRoot, VENDOR_DIR, "configs", "settings.json"));
+  const marketplaces = settings["extraKnownMarketplaces"];
+  const entry = isRecord(marketplaces) ? marketplaces[ctx.marketplace] : undefined;
+  const source = isRecord(entry) ? entry["source"] : undefined;
+  if (!isRecord(source)) return undefined;
+  const location = source["url"] ?? source["repo"] ?? source["path"];
+  return typeof location === "string" ? location : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -328,11 +342,30 @@ async function pruneStagingDirs(home: string): Promise<void> {
 }
 
 async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
-  const args =
-    ctx.mode === "local"
-      ? ["plugin", "marketplace", "add", join(ctx.distRoot, VENDOR_DIR), "--scope", "local"]
-      : ["plugin", "marketplace", "update", ctx.marketplace];
-  await runIgnoreFailure(ctx.run, "claude", args);
+  if (ctx.mode === "local") {
+    await runIgnoreFailure(ctx.run, "claude", [
+      "plugin",
+      "marketplace",
+      "add",
+      join(ctx.distRoot, VENDOR_DIR),
+      "--scope",
+      "local",
+    ]);
+    return;
+  }
+  await runIgnoreFailure(ctx.run, "claude", [
+    "plugin",
+    "marketplace",
+    "remove",
+    ctx.marketplace,
+    "--scope",
+    "local",
+  ]);
+  const source = declaredMarketplaceSource(ctx);
+  if (source !== undefined) {
+    await runIgnoreFailure(ctx.run, "claude", ["plugin", "marketplace", "add", source]);
+  }
+  await runIgnoreFailure(ctx.run, "claude", ["plugin", "marketplace", "update", ctx.marketplace]);
 }
 
 export const claudeVendor: Vendor = makeClaudeVendor(join(homedir(), ".claude"));

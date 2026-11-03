@@ -181,11 +181,47 @@ test("claudeVendor.install in remote mode installs each unregistered plugin with
     );
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
     assert.deepEqual(cmds, [
+      "claude plugin marketplace remove test-market --scope local",
       "claude plugin marketplace update test-market",
       "claude plugin install alpha@test-market",
       "claude plugin install beta@test-market",
     ]);
   });
+});
+
+test("claudeVendor.install in remote mode repoints the marketplace at its declared source", async () => {
+  const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-claude-remote-"));
+  try {
+    const dist = join(sandbox, "dist");
+    const home = join(sandbox, "home");
+    mkdirSync(join(dist, "claude/configs"), { recursive: true });
+    writeFileSync(
+      join(dist, "claude/configs/settings.json"),
+      JSON.stringify({
+        extraKnownMarketplaces: {
+          "test-market": { source: { source: "git", url: "git@example.com:foo/bar.git" } },
+        },
+      }),
+    );
+    const path = writeDistPlugin(dist, "alpha", "1.0.0", "alpha-v1");
+    const { run, calls } = recordingRunner(home);
+    await makeClaudeVendor(home).install(
+      ctx({
+        run,
+        mode: "remote",
+        distRoot: dist,
+        plugins: [{ name: "alpha", path, version: "1.0.0" }],
+      }),
+    );
+    const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
+    assert.deepEqual(cmds.slice(0, 3), [
+      "claude plugin marketplace remove test-market --scope local",
+      "claude plugin marketplace add git@example.com:foo/bar.git",
+      "claude plugin marketplace update test-market",
+    ]);
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
+  }
 });
 
 test("claudeVendor.install in local mode adds the dist marketplace instead of updating", async () => {
