@@ -78,15 +78,17 @@ test("installation leaves disabled plugins unchanged", async () => {
   );
 });
 
-test("refresh refuses to re-enable a disabled installed plugin", async () => {
+test("refresh skips a stale disabled plugin without enabling it", async () => {
   const { ctx, calls, vendor } = fixture([
     { name: "foo", enabled: false, installed: true, version: "1.0.0" },
   ]);
-  await assert.rejects(vendor.refresh(ctx), /disabled.*foo/);
+  const logs: string[] = [];
+  await vendor.refresh({ ...ctx, log: (line) => logs.push(line) });
   assert.equal(
     calls.some((call) => call[2] === "add"),
     false,
   );
+  assert.ok(logs.some((line) => line.includes("skipped disabled foo@1.0.0")));
 });
 
 test("refresh leaves a current disabled plugin unchanged", async () => {

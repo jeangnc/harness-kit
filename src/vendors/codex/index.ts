@@ -96,16 +96,16 @@ async function refreshPlugins(ctx: VendorInstallContext): Promise<void> {
   }
   const entries = await listPlugins(ctx);
   for (const plugin of ctx.plugins) {
-    const installed = entries.find((entry) => entry.name === plugin.name && entry.installed);
-    if (installed && !installed.enabled && installed.version !== plugin.version) {
-      throw new Error(
-        `Codex cannot refresh disabled plugin ${plugin.name} without enabling it; leave its installed version unchanged or enable it through Codex first`,
-      );
-    }
-  }
-  for (const plugin of ctx.plugins) {
     const entry = entries.find((candidate) => candidate.name === plugin.name);
-    if (!entry?.enabled || (entry.installed && entry.version === plugin.version)) continue;
+    if (entry?.installed && entry.version === plugin.version) continue;
+    if (!entry?.enabled) {
+      if (entry?.installed) {
+        ctx.log(
+          `[codex] skipped disabled ${plugin.name}@${entry.version}; enable it in Codex to receive ${plugin.version}`,
+        );
+      }
+      continue;
+    }
     const output = await ctx.run("codex", [
       "plugin",
       "add",
