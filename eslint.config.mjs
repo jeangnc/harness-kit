@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import prettier from "eslint-config-prettier";
+import tenets from "eslint-plugin-tenets";
 
 export default tseslint.config(
   {
@@ -9,6 +10,8 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
+  tenets.configs.recommended,
+  tenets.configs.typed,
   prettier,
   {
     languageOptions: {
@@ -43,6 +46,9 @@ export default tseslint.config(
       "no-console": "off",
       eqeqeq: ["error", "always", { null: "ignore" }],
       curly: ["error", "multi-line"],
+      "tenets/destructure-dot-access": ["warn", { allowBase: ["z"] }],
+      "tenets/feature-envy": ["warn", { featureRoots: ["src"] }],
+      "tenets/leaked-namespace": "warn",
     },
   },
   {
@@ -53,6 +59,7 @@ export default tseslint.config(
       "@typescript-eslint/require-await": "off",
       "@typescript-eslint/explicit-module-boundary-types": "off",
       "@typescript-eslint/no-unnecessary-condition": "off",
+      "tenets/destructure-dot-access": "off",
     },
   },
 );
