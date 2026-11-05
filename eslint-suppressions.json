@@ -1,0 +1,337 @@
+{
+  "src/agent/schema.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 18
+    }
+  },
+  "src/args/parse.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 9
+    }
+  },
+  "src/check/bypass.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 46
+    }
+  },
+  "src/check/index.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 143
+    }
+  },
+  "src/check/index.ts": {
+    "tenets/feature-envy": {
+      "count": 1
+    }
+  },
+  "src/cli.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 22
+    }
+  },
+  "src/cli.ts": {
+    "tenets/feature-envy": {
+      "count": 2
+    }
+  },
+  "src/command/schema.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 16
+    }
+  },
+  "src/compile.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 5
+    }
+  },
+  "src/compile/emit-paths.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 7
+    }
+  },
+  "src/compile/emit-paths.ts": {
+    "tenets/leaked-namespace": {
+      "count": 1
+    }
+  },
+  "src/compile/emit.ts": {
+    "tenets/leaked-namespace": {
+      "count": 1
+    }
+  },
+  "src/compile/hooks.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 10
+    }
+  },
+  "src/compile/index.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 120
+    }
+  },
+  "src/compile/index.ts": {
+    "tenets/feature-envy": {
+      "count": 1
+    }
+  },
+  "src/compile/per-vendor-emit.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 20
+    }
+  },
+  "src/compile/validators.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 11
+    }
+  },
+  "src/config/harness.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 15
+    }
+  },
+  "src/configs/compile.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 17
+    }
+  },
+  "src/configs/emit.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 3
+    }
+  },
+  "src/configs/manifest.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 7
+    }
+  },
+  "src/eval/capture.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 6
+    }
+  },
+  "src/eval/cases.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 6
+    }
+  },
+  "src/eval/compile.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 27
+    }
+  },
+  "src/eval/detect.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 5
+    }
+  },
+  "src/eval/grade/deterministic.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 29
+    }
+  },
+  "src/eval/grade/extract.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 7
+    }
+  },
+  "src/eval/grade/rubric.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 7
+    }
+  },
+  "src/eval/index.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 7
+    }
+  },
+  "src/eval/metrics.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 4
+    }
+  },
+  "src/eval/outcomes.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 25
+    }
+  },
+  "src/eval/outcomes.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 3
+    }
+  },
+  "src/eval/report.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 21
+    }
+  },
+  "src/eval/schema.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 35
+    }
+  },
+  "src/eval/score.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 31
+    }
+  },
+  "src/eval/trajectory.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 3
+    }
+  },
+  "src/eval/vendors.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 19
+    }
+  },
+  "src/fs.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 3
+    }
+  },
+  "src/init/index.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 10
+    }
+  },
+  "src/install/discovery.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 6
+    }
+  },
+  "src/install/index.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 59
+    }
+  },
+  "src/install/links.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 30
+    }
+  },
+  "src/install/mode.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 6
+    }
+  },
+  "src/install/runtime.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 23
+    }
+  },
+  "src/installed.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 35
+    }
+  },
+  "src/layout/index.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 46
+    }
+  },
+  "src/layout/index.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 2
+    }
+  },
+  "src/link/applier.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 20
+    }
+  },
+  "src/link/tomlMerge.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 12
+    }
+  },
+  "src/lint.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 6
+    }
+  },
+  "src/marketplace/schema.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 41
+    }
+  },
+  "src/parsing/frontmatter.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 26
+    }
+  },
+  "src/placeholders/source-position.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 6
+    }
+  },
+  "src/placeholders/tokens.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 30
+    }
+  },
+  "src/plugin/schema.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 40
+    }
+  },
+  "src/skill/includes.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 54
+    }
+  },
+  "src/skill/invariants.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 8
+    }
+  },
+  "src/skill/schema.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 9
+    }
+  },
+  "src/skill/source.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 37
+    }
+  },
+  "src/skill/source.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 2
+    }
+  },
+  "src/vendor/registry.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 4
+    }
+  },
+  "src/vendors/claude/index.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 98
+    }
+  },
+  "src/vendors/claude/index.ts": {
+    "tenets/feature-envy": {
+      "count": 5
+    }
+  },
+  "src/vendors/claude/installedPlugins.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 14
+    }
+  },
+  "src/vendors/codex/index.test.ts": {
+    "tenets/destructure-dot-access": {
+      "count": 27
+    }
+  },
+  "src/vendors/codex/index.ts": {
+    "tenets/feature-envy": {
+      "count": 1
+    }
+  },
+  "src/vendors/shared.ts": {
+    "tenets/feature-envy": {
+      "count": 3
+    }
+  }
+}

@@ -49,8 +49,8 @@ importers:
         specifier: ^9.1.0
         version: 9.1.2(eslint@10.3.0)
       eslint-plugin-tenets:
-        specifier: ^0.1.1
-        version: 0.1.1(eslint@10.3.0)(typescript-eslint@8.59.2(eslint@10.3.0)(typescript@5.9.3))(typescript@5.9.3)
+        specifier: ^0.2.0
+        version: 0.2.0(eslint@10.3.0)(typescript-eslint@8.59.2(eslint@10.3.0)(typescript@5.9.3))(typescript@5.9.3)
       husky:
         specifier: ^9.1.7
         version: 9.1.7
@@ -2223,8 +2223,8 @@ packages:
     peerDependencies:
       eslint: '>=7.0.0'
 
-  eslint-plugin-tenets@0.1.1:
-    resolution: {integrity: sha512-Lzc5wtVDxjMdf0cqyyyc8t4HvUiF0pNKaEZfh/RuAAZqpiYpAxPMMyl6Cfxu6+3NlXghnQObhgtvR4iShRwWVw==}
+  eslint-plugin-tenets@0.2.0:
+    resolution: {integrity: sha512-w194oyVraD7m/urPBshyr0/31tPne4GaRqo34KQwsriv/tWK8HSYvezmK0qhDzoeg5J6XxgcBZeyFWXpAS1Kmg==}
     peerDependencies:
       eslint: ^9.39.0 || ^10.0.0
       eslint-plugin-sonarjs: '>=3'
@@ -6205,7 +6205,7 @@ snapshots:
     dependencies:
       eslint: 10.3.0
 
-  eslint-plugin-tenets@0.1.1(eslint@10.3.0)(typescript-eslint@8.59.2(eslint@10.3.0)(typescript@5.9.3))(typescript@5.9.3):
+  eslint-plugin-tenets@0.2.0(eslint@10.3.0)(typescript-eslint@8.59.2(eslint@10.3.0)(typescript@5.9.3))(typescript@5.9.3):
     dependencies:
       '@typescript-eslint/utils': 8.72.1(eslint@10.3.0)(typescript@5.9.3)
       eslint: 10.3.0

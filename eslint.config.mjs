@@ -11,7 +11,6 @@ export default tseslint.config(
   ...tseslint.configs.recommendedTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
   tenets.configs.recommended,
-  tenets.configs.typed,
   prettier,
   {
     languageOptions: {
@@ -46,9 +45,7 @@ export default tseslint.config(
       "no-console": "off",
       eqeqeq: ["error", "always", { null: "ignore" }],
       curly: ["error", "multi-line"],
-      "tenets/destructure-dot-access": ["warn", { allowBase: ["z"] }],
-      "tenets/feature-envy": ["warn", { featureRoots: ["src"] }],
-      "tenets/leaked-namespace": "warn",
+      "tenets/feature-envy": ["error", { featureRoots: ["src"] }],
     },
   },
   {
@@ -59,7 +56,6 @@ export default tseslint.config(
       "@typescript-eslint/require-await": "off",
       "@typescript-eslint/explicit-module-boundary-types": "off",
       "@typescript-eslint/no-unnecessary-condition": "off",
-      "tenets/destructure-dot-access": "off",
     },
   },
 );
