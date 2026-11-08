@@ -1,7 +1,7 @@
 import { relative } from "node:path";
 
 import { defaultRunner, type CommandRunner } from "../install/runner.js";
-import { listCodexMcp, listCodexPlugins } from "../vendors/codex/native.js";
+import { listCodexMcp, listCodexPlugins, type CodexPluginEntry } from "../vendors/codex/native.js";
 import { verifyEnvironment } from "./direnv.js";
 import { inspectProjectHooks, type HookInspection, type HookInspector } from "./hooks.js";
 import { enabledPlugins, table, type ProjectPlan } from "./plan.js";
@@ -52,10 +52,8 @@ export async function verifyInventory(
   const scopes: ProjectInventory[] = [];
   for (const scope of plan.scopes) {
     const listed = await listCodexPlugins({ home: plan.home, cwd: scope.cwd, run });
-    const actual = listed
-      .filter((entry) => entry.enabled)
-      .map((entry) => `${entry.name}@${entry.marketplaceName}`)
-      .sort();
+    const enabled = listed.filter((entry) => entry.enabled);
+    const actual = pluginKeys(enabled.filter((entry) => entry.source?.source !== "remote"));
     const expected = enabledPlugins(scope.config);
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       throw new Error(
@@ -71,7 +69,7 @@ export async function verifyInventory(
     }
     scopes.push({
       path: relative(plan.project, scope.cwd) || ".",
-      plugins: actual,
+      plugins: pluginKeys(enabled),
       mcp: servers
         .filter((entry) => entry.enabled)
         .map((entry) => entry.name)
@@ -79,4 +77,8 @@ export async function verifyInventory(
     });
   }
   return scopes;
+}
+
+function pluginKeys(plugins: readonly CodexPluginEntry[]): string[] {
+  return plugins.map((entry) => `${entry.name}@${entry.marketplaceName}`).sort();
 }

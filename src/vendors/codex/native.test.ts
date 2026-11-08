@@ -230,6 +230,32 @@ test("plugin inventory uses the requested scope without exposing extra native fi
   ]);
 });
 
+test("plugin inventory preserves source origins without exposing source details", async () => {
+  const run: CommandRunner = async () =>
+    JSON.stringify({
+      installed: [
+        { ...plugin(), source: { source: "local", path: "credential-secret" } },
+        { ...plugin({ name: "bar" }), source: { source: "remote", id: "credential-secret" } },
+      ],
+      available: [],
+    });
+
+  deepEqual(await listCodexPlugins({ home: "state", cwd: "/", run }), [
+    plugin({ source: { source: "local" } }),
+    plugin({ name: "bar", source: { source: "remote" } }),
+  ]);
+});
+
+test("plugin inventory accepts a source without an origin discriminator", async () => {
+  const run: CommandRunner = async () =>
+    JSON.stringify({
+      installed: [{ ...plugin(), source: { path: "credential-secret" } }],
+      available: [],
+    });
+
+  deepEqual(await listCodexPlugins({ home: "state", cwd: "/", run }), [plugin({ source: {} })]);
+});
+
 test("MCP inventory returns only names and enablement", async () => {
   const run: CommandRunner = async (cmd, args, context) => {
     equal(cmd, "codex");

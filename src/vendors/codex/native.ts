@@ -11,6 +11,7 @@ const pluginEntry = z.object({
   version: z.string(),
   installed: z.boolean(),
   enabled: z.boolean(),
+  source: z.object({ source: z.string().optional() }).optional(),
 });
 const pluginList = z.object({
   installed: z.array(pluginEntry),
