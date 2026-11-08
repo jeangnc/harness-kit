@@ -34,6 +34,9 @@ function fixture(
         });
       }
       if (args[1] === "add") return JSON.stringify({ version: "2.0.0" });
+      if (args[1] === "marketplace" && args[2] === "add") {
+        return JSON.stringify({ marketplaceName: "foo-market" });
+      }
       return JSON.stringify({ errors: [] });
     },
     log: () => undefined,
@@ -129,13 +132,20 @@ test("native command failures stop installation", async () => {
         throw new Error("foo failed");
       },
     }),
-    /foo failed/,
+    /Codex marketplace add failed; native output withheld/,
   );
 });
 
 test("invalid native output is rejected before plugin mutation", async () => {
   const { ctx, vendor } = fixture();
-  await assert.rejects(vendor.install({ ...ctx, run: async () => "invalid" }), /Codex plugin list/);
+  const run = ctx.run;
+  await assert.rejects(
+    vendor.install({
+      ...ctx,
+      run: async (cmd, args) => (args[1] === "list" ? "invalid" : run(cmd, args)),
+    }),
+    /Codex plugin list/,
+  );
 });
 
 test("installed versions come from the native registry", async () => {
@@ -207,7 +217,7 @@ test("native installation rejects an unexpected installed version", async () => 
       run: async (cmd, args) =>
         args[1] === "add" ? JSON.stringify({ version: "1.0.0" }) : run(cmd, args),
     }),
-    /expected foo@2.0.0/,
+    /expected foo@foo-market at version 2.0.0/,
   );
 });
 

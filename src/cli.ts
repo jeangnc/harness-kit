@@ -18,6 +18,7 @@ import { initHarness } from "./init/index.js";
 import { formatUpdateError, install, uninstall, update } from "./install/index.js";
 import { parseInstallMode } from "./install/mode.js";
 import { lint } from "./lint.js";
+import { projectCmd } from "./project/cli.js";
 import { builtinVendors } from "./vendor/builtins.js";
 import { resolveVendors, resolveVendorsForRepo } from "./vendor/registry.js";
 
@@ -335,6 +336,7 @@ const main = defineCommand({
     "migrate-runtime": migrateRuntimeCmd,
     "install-defaults": installDefaultsCmd,
     lint: lintCmd,
+    project: projectCmd,
     uninstall: uninstallCmd,
     update: updateCmd,
   },

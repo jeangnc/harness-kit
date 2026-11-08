@@ -107,6 +107,10 @@ harness eval      # run routing + solving evals against the installed harness
 
 Everything the CLI does is also a typed module API. See [docs/api.md](./docs/api.md).
 
+## Project homes
+
+`harness project` prepares independent Codex CLI homes from explicit local presets, enrolls a read-only direnv selector, and verifies native plugin, MCP, and hook state. Each Git checkout or worktree gets its own home. Project choices and approvals remain with the caller. See [project setup and API](./docs/projects.md).
+
 ## Runtime ownership
 
 Run `harness migrate-runtime --vendor codex --dry-run` before rebuilding an existing linked installation, then repeat without `--dry-run`. Migrate Claude settings separately with `--vendor claude`. Migration preserves file contents and permissions with private backups. Compilation and mutating install commands refuse runtime links into their generated output.

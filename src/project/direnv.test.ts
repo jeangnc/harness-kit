@@ -1,0 +1,86 @@
+import { deepEqual, equal, ok, rejects } from "node:assert/strict";
+import { existsSync, lstatSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+import { enrollProject, setupProject, verifyProject } from "./index.js";
+import {
+  createFixture,
+  createNativeRuntime,
+  prepareFixture,
+  rootPlugin,
+  trustedHooks,
+} from "./fixtures.testutil.js";
+
+test("Enrollment selects the project home when paths contain spaces and quotes", async (t) => {
+  const fixture = await createFixture(t, {
+    projectName: "foo's project",
+    stateName: "bar's state",
+  });
+  const native = createNativeRuntime(fixture);
+  const plan = await prepareFixture(fixture);
+
+  const result = await setupProject(plan, native.run);
+  equal(existsSync(join(fixture.project, ".envrc")), false);
+  await enrollProject(plan, native.run);
+  equal(
+    native.calls.some(({ program }) => program === "direnv"),
+    false,
+  );
+  await fixture.run("direnv", ["allow", fixture.project]);
+  const verified = await verifyProject(await prepareFixture(fixture), {
+    environment: "direnv",
+    run: native.run,
+    inspectHooks: trustedHooks,
+  });
+
+  equal(result.status, "ready");
+  equal(verified.status, "verified");
+  equal(verified.home, plan.home);
+  deepEqual(result.scopes, [{ path: ".", plugins: [rootPlugin], mcp: [] }]);
+  equal(
+    (
+      await fixture.run("direnv", [
+        "exec",
+        fixture.project,
+        process.execPath,
+        "-e",
+        "process.stdout.write(process.env.CODEX_HOME || '')",
+      ])
+    ).trim(),
+    plan.home,
+  );
+  ok(
+    native.calls
+      .filter(({ program }) => program === "codex")
+      .every(({ home }) => home === plan.home),
+  );
+});
+
+test("Enrollment rejects a symlinked environment file without changing its target", async (t) => {
+  const fixture = await createFixture(t);
+  const native = createNativeRuntime(fixture);
+  const plan = await prepareFixture(fixture);
+  await setupProject(plan, native.run);
+  const foreign = join(fixture.root, "foreign.envrc");
+  const contents = "export FOO=bar\n";
+  writeFileSync(foreign, contents);
+  symlinkSync(foreign, join(fixture.project, ".envrc"));
+
+  await rejects(enrollProject(plan, native.run), /regular file/i);
+
+  equal(readFileSync(foreign, "utf8"), contents);
+  equal(lstatSync(join(fixture.project, ".envrc")).isSymbolicLink(), true);
+});
+
+test("Enrollment rejects an existing Codex environment selection without changing it", async (t) => {
+  const fixture = await createFixture(t);
+  const native = createNativeRuntime(fixture);
+  const plan = await prepareFixture(fixture);
+  await setupProject(plan, native.run);
+  const contents = "export CODEX_HOME='/foo/bar'\n";
+  writeFileSync(join(fixture.project, ".envrc"), contents);
+
+  await rejects(enrollProject(plan, native.run), /environment selection conflicts/i);
+
+  equal(readFileSync(join(fixture.project, ".envrc"), "utf8"), contents);
+});

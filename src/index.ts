@@ -90,6 +90,23 @@ export type {
 export { CaseFileSchema, TIERS } from "./eval/schema.js";
 export type { CaseFile, EvalCase, Expectation, Tier } from "./eval/schema.js";
 
+export {
+  enrollProject,
+  locateProject,
+  prepareProject,
+  selectProject,
+  setupProject,
+  verifyProject,
+} from "./project/index.js";
+export type {
+  ProjectInventory,
+  ProjectLocation,
+  ProjectMarketplace,
+  ProjectPlan,
+  ProjectPreset,
+  ProjectReport,
+} from "./project/index.js";
+
 export { defaultSources, discoverInstalled, indexInstalled } from "./installed.js";
 export type {
   InstalledAgent,
