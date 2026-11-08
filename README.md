@@ -109,7 +109,7 @@ Everything the CLI does is also a typed module API. See [docs/api.md](./docs/api
 
 ## Project homes
 
-`harness project` prepares independent Codex CLI homes from explicit local presets, enrolls a read-only direnv selector, and verifies native plugin, MCP, and hook state. Each Git checkout or worktree gets its own home. Project choices and approvals remain with the caller. See [project setup and API](./docs/projects.md).
+`harness project` prepares independent Codex CLI homes from explicit local presets, adds a `CODEX_HOME` export to `.envrc`, and verifies native plugin, MCP, and hook state. Each Git checkout or worktree gets its own home. Project choices and approvals remain with the caller. See [project setup and API](./docs/projects.md).
 
 ## Runtime ownership
 

@@ -69,7 +69,7 @@ export const projectCmd = defineCommand({
       },
     }),
     enroll: defineCommand({
-      meta: { description: "Append a direnv selector; approval remains explicit" },
+      meta: { description: "Export the project home through direnv; approval remains explicit" },
       args: locationArgs,
       run: async ({ args }) => {
         const location = await locateProject({

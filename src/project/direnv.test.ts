@@ -56,6 +56,24 @@ test("Enrollment selects the project home when paths contain spaces and quotes",
   );
 });
 
+test("Directory entry selects the prepared home without Node on PATH", async (t) => {
+  const fixture = await createFixture(t);
+  const native = createNativeRuntime(fixture);
+  const plan = await prepareFixture(fixture);
+  await setupProject(plan, native.run);
+  await enrollProject(plan, native.run);
+  await fixture.run("direnv", ["allow", fixture.project]);
+  const direnv = (await fixture.run("which", ["direnv"])).trim();
+
+  const home = await fixture.run(
+    direnv,
+    ["exec", fixture.project, "/bin/sh", "-c", 'printf %s "$CODEX_HOME"'],
+    { env: { PATH: "/usr/bin:/bin" } },
+  );
+
+  equal(home, plan.home);
+});
+
 test("Enrollment rejects a symlinked environment file without changing its target", async (t) => {
   const fixture = await createFixture(t);
   const native = createNativeRuntime(fixture);
@@ -78,6 +96,19 @@ test("Enrollment rejects an existing Codex environment selection without changin
   const plan = await prepareFixture(fixture);
   await setupProject(plan, native.run);
   const contents = "export CODEX_HOME='/foo/bar'\n";
+  writeFileSync(join(fixture.project, ".envrc"), contents);
+
+  await rejects(enrollProject(plan, native.run), /environment selection conflicts/i);
+
+  equal(readFileSync(join(fixture.project, ".envrc"), "utf8"), contents);
+});
+
+test("Enrollment rejects a commented selection without reporting success", async (t) => {
+  const fixture = await createFixture(t);
+  const native = createNativeRuntime(fixture);
+  const plan = await prepareFixture(fixture);
+  await setupProject(plan, native.run);
+  const contents = `# export CODEX_HOME='${plan.home}'\n`;
   writeFileSync(join(fixture.project, ".envrc"), contents);
 
   await rejects(enrollProject(plan, native.run), /environment selection conflicts/i);
