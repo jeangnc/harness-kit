@@ -11,14 +11,17 @@ import {
   setupProject,
   verifyProject,
 } from "./index.js";
-import type { ProjectPreset } from "./index.js";
+import type { ProjectLocationOptions, ProjectPreset } from "./index.js";
 
 const locationArgs = {
   project: { type: "string", required: true, description: "Git checkout path" },
   "state-root": {
     type: "string",
-    required: true,
-    description: "Directory for independent Codex homes",
+    description: "Directory for independent Codex homes (default: ~/.codex/projects)",
+  },
+  "home-name": {
+    type: "string",
+    description: "Project home directory name (default: checkout directory name)",
   },
 } as const;
 
@@ -48,10 +51,7 @@ export const projectCmd = defineCommand({
         },
       },
       run: async ({ args }) => {
-        const location = await locateProject({
-          project: args.project,
-          stateRoot: args["state-root"],
-        });
+        const location = await locateProject(locationOptions(args));
         const plan = await prepareProject({ location, preset: readPreset(args.preset) });
         console.log(
           JSON.stringify(
@@ -72,10 +72,7 @@ export const projectCmd = defineCommand({
       meta: { description: "Export the project home through direnv; approval remains explicit" },
       args: locationArgs,
       run: async ({ args }) => {
-        const location = await locateProject({
-          project: args.project,
-          stateRoot: args["state-root"],
-        });
+        const location = await locateProject(locationOptions(args));
         await enrollProject(await prepareProject({ location }));
         console.log(`Enrolled ${location.project}; review .envrc and run direnv allow`);
       },
@@ -92,10 +89,7 @@ export const projectCmd = defineCommand({
       },
       run: async ({ args }) => {
         const environment = z.enum(["none", "direnv"]).parse(args.environment);
-        const location = await locateProject({
-          project: args.project,
-          stateRoot: args["state-root"],
-        });
+        const location = await locateProject(locationOptions(args));
         console.log(
           JSON.stringify(await verifyProject(await prepareProject({ location }), { environment })),
         );
@@ -105,11 +99,23 @@ export const projectCmd = defineCommand({
       meta: { description: "Print a ready project home without modifying it" },
       args: locationArgs,
       run: async ({ args }) => {
-        console.log(await selectProject({ project: args.project, stateRoot: args["state-root"] }));
+        console.log(await selectProject(locationOptions(args)));
       },
     }),
   },
 });
+
+function locationOptions(args: {
+  readonly project: string;
+  readonly "state-root"?: string | undefined;
+  readonly "home-name"?: string | undefined;
+}): ProjectLocationOptions {
+  return {
+    project: args.project,
+    ...(args["state-root"] !== undefined ? { stateRoot: args["state-root"] } : {}),
+    ...(args["home-name"] !== undefined ? { homeName: args["home-name"] } : {}),
+  };
+}
 
 function readPreset(path: string): ProjectPreset {
   try {

@@ -1,7 +1,8 @@
 import { deepEqual, equal, ok, rejects } from "node:assert/strict";
 import { existsSync, lstatSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { enrollProject, setupProject, verifyProject } from "./index.js";
 import {
   createFixture,
@@ -72,6 +73,72 @@ test("Directory entry selects the prepared home without Node on PATH", async (t)
   );
 
   equal(home, plan.home);
+});
+
+test("Enrollment writes a tilde path for a home inside the user directory", async (t) => {
+  const fixture = await createFixture(t);
+  const userHome = join(fixture.root, "user");
+  const stateRoot = join(userHome, ".codex", "projects");
+  const native = createNativeRuntime(fixture);
+  const plan = await prepareFixture({ ...fixture, stateRoot });
+  await setupProject(plan, native.run);
+
+  await fixture.run(process.execPath, [
+    "--import",
+    "tsx",
+    fileURLToPath(new URL("../cli.ts", import.meta.url)),
+    "project",
+    "enroll",
+    "--project",
+    fixture.project,
+    "--state-root",
+    stateRoot,
+  ]);
+  await fixture.run("direnv", ["allow", fixture.project]);
+  const home = await fixture.run("direnv", [
+    "exec",
+    fixture.project,
+    "/bin/sh",
+    "-c",
+    'printf %s "$CODEX_HOME"',
+  ]);
+
+  equal(
+    readFileSync(join(fixture.project, ".envrc"), "utf8"),
+    `export CODEX_HOME=~/${relative(userHome, plan.home)}\n`,
+  );
+  equal(home, plan.home);
+});
+
+test("Enrollment preserves literal shell characters in a home-relative path", async (t) => {
+  const fixture = await createFixture(t, { projectName: "foo's $bar $(touch baz)" });
+  const stateRoot = join(fixture.root, "user", ".codex", "projects");
+  const native = createNativeRuntime(fixture);
+  const plan = await prepareFixture({ ...fixture, stateRoot });
+  await setupProject(plan, native.run);
+
+  await fixture.run(process.execPath, [
+    "--import",
+    "tsx",
+    fileURLToPath(new URL("../cli.ts", import.meta.url)),
+    "project",
+    "enroll",
+    "--project",
+    fixture.project,
+    "--state-root",
+    stateRoot,
+  ]);
+  await fixture.run("direnv", ["allow", fixture.project]);
+  const home = await fixture.run("direnv", [
+    "exec",
+    fixture.project,
+    "/bin/sh",
+    "-c",
+    'printf %s "$CODEX_HOME"',
+  ]);
+
+  equal(home, plan.home);
+  equal(existsSync(join(fixture.project, "baz")), false);
 });
 
 test("Enrollment rejects a symlinked environment file without changing its target", async (t) => {

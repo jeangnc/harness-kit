@@ -203,6 +203,73 @@ test("An unrecognized existing home is rejected without changing its contents", 
   deepEqual(snapshot(location.home), before);
 });
 
+test("A checkout with an occupied basename cannot select another checkout's home", async (t) => {
+  const first = await createFixture(t);
+  const second = await createFixture(t);
+  const plan = await prepareFixture(first);
+  await setupProject(plan, createNativeRuntime(first).run);
+  const before = snapshot(first.stateRoot);
+
+  await rejects(
+    selectProject({ project: second.project, stateRoot: first.stateRoot }, second.run),
+    /home identity conflicts/i,
+  );
+
+  deepEqual(snapshot(first.stateRoot), before);
+});
+
+test("A stale setup plan cannot claim another checkout's home", async (t) => {
+  const first = await createFixture(t);
+  const second = await createFixture(t);
+  const plan = await prepareFixture(first);
+  const location = await locateProject(
+    { project: second.project, stateRoot: first.stateRoot },
+    second.run,
+  );
+  const stale = await prepareProject({ location, preset: second.preset }, second.run);
+  const native = createNativeRuntime(first);
+  await setupProject(plan, native.run);
+  const before = snapshot(first.stateRoot);
+  const calls = native.calls.length;
+
+  await rejects(setupProject(stale, native.run), /home identity conflicts/i);
+
+  deepEqual(snapshot(first.stateRoot), before);
+  equal(native.calls.length, calls);
+  equal(await selectProject(first, first.run), plan.home);
+});
+
+test("A stale setup plan cannot replace an existing preset", async (t) => {
+  const fixture = await createFixture(t);
+  const plan = await prepareFixture(fixture);
+  const stale = await prepareProject(
+    { location: plan, preset: { ...fixture.preset, name: "bar" } },
+    fixture.run,
+  );
+  const native = createNativeRuntime(fixture);
+  await setupProject(plan, native.run);
+  const before = snapshot(fixture.stateRoot);
+  const calls = native.calls.length;
+
+  await rejects(setupProject(stale, native.run), /refusing to replace its harness/i);
+
+  deepEqual(snapshot(fixture.stateRoot), before);
+  equal(native.calls.length, calls);
+});
+
+test("A stale setup plan cannot adopt a home created after preparation", async (t) => {
+  const fixture = await createFixture(t);
+  const plan = await prepareFixture(fixture);
+  mkdirSync(plan.home, { recursive: true });
+  const before = snapshot(fixture.stateRoot);
+  const native = createNativeRuntime(fixture);
+
+  await rejects(setupProject(plan, native.run), /unrecognized home/i);
+
+  deepEqual(snapshot(fixture.stateRoot), before);
+  equal(native.calls.length, 0);
+});
+
 test("A symlinked home is rejected without changing its target", async (t) => {
   const fixture = await createFixture(t);
   const location = await locateProject(fixture, fixture.run);

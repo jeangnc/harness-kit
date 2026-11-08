@@ -6,6 +6,7 @@ import { defaultRunner, type CommandRunner } from "../install/runner.js";
 import { installSelectedPlugins } from "../vendors/codex/native.js";
 import { assertRegular, privateWrite } from "./io.js";
 import type { ProjectPlan } from "./plan.js";
+import { readMetadata } from "./state.js";
 import { verifyInventory, type ProjectReport } from "./verify.js";
 
 export async function setupProject(
@@ -15,7 +16,7 @@ export async function setupProject(
   assertRegular(plan.stateRoot, "directory");
   assertRegular(plan.home, "directory");
   mkdirSync(plan.stateRoot, { recursive: true, mode: 0o700 });
-  mkdirSync(plan.home, { recursive: true, mode: 0o700 });
+  const createdHome = mkdirSync(plan.home, { recursive: true, mode: 0o700 }) !== undefined;
   const lock = join(plan.home, ".setup-lock");
   try {
     mkdirSync(lock);
@@ -23,6 +24,13 @@ export async function setupProject(
     throw new Error(`Setup is already active or interrupted; inspect ${lock}`);
   }
   try {
+    const metadata = readMetadata(plan);
+    if (metadata && metadata.preset !== plan.preset) {
+      throw new Error(`Existing home uses ${metadata.preset}; refusing to replace its harness`);
+    }
+    if (!metadata && !createdHome) {
+      throw new Error(`Refusing to adopt an unrecognized home at ${plan.home}`);
+    }
     const ready = join(plan.home, "ready");
     assertRegular(ready, "file");
     rmSync(ready, { force: true });

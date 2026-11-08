@@ -1,9 +1,16 @@
 import { existsSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 import { defaultRunner, type CommandRunner } from "../install/runner.js";
-import { assertRegular, command, digest } from "./io.js";
-import { requireReady } from "./state.js";
+import { assertRegular, command } from "./io.js";
+import { readMetadata, requireReady } from "./state.js";
+
+export interface ProjectLocationOptions {
+  readonly project: string;
+  readonly stateRoot?: string;
+  readonly homeName?: string;
+}
 
 export interface ProjectLocation {
   readonly project: string;
@@ -12,7 +19,7 @@ export interface ProjectLocation {
 }
 
 export async function locateProject(
-  options: { readonly project: string; readonly stateRoot: string },
+  options: ProjectLocationOptions,
   run: CommandRunner = defaultRunner,
 ): Promise<ProjectLocation> {
   const projectPath = realpathSync(options.project);
@@ -26,15 +33,37 @@ export async function locateProject(
       })
     ).trim(),
   );
-  const statePath = resolve(options.stateRoot);
+  const homeName = projectHomeName(options.homeName ?? basename(project));
+  const statePath = resolve(options.stateRoot ?? join(homedir(), ".codex", "projects"));
   assertRegular(statePath, "directory");
   const stateRoot = canonicalDestination(statePath);
-  if (contains(project, stateRoot)) throw new Error("Codex state must live outside the project");
-  return {
+  const home = join(stateRoot, homeName);
+  if (contains(project, home)) throw new Error("Codex state must live outside the project");
+  const location = {
     project,
     stateRoot,
-    home: join(stateRoot, `${basename(project)}-${digest(project).slice(0, 16)}`),
+    home,
   };
+  readMetadata(location);
+  return location;
+}
+
+function projectHomeName(name: string): string {
+  if (
+    name.length === 0 ||
+    name !== name.trim() ||
+    name === "." ||
+    name === ".." ||
+    name.includes("/") ||
+    name.includes("\\") ||
+    name.includes("\0") ||
+    /[\r\n]/.test(name)
+  ) {
+    throw new Error(
+      "Project home name must be a single directory name without surrounding whitespace or line breaks, other than . or ..",
+    );
+  }
+  return name;
 }
 
 function canonicalDestination(path: string): string {
@@ -52,7 +81,7 @@ export function contains(parent: string, child: string): boolean {
 }
 
 export async function selectProject(
-  options: { readonly project: string; readonly stateRoot: string },
+  options: ProjectLocationOptions,
   run: CommandRunner = defaultRunner,
 ): Promise<string> {
   const location = await locateProject(options, run);

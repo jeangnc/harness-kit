@@ -1,11 +1,11 @@
-import { deepEqual, equal, notEqual, rejects } from "node:assert/strict";
+import { deepEqual, equal, rejects } from "node:assert/strict";
 import { existsSync, mkdirSync, symlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { locateProject } from "./index.js";
 import { createFixture, snapshot } from "./fixtures.testutil.js";
 
-test("Linked worktrees with the same directory name receive distinct homes", async (t) => {
+test("Linked worktrees with the same directory name can select distinct home names", async (t) => {
   const fixture = await createFixture(t);
   await fixture.run(
     "git",
@@ -36,13 +36,14 @@ test("Linked worktrees with the same directory name receive distinct homes", asy
     fixture.run,
   );
   const linked = await locateProject(
-    { project: worktree, stateRoot: fixture.stateRoot },
+    { project: worktree, stateRoot: fixture.stateRoot, homeName: "bar" },
     fixture.run,
   );
 
   equal(primary.project, fixture.project);
   equal(linked.project, worktree);
-  notEqual(primary.home, linked.home);
+  equal(primary.home, join(fixture.stateRoot, "foo"));
+  equal(linked.home, join(fixture.stateRoot, "bar"));
   equal(dirname(primary.home), fixture.stateRoot);
   equal(dirname(linked.home), fixture.stateRoot);
   deepEqual(
@@ -50,6 +51,45 @@ test("Linked worktrees with the same directory name receive distinct homes", asy
     primary,
   );
   equal(existsSync(fixture.stateRoot), false);
+});
+
+test("A home name must identify one directory without changing the filesystem", async (t) => {
+  const fixture = await createFixture(t);
+  const before = snapshot(fixture.root);
+
+  for (const homeName of [
+    "",
+    ".",
+    "..",
+    "/foo",
+    "foo/bar",
+    "foo\\bar",
+    "foo\0bar",
+    "foo\nbar",
+    "foo\rbar",
+    " foo",
+    "foo ",
+    "foo\t",
+  ]) {
+    await rejects(
+      locateProject({ ...fixture, homeName }, fixture.run),
+      /home name must be a single directory name/i,
+    );
+  }
+
+  deepEqual(snapshot(fixture.root), before);
+});
+
+test("A home matching the checkout is rejected without changing the filesystem", async (t) => {
+  const fixture = await createFixture(t);
+  const before = snapshot(fixture.root);
+
+  await rejects(
+    locateProject({ project: fixture.project, stateRoot: fixture.root }, fixture.run),
+    /state must live outside the project/i,
+  );
+
+  deepEqual(snapshot(fixture.root), before);
 });
 
 test("A state root under a checkout symlink is rejected before writes", async (t) => {

@@ -101,6 +101,7 @@ export {
 export type {
   ProjectInventory,
   ProjectLocation,
+  ProjectLocationOptions,
   ProjectMarketplace,
   ProjectPlan,
   ProjectPreset,

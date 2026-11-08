@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import { defaultRunner, type CommandRunner } from "../install/runner.js";
@@ -14,7 +15,7 @@ export async function enrollProject(
   const path = join(plan.project, ".envrc");
   assertRegular(path, "file");
   const previous = existsSync(path) ? readFileSync(path, "utf8") : "";
-  const selection = `export CODEX_HOME=${quote(plan.home)}`;
+  const selection = `export CODEX_HOME=${shellPath(plan.home)}`;
   if (previous.split("\n").includes(selection)) return;
   if (/use_codex_project|CODEX_HOME/.test(previous)) {
     throw new Error(`Existing Codex environment selection conflicts at ${path}`);
@@ -46,6 +47,16 @@ export async function enrollProject(
   const next = append(previous, selection + "\n");
   privateWrite(path, next);
   privateWrite(join(plan.home, "envrc.installed.sha256"), digest(next) + "\n");
+}
+
+function shellPath(value: string): string {
+  const userHome = homedir();
+  if (value === userHome) return "~";
+  if (value.startsWith(`${userHome}/`)) {
+    const suffix = value.slice(userHome.length + 1);
+    return `~/${/^[a-zA-Z0-9_./-]+$/.test(suffix) ? suffix : quote(suffix)}`;
+  }
+  return quote(value);
 }
 
 function quote(value: string): string {
