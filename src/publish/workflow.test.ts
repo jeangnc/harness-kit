@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { strict as assert } from "node:assert";
+import { deepEqual, equal } from "node:assert/strict";
 import yaml from "js-yaml";
 
 import { consumerWorkflow } from "./workflow.js";
@@ -30,21 +30,21 @@ function actionStep(job: Job | undefined): Step | undefined {
 
 test("consumerWorkflow verifies on pull requests", () => {
   const verify = jobs()["verify"];
-  assert.equal(verify?.if, "github.event_name == 'pull_request'");
-  assert.equal(actionStep(verify)?.with?.["mode"], "verify");
+  equal(verify?.if, "github.event_name == 'pull_request'");
+  equal(actionStep(verify)?.with?.["mode"], "verify");
 });
 
 test("consumerWorkflow releases on push with write access and serialized runs", () => {
   const release = jobs()["release"];
-  assert.equal(release?.if, "github.event_name == 'push'");
-  assert.equal(actionStep(release)?.with?.["mode"], "release");
-  assert.deepEqual(release.permissions, { contents: "write" });
-  assert.deepEqual(release.concurrency, { group: "harness-release", "cancel-in-progress": false });
+  equal(release?.if, "github.event_name == 'push'");
+  equal(actionStep(release)?.with?.["mode"], "release");
+  deepEqual(release.permissions, { contents: "write" });
+  deepEqual(release.concurrency, { group: "harness-release", "cancel-in-progress": false });
 });
 
 test("consumerWorkflow checks out full history for release", () => {
   const checkout = jobs()["release"]?.steps.find((step) =>
     step.uses?.startsWith("actions/checkout"),
   );
-  assert.equal(checkout?.with?.["fetch-depth"], 0);
+  equal(checkout?.with?.["fetch-depth"], 0);
 });

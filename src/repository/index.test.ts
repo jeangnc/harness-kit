@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { strict as assert } from "node:assert";
+import { deepEqual, equal, fail, match } from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -26,7 +26,7 @@ for (const url of [
   test(`resolveRepository parses origin ${url} into owner and name`, async () => {
     await withRepo(url, async (cwd) => {
       const result = await resolveRepository({ cwd, env: {} });
-      assert.deepEqual(result, {
+      deepEqual(result, {
         ok: true,
         value: { owner: "acme", name: "widgets", slug: "acme/widgets" },
       });
@@ -37,7 +37,7 @@ for (const url of [
 test("resolveRepository prefers GITHUB_REPOSITORY over the origin remote", async () => {
   await withRepo("git@github.com:acme/widgets.git", async (cwd) => {
     const result = await resolveRepository({ cwd, env: { GITHUB_REPOSITORY: "other/thing" } });
-    assert.deepEqual(result, {
+    deepEqual(result, {
       ok: true,
       value: { owner: "other", name: "thing", slug: "other/thing" },
     });
@@ -47,15 +47,15 @@ test("resolveRepository prefers GITHUB_REPOSITORY over the origin remote", async
 test("resolveRepository ignores an empty GITHUB_REPOSITORY", async () => {
   await withRepo("git@github.com:acme/widgets.git", async (cwd) => {
     const result = await resolveRepository({ cwd, env: { GITHUB_REPOSITORY: "" } });
-    if (!result.ok) assert.fail(formatRepositoryError(result.error));
-    assert.equal(result.value.slug, "acme/widgets");
+    if (!result.ok) fail(formatRepositoryError(result.error));
+    equal(result.value.slug, "acme/widgets");
   });
 });
 
 test("resolveRepository rejects a malformed GITHUB_REPOSITORY", async () => {
   await withRepo(null, async (cwd) => {
     const result = await resolveRepository({ cwd, env: { GITHUB_REPOSITORY: "just-a-name" } });
-    assert.deepEqual(result, {
+    deepEqual(result, {
       ok: false,
       error: { kind: "invalid-github-repository", value: "just-a-name" },
     });
@@ -65,14 +65,14 @@ test("resolveRepository rejects a malformed GITHUB_REPOSITORY", async () => {
 test("resolveRepository reports no-origin when the repo has no origin remote", async () => {
   await withRepo(null, async (cwd) => {
     const result = await resolveRepository({ cwd, env: {} });
-    assert.deepEqual(result, { ok: false, error: { kind: "no-origin", cwd } });
+    deepEqual(result, { ok: false, error: { kind: "no-origin", cwd } });
   });
 });
 
 test("resolveRepository reports unrecognized-remote for a non-GitHub origin", async () => {
   await withRepo("https://gitlab.com/acme/widgets.git", async (cwd) => {
     const result = await resolveRepository({ cwd, env: {} });
-    assert.deepEqual(result, {
+    deepEqual(result, {
       ok: false,
       error: { kind: "unrecognized-remote", url: "https://gitlab.com/acme/widgets.git" },
     });
@@ -80,17 +80,17 @@ test("resolveRepository reports unrecognized-remote for a non-GitHub origin", as
 });
 
 test("parseRepository rejects a slug with extra path segments", () => {
-  assert.deepEqual(parseRepository("acme/widgets/extra"), {
+  deepEqual(parseRepository("acme/widgets/extra"), {
     ok: false,
     error: { kind: "invalid-slug", slug: "acme/widgets/extra" },
   });
 });
 
 test("parseRepository rejects a dot-segment repository name", () => {
-  assert.equal(parseRepository("acme/..").ok, false);
+  equal(parseRepository("acme/..").ok, false);
 });
 
 test("formatRepositoryError names the offending remote URL", () => {
   const message = formatRepositoryError({ kind: "unrecognized-remote", url: "file:///x" });
-  assert.match(message, /file:\/\/\/x/);
+  match(message, /file:\/\/\/x/);
 });

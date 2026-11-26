@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { strict as assert } from "node:assert";
+import { deepEqual, equal, fail, match } from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -71,14 +71,11 @@ test("publishBranch creates a parentless commit on the first publish", async () 
   await withSandbox(async ({ request, writeBuild, remote, source }) => {
     writeBuild("plugins/a/SKILL.md", "a\n");
     const result = await publishBranch(request);
-    if (!result.ok) assert.fail(formatPublishError(result.error));
-    assert.equal(result.value.kind, "created");
-    assert.equal(remote("rev-parse", "refs/heads/claude"), commitOf(result.value));
-    assert.equal(remote("rev-list", "--parents", "-n", "1", "claude"), commitOf(result.value));
-    assert.equal(
-      remote("log", "-1", "--format=%s", "claude"),
-      `build: ${source("rev-parse", "HEAD")}`,
-    );
+    if (!result.ok) fail(formatPublishError(result.error));
+    equal(result.value.kind, "created");
+    equal(remote("rev-parse", "refs/heads/claude"), commitOf(result.value));
+    equal(remote("rev-list", "--parents", "-n", "1", "claude"), commitOf(result.value));
+    equal(remote("log", "-1", "--format=%s", "claude"), `build: ${source("rev-parse", "HEAD")}`);
   });
 });
 
@@ -86,11 +83,11 @@ test("publishBranch fast-forwards the branch when the build changes", async () =
   await withSandbox(async ({ request, writeBuild, remote }) => {
     writeBuild("plugins/a/SKILL.md", "a\n");
     const first = await publishBranch(request);
-    if (!first.ok) assert.fail(formatPublishError(first.error));
+    if (!first.ok) fail(formatPublishError(first.error));
     writeBuild("plugins/a/SKILL.md", "b\n");
     const second = await publishBranch(request);
-    if (!second.ok) assert.fail(formatPublishError(second.error));
-    assert.deepEqual(second.value, {
+    if (!second.ok) fail(formatPublishError(second.error));
+    deepEqual(second.value, {
       kind: "advanced",
       branch: "claude",
       commit: remote("rev-parse", "refs/heads/claude"),
@@ -103,13 +100,13 @@ test("publishBranch makes no commit when the build is unchanged", async () => {
   await withSandbox(async ({ request, writeBuild, remote }) => {
     writeBuild("plugins/a/SKILL.md", "a\n");
     const first = await publishBranch(request);
-    if (!first.ok) assert.fail(formatPublishError(first.error));
+    if (!first.ok) fail(formatPublishError(first.error));
     const second = await publishBranch(request);
-    assert.deepEqual(second, {
+    deepEqual(second, {
       ok: true,
       value: { kind: "unchanged", branch: "claude", head: commitOf(first.value) },
     });
-    assert.equal(remote("rev-parse", "refs/heads/claude"), commitOf(first.value));
+    equal(remote("rev-parse", "refs/heads/claude"), commitOf(first.value));
   });
 });
 
@@ -119,8 +116,8 @@ test("publishBranch leaves excluded top-level entries out of the published tree"
     writeBuild("configs/settings.json", "{}\n");
     writeBuild("plugins/a/configs/kept.md", "kept\n");
     const result = await publishBranch(request);
-    if (!result.ok) assert.fail(formatPublishError(result.error));
-    assert.deepEqual(remote("ls-tree", "-r", "--name-only", "claude").split("\n"), [
+    if (!result.ok) fail(formatPublishError(result.error));
+    deepEqual(remote("ls-tree", "-r", "--name-only", "claude").split("\n"), [
       "plugins/a/SKILL.md",
       "plugins/a/configs/kept.md",
     ]);
@@ -132,11 +129,11 @@ test("publishBranch refuses a source repo with uncommitted changes", async () =>
     writeBuild("plugins/a/SKILL.md", "a\n");
     writeFileSync(join(request.repoRoot, "harness.yaml"), "marketplace: changed\n");
     const result = await publishBranch(request);
-    assert.deepEqual(result, {
+    deepEqual(result, {
       ok: false,
       error: { kind: "dirty-source", repoRoot: request.repoRoot, paths: ["harness.yaml"] },
     });
-    assert.equal(remote("branch", "--list", "claude"), "");
+    equal(remote("branch", "--list", "claude"), "");
   });
 });
 
@@ -144,7 +141,7 @@ test("publishBranch reports a missing build directory", async () => {
   await withSandbox(async ({ request }) => {
     const buildDir = join(request.repoRoot, ".harness", "codex");
     const result = await publishBranch({ ...request, buildDir });
-    assert.deepEqual(result, { ok: false, error: { kind: "build-missing", buildDir } });
+    deepEqual(result, { ok: false, error: { kind: "build-missing", buildDir } });
   });
 });
 
@@ -153,10 +150,10 @@ test("publishBranch leaves the source index, worktree, and HEAD untouched", asyn
     writeBuild("plugins/a/SKILL.md", "a\n");
     const head = source("rev-parse", "HEAD");
     const result = await publishBranch(request);
-    if (!result.ok) assert.fail(formatPublishError(result.error));
-    assert.equal(source("status", "--porcelain"), "");
-    assert.equal(source("rev-parse", "HEAD"), head);
-    assert.deepEqual(source("ls-files").split("\n"), [".gitignore", "harness.yaml"]);
+    if (!result.ok) fail(formatPublishError(result.error));
+    equal(source("status", "--porcelain"), "");
+    equal(source("rev-parse", "HEAD"), head);
+    deepEqual(source("ls-files").split("\n"), [".gitignore", "harness.yaml"]);
   });
 });
 
@@ -164,7 +161,7 @@ test("publishBranch reports push-rejected when the remote refuses the push", asy
   await withSandbox(async ({ request, writeBuild, remoteDir }) => {
     writeBuild("plugins/a/SKILL.md", "a\n");
     const first = await publishBranch(request);
-    if (!first.ok) assert.fail(formatPublishError(first.error));
+    if (!first.ok) fail(formatPublishError(first.error));
     writeFileSync(
       join(remoteDir, "hooks", "pre-receive"),
       "#!/bin/sh\necho 'branch is protected' >&2\nexit 1\n",
@@ -172,9 +169,9 @@ test("publishBranch reports push-rejected when the remote refuses the push", asy
     );
     writeBuild("plugins/a/SKILL.md", "b\n");
     const result = await publishBranch(request);
-    if (result.ok) assert.fail(`expected push-rejected, got ${result.value.kind}`);
-    assert.equal(result.error.kind, "push-rejected");
-    assert.match(formatPublishError(result.error), /branch is protected/);
+    if (result.ok) fail(`expected push-rejected, got ${result.value.kind}`);
+    equal(result.error.kind, "push-rejected");
+    match(formatPublishError(result.error), /branch is protected/);
   });
 });
 

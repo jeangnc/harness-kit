@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { strict as assert } from "node:assert";
+import { deepEqual, equal, fail, match } from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,20 +28,20 @@ async function withRoot<T>(files: Files, fn: (root: string) => Promise<T>): Prom
 
 async function treeFor(root: string, vendor: string): Promise<EffectiveTree> {
   const result = await effectiveTree({ root, vendor, registeredVendors });
-  if (!result.ok) assert.fail(`expected ok, got ${JSON.stringify(result.error)}`);
+  if (!result.ok) fail(`expected ok, got ${JSON.stringify(result.error)}`);
   return result.value;
 }
 
 async function errorsFor(root: string, vendor: string): Promise<readonly OverlayError[]> {
   const result = await effectiveTree({ root, vendor, registeredVendors });
-  if (result.ok) assert.fail(`expected errors, got ${JSON.stringify([...result.value.files])}`);
+  if (result.ok) fail(`expected errors, got ${JSON.stringify([...result.value.files])}`);
   return result.error;
 }
 
 test("effectiveTree of a neutral-only root lists every file sorted by relative path", async () => {
   await withRoot({ "b.md": "b", "a/z.md": "z", "a/b/c.md": "c" }, async (root) => {
     const tree = await treeFor(root, "claude");
-    assert.deepEqual(
+    deepEqual(
       [...tree.files],
       [
         ["a/b/c.md", join(root, "a/b/c.md")],
@@ -55,8 +55,8 @@ test("effectiveTree of a neutral-only root lists every file sorted by relative p
 test("effectiveTree adds an overlay file that has no neutral counterpart", async () => {
   await withRoot({ "a.md": "a", "claude/extra.md": "extra" }, async (root) => {
     const tree = await treeFor(root, "claude");
-    assert.equal(resolveIn(tree, "extra.md"), join(root, "claude/extra.md"));
-    assert.equal(resolveIn(tree, "a.md"), join(root, "a.md"));
+    equal(resolveIn(tree, "extra.md"), join(root, "claude/extra.md"));
+    equal(resolveIn(tree, "a.md"), join(root, "a.md"));
   });
 });
 
@@ -65,8 +65,8 @@ test("effectiveTree resolves a shared path to the vendor overlay file", async ()
     { "skills/x/SKILL.md": "neutral", "claude/skills/x/SKILL.md": "claude" },
     async (root) => {
       const tree = await treeFor(root, "claude");
-      assert.equal(resolveIn(tree, "skills/x/SKILL.md"), join(root, "claude/skills/x/SKILL.md"));
-      assert.equal(tree.files.size, 1);
+      equal(resolveIn(tree, "skills/x/SKILL.md"), join(root, "claude/skills/x/SKILL.md"));
+      equal(tree.files.size, 1);
     },
   );
 });
@@ -74,14 +74,14 @@ test("effectiveTree resolves a shared path to the vendor overlay file", async ()
 test("effectiveTree excludes another vendor's overlay", async () => {
   await withRoot({ "a.md": "a", "codex/a.md": "codex", "codex/only.md": "only" }, async (root) => {
     const tree = await treeFor(root, "claude");
-    assert.deepEqual([...tree.files], [["a.md", join(root, "a.md")]]);
+    deepEqual([...tree.files], [["a.md", join(root, "a.md")]]);
   });
 });
 
 test("effectiveTree reports an overlay identical to the neutral file it shadows", async () => {
   await withRoot({ "a.md": "same", "claude/a.md": "same" }, async (root) => {
     const errors = await errorsFor(root, "claude");
-    assert.deepEqual(errors, [
+    deepEqual(errors, [
       {
         kind: "redundant-overlay",
         relPath: "a.md",
@@ -95,14 +95,14 @@ test("effectiveTree reports an overlay identical to the neutral file it shadows"
 test("effectiveTree ignores redundancy in an overlay of a vendor not requested", async () => {
   await withRoot({ "a.md": "same", "codex/a.md": "same" }, async (root) => {
     const tree = await treeFor(root, "claude");
-    assert.equal(resolveIn(tree, "a.md"), join(root, "a.md"));
+    equal(resolveIn(tree, "a.md"), join(root, "a.md"));
   });
 });
 
 test("effectiveTree reports a vendor-named directory nested below the root", async () => {
   await withRoot({ "skills/claude/a.md": "a", "skills/x/codex/b.md": "b" }, async (root) => {
     const errors = await errorsFor(root, "claude");
-    assert.deepEqual(errors, [
+    deepEqual(errors, [
       { kind: "misplaced-vendor-dir", path: join(root, "skills/claude"), vendor: "claude" },
       { kind: "misplaced-vendor-dir", path: join(root, "skills/x/codex"), vendor: "codex" },
     ]);
@@ -112,7 +112,7 @@ test("effectiveTree reports a vendor-named directory nested below the root", asy
 test("effectiveTree reports a vendor directory nested inside an overlay", async () => {
   await withRoot({ "claude/codex/a.md": "a" }, async (root) => {
     const errors = await errorsFor(root, "claude");
-    assert.deepEqual(errors, [
+    deepEqual(errors, [
       { kind: "misplaced-vendor-dir", path: join(root, "claude/codex"), vendor: "codex" },
     ]);
   });
@@ -121,7 +121,7 @@ test("effectiveTree reports a vendor directory nested inside an overlay", async 
 test("effectiveTree collects misplaced and redundant errors together", async () => {
   await withRoot({ "a.md": "same", "claude/a.md": "same", "x/codex/b.md": "b" }, async (root) => {
     const errors = await errorsFor(root, "claude");
-    assert.deepEqual(
+    deepEqual(
       errors.map((error) => error.kind),
       ["misplaced-vendor-dir", "redundant-overlay"],
     );
@@ -130,7 +130,7 @@ test("effectiveTree collects misplaced and redundant errors together", async () 
 
 test("effectiveTree of a missing root is an empty tree", async () => {
   const tree = await treeFor(join(tmpdir(), "harness-kit-overlay-missing", "nowhere"), "claude");
-  assert.equal(tree.files.size, 0);
+  equal(tree.files.size, 0);
 });
 
 test("effectiveTree includes dotfiles and dot-directories", async () => {
@@ -138,7 +138,7 @@ test("effectiveTree includes dotfiles and dot-directories", async () => {
     { ".mcp.json": "{}", ".fragments/a.md": "a", "claude/.env": "x" },
     async (root) => {
       const tree = await treeFor(root, "claude");
-      assert.deepEqual([...tree.files.keys()], [".env", ".fragments/a.md", ".mcp.json"]);
+      deepEqual([...tree.files.keys()], [".env", ".fragments/a.md", ".mcp.json"]);
     },
   );
 });
@@ -147,14 +147,14 @@ test("effectiveTree lists a symlinked directory as a file without descending int
   await withRoot({ "real/a.md": "a" }, async (root) => {
     symlinkSync(join(root, "real"), join(root, "link"));
     const tree = await treeFor(root, "claude");
-    assert.deepEqual([...tree.files.keys()], ["link", "real/a.md"]);
+    deepEqual([...tree.files.keys()], ["link", "real/a.md"]);
   });
 });
 
 test("effectiveTree treats a top-level file named after a vendor as neutral", async () => {
   await withRoot({ claude: "not a directory" }, async (root) => {
     const tree = await treeFor(root, "codex");
-    assert.equal(resolveIn(tree, "claude"), join(root, "claude"));
+    equal(resolveIn(tree, "claude"), join(root, "claude"));
   });
 });
 
@@ -164,8 +164,8 @@ test("formatOverlayError names the misplaced directory and where overlays belong
     path: "/r/skills/claude",
     vendor: "claude",
   });
-  assert.match(message, /\/r\/skills\/claude/);
-  assert.match(message, /directly under the root/);
+  match(message, /\/r\/skills\/claude/);
+  match(message, /directly under the root/);
 });
 
 test("formatOverlayError names both paths of a redundant overlay", () => {
@@ -175,6 +175,6 @@ test("formatOverlayError names both paths of a redundant overlay", () => {
     overlayPath: "/r/claude/a.md",
     neutralPath: "/r/a.md",
   });
-  assert.match(message, /\/r\/claude\/a\.md/);
-  assert.match(message, /\/r\/a\.md/);
+  match(message, /\/r\/claude\/a\.md/);
+  match(message, /\/r\/a\.md/);
 });
