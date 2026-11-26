@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { commaSeparated, parsePositiveInt, parseTier } from "./args/index.js";
 import { migrateRuntime, installDefaults } from "./install/runtime.js";
 import { build } from "./build.js";
+import { layoutAt } from "./layout/index.js";
 import { check, type ReferenceViolation, type Warning } from "./check/index.js";
 import { formatConsole, runEval, toJson } from "./eval/index.js";
 import { TIERS } from "./eval/schema.js";
@@ -42,7 +43,6 @@ const buildCmd = defineCommand({
 });
 
 const installArgs = {
-  dist: { type: "string", default: "./dist", description: "dist root" },
   repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
   silent: { type: "boolean", default: false, description: "suppress success log" },
   "dry-run": { type: "boolean", default: false, description: "print plan without applying" },
@@ -56,7 +56,11 @@ const migrateRuntimeCmd = defineCommand({
   args: { ...installArgs, vendor: { type: "string", required: true } },
   run: async ({ args }) => {
     const vendors = resolveVendors([args.vendor], builtinVendors());
-    const changes = await migrateRuntime({ distRoot: args.dist, vendors, dryRun: args["dry-run"] });
+    const changes = await migrateRuntime({
+      distRoot: layoutAt(args.repo).buildDir,
+      vendors,
+      dryRun: args["dry-run"],
+    });
     for (const change of changes) {
       console.log(`${change.path} → regular copy; backup: ${change.backup}`);
     }
@@ -71,7 +75,10 @@ const installDefaultsCmd = defineCommand({
   args: { ...installArgs, vendor: { type: "string", required: true } },
   run: async ({ args }) => {
     if (args.vendor !== "codex") throw new Error("install-defaults supports only codex");
-    const backup = await installDefaults({ distRoot: args.dist, dryRun: args["dry-run"] });
+    const backup = await installDefaults({
+      distRoot: layoutAt(args.repo).buildDir,
+      dryRun: args["dry-run"],
+    });
     if (backup) console.log(`Previous defaults preserved at ${backup}`);
     console.log(`${args["dry-run"] ? "Would publish" : "Published"} /etc/codex/config.toml`);
   },
@@ -87,7 +94,6 @@ const installCmd = defineCommand({
     const mode = parseInstallMode(args.mode);
     const vendors = await resolveVendorsForRepo(args.repo);
     await install({
-      distRoot: args.dist,
       repoRoot: args.repo,
       vendors,
       mode,
@@ -103,7 +109,6 @@ const uninstallCmd = defineCommand({
   run: async ({ args }) => {
     const vendors = await resolveVendorsForRepo(args.repo);
     await uninstall({
-      distRoot: args.dist,
       repoRoot: args.repo,
       vendors,
       silent: args.silent,
@@ -130,7 +135,6 @@ const updateCmd = defineCommand({
     const mode = parseInstallMode(args.mode);
     const vendors = await resolveVendorsForRepo(args.repo);
     const result = await update({
-      distRoot: args.dist,
       repoRoot: args.repo,
       vendors,
       mode,
@@ -258,9 +262,9 @@ const evalCmd = defineCommand({
     cwd: { type: "string", default: ".", description: "working directory for agent sessions" },
     dist: {
       type: "string",
-      default: "./dist",
+      default: "./.harness",
       description:
-        "local compiled plugins to overlay over the installed cache (local wins); empty to disable",
+        "local built plugins to overlay over the installed cache (local wins); empty to disable",
     },
     suite: { type: "string", description: "only run cases from this suite" },
     case: { type: "string", description: "only run the case with this id" },

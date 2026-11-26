@@ -54,10 +54,10 @@ test("cli init --help exits 0 and mentions --marketplace and --vendors", () => {
   match(stdout, /--vendors/);
 });
 
-test("cli uninstall --help exits 0 and mentions --dist", () => {
+test("cli uninstall --help exits 0 and mentions --repo", () => {
   const { status, stdout } = runCli(["uninstall", "--help"]);
   equal(status, 0);
-  match(stdout, /--dist/);
+  match(stdout, /--repo/);
 });
 
 test("cli with unknown subcommand exits non-zero", () => {

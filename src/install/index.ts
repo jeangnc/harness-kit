@@ -1,3 +1,4 @@
+import { layoutAt } from "../layout/index.js";
 import { resolve } from "node:path";
 
 import { assertRuntimeDetached } from "./runtime.js";
@@ -202,8 +203,9 @@ async function resolveContext(
   if (options.vendors.length === 0) {
     throw new Error("install requires at least one vendor");
   }
-  const distRoot = resolve(options.distRoot ?? "./dist");
-  const repoRoot = resolve(options.repoRoot ?? ".");
+  const layout = layoutAt(options.repoRoot ?? ".");
+  const repoRoot = layout.repoRoot;
+  const distRoot = options.distRoot === undefined ? layout.buildDir : resolve(options.distRoot);
   const silent = options.silent ?? false;
   const log =
     options.log ??
