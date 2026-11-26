@@ -8,9 +8,11 @@ import { dirname, join } from "node:path";
 import {
   formatPublishError,
   publishBranch,
+  publishVendors,
   type PublishOutcome,
   type PublishRequest,
 } from "./index.js";
+import { layoutAt } from "../layout/index.js";
 
 Object.assign(process.env, {
   GIT_AUTHOR_NAME: "Test Author",
@@ -184,3 +186,26 @@ function commitOf(outcome: PublishOutcome): string {
       return outcome.head;
   }
 }
+
+test("publishVendors publishes each vendor build to the branch named after it", async () => {
+  await withSandbox(async ({ request, writeBuild, remote }) => {
+    writeBuild("plugins/a/SKILL.md", "a\n");
+    const codexBuild = join(request.repoRoot, ".harness", "codex", "plugins/a/SKILL.md");
+    mkdirSync(dirname(codexBuild), { recursive: true });
+    writeFileSync(codexBuild, "codex\n");
+    const result = await publishVendors({
+      layout: layoutAt(request.repoRoot),
+      vendors: ["claude", "codex"],
+      remote: "origin",
+    });
+    if (!result.ok) fail(formatPublishError(result.error));
+    deepEqual(
+      result.value.map((outcome) => [outcome.kind, outcome.branch]),
+      [
+        ["created", "claude"],
+        ["created", "codex"],
+      ],
+    );
+    equal(remote("show", "codex:plugins/a/SKILL.md"), "codex");
+  });
+});

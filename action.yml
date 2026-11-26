@@ -14,7 +14,7 @@ inputs:
     description: "`verify` runs build, check, and lint. `release` also publishes vendor branches."
     required: true
   vendors:
-    description: Space-separated vendors to publish in release mode. Empty publishes every vendor in harness.yaml.
+    description: Comma-separated vendors to publish in release mode. Empty publishes every vendor in harness.yaml.
     required: false
     default: ""
   working-directory:
@@ -87,9 +87,4 @@ runs:
       env:
         HARNESS: "@jean.gnc/harness-kit@${{ steps.version.outputs.version }}"
         VENDORS: ${{ inputs.vendors }}
-      run: |
-        args=()
-        for vendor in $VENDORS; do
-          args+=(--vendor "$vendor")
-        done
-        npx --yes "$HARNESS" publish "${args[@]}"
+      run: npx --yes "$HARNESS" publish --vendors "$VENDORS"

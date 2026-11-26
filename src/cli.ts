@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { commaSeparated, parsePositiveInt, parseTier } from "./args/index.js";
 import { migrateRuntime, installDefaults } from "./install/runtime.js";
 import { build } from "./build.js";
+import { formatPublishError, formatPublishOutcome, publishVendors } from "./publish/index.js";
 import { layoutAt } from "./layout/index.js";
 import { check, type ReferenceViolation, type Warning } from "./check/index.js";
 import { formatConsole, runEval, toJson } from "./eval/index.js";
@@ -146,6 +147,38 @@ const updateCmd = defineCommand({
       console.error(formatUpdateError(result.error));
       process.exit(1);
     }
+  },
+});
+
+const publishCmd = defineCommand({
+  meta: {
+    name: "publish",
+    description: "Publish each vendor build in .harness/ to the branch named after the vendor",
+  },
+  args: {
+    repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
+    vendors: {
+      type: "string",
+      default: "",
+      description:
+        "comma-separated vendors to publish; empty publishes every vendor in harness.yaml",
+    },
+    remote: { type: "string", default: "origin", description: "git remote to push to" },
+  },
+  run: async ({ args }) => {
+    const declared = await resolveVendorsForRepo(args.repo);
+    const requested = commaSeparated(args.vendors);
+    const vendors = requested.length === 0 ? declared : resolveVendors(requested, declared);
+    const result = await publishVendors({
+      layout: layoutAt(args.repo),
+      vendors: vendors.map((vendor) => vendor.name),
+      remote: args.remote,
+    });
+    if (!result.ok) {
+      console.error(formatPublishError(result.error));
+      process.exit(1);
+    }
+    for (const outcome of result.value) console.log(formatPublishOutcome(outcome));
   },
 });
 
@@ -330,6 +363,7 @@ const main = defineCommand({
   subCommands: {
     check: checkCmd,
     build: buildCmd,
+    publish: publishCmd,
     eval: evalCmd,
     init: initCmd,
     install: installCmd,

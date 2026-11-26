@@ -1,9 +1,10 @@
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { errnoCode } from "../fs.js";
 import { git, tryGit } from "../git/index.js";
+import { vendorBuild, type Layout } from "../layout/index.js";
 import { err, ok, type Result } from "../result.js";
 
 export type PublishOutcome =
@@ -27,6 +28,12 @@ export interface PublishRequest {
   readonly branch: string;
   readonly remote: string;
   readonly excludedEntries: readonly string[];
+}
+
+export interface VendorPublishRequest {
+  readonly layout: Layout;
+  readonly vendors: readonly string[];
+  readonly remote: string;
 }
 
 const LS_REMOTE_NO_MATCH = 2;
@@ -58,6 +65,25 @@ export function formatPublishOutcome(o: PublishOutcome): string {
 
 function short(sha: string): string {
   return sha.slice(0, 7);
+}
+
+export async function publishVendors(
+  request: VendorPublishRequest,
+): Promise<Result<readonly PublishOutcome[], PublishError>> {
+  const outcomes: PublishOutcome[] = [];
+  for (const vendor of request.vendors) {
+    const build = vendorBuild(request.layout.buildDir, vendor);
+    const published = await publishBranch({
+      repoRoot: request.layout.repoRoot,
+      buildDir: build.root,
+      branch: vendor,
+      remote: request.remote,
+      excludedEntries: [relative(build.root, build.configsDir)],
+    });
+    if (!published.ok) return published;
+    outcomes.push(published.value);
+  }
+  return ok(outcomes);
 }
 
 export async function publishBranch(

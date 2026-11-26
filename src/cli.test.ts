@@ -85,3 +85,9 @@ test("cli lint --help exits 0 and mentions --repo", () => {
   equal(status, 0);
   match(stdout, /--repo/);
 });
+
+test("cli publish --help exits 0 and mentions --vendors", () => {
+  const { status, stdout } = runCli(["publish", "--help"]);
+  equal(status, 0);
+  match(stdout, /--vendors/);
+});
