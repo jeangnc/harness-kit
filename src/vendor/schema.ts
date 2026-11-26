@@ -2,13 +2,6 @@ import type { InstallMode } from "../install/mode.js";
 import type { CommandRunner } from "../install/runner.js";
 import type { Catalog, ResolvedPlugin } from "../layout/index.js";
 
-export interface LinkedFile {
-  readonly srcAbs: string;
-  readonly destAbs: string;
-  readonly destRel: string;
-  readonly basename: string;
-}
-
 export interface ConfigPlacement {
   readonly strategy: "link" | "merge";
   readonly destAbs: string;
@@ -58,7 +51,6 @@ export interface Vendor {
   readonly runtimeLayout: RuntimeLayout;
   readonly pluginSelection: PluginSelection;
   readonly configPlacement: (destRel: string) => ConfigPlacement | null;
-  readonly aliases?: (linkedFile: LinkedFile) => readonly string[];
   readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;
   readonly emitCatalog: (ctx: VendorCatalogEmitContext) => Promise<void>;
   readonly install: (ctx: VendorInstallContext) => Promise<void>;

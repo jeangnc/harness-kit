@@ -21,7 +21,6 @@ import {
 } from "./emit.js";
 import type {
   DiscoveredVendorPlugin,
-  LinkedFile,
   PluginPartition,
   Vendor,
   VendorInstallContext,
@@ -110,9 +109,6 @@ export function makeClaudeVendor(home: string): Vendor {
     configPlacement(destRel) {
       if (destRel === SETTINGS_FILE) return null;
       return { strategy: "link", destAbs: join(home, destRel) };
-    },
-    aliases(file: LinkedFile): readonly string[] {
-      return file.basename === "AGENTS.md" ? [join(home, "CLAUDE.md")] : [];
     },
     emitPluginManifest: emitClaudePluginManifest,
     emitCatalog: async (ctx) => emitClaudeCatalog(ctx.vendorDir, ctx.catalog),

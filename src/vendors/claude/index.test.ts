@@ -138,28 +138,6 @@ test("claudeVendor.emitCatalog lists discovered plugins with relative sources an
   }
 });
 
-test("claudeVendor.aliases mirrors AGENTS.md to CLAUDE.md in the vendor home", () => {
-  const v = makeClaudeVendor("/home/test/.claude");
-  const aliases = v.aliases?.({
-    srcAbs: "/repo/src/configs/common/AGENTS.md",
-    destAbs: "/home/test/.claude/AGENTS.md",
-    destRel: "AGENTS.md",
-    basename: "AGENTS.md",
-  });
-  assert.deepEqual(aliases, ["/home/test/.claude/CLAUDE.md"]);
-});
-
-test("claudeVendor.aliases returns empty for non-AGENTS files", () => {
-  const v = makeClaudeVendor("/home/test/.claude");
-  const aliases = v.aliases?.({
-    srcAbs: "/repo/src/configs/claude/settings.json",
-    destAbs: "/home/test/.claude/settings.json",
-    destRel: "settings.json",
-    basename: "settings.json",
-  });
-  assert.deepEqual(aliases, []);
-});
-
 test("claudeVendor.install in remote mode installs each unregistered plugin without uninstalling", async () => {
   await withHome(async (home, dist) => {
     const alpha = writeDistPlugin(dist, "alpha", "1.0.0", "alpha-v1");
@@ -573,20 +551,6 @@ test("claudeVendor.uninstall uninstalls each plugin + removes marketplace", asyn
     "claude plugin uninstall alpha@test-market",
     "claude plugin marketplace remove test-market",
   ]);
-});
-
-test("makeClaudeVendor honors a custom home for cache removal path semantics", () => {
-  const v = makeClaudeVendor("/custom/.claude");
-  assert.equal(v.home, "/custom/.claude");
-  assert.deepEqual(
-    v.aliases?.({
-      srcAbs: "/x/AGENTS.md",
-      destAbs: join(v.home, "AGENTS.md"),
-      destRel: "AGENTS.md",
-      basename: "AGENTS.md",
-    }),
-    ["/custom/.claude/CLAUDE.md"],
-  );
 });
 
 test("readDisabledPluginKeys returns empty set when settings.json is missing", () => {

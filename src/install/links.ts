@@ -1,5 +1,5 @@
 import { readFile, readlink, rm } from "node:fs/promises";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 import { z } from "zod";
 
@@ -35,7 +35,7 @@ export interface PlannedConfig {
   readonly srcAbs: string;
   readonly destAbs: string;
   readonly vendor: string;
-  readonly reason: "link" | "alias" | "merge";
+  readonly reason: "link" | "merge";
 }
 
 export async function planConfigs(options: PlanConfigsOptions): Promise<readonly PlannedConfig[]> {
@@ -59,16 +59,6 @@ export async function planConfigs(options: PlanConfigsOptions): Promise<readonly
       if (placement === null) continue;
       const { strategy, destAbs } = placement;
       plan.push({ srcAbs, destAbs, vendor: vendor.name, reason: strategy });
-      const aliasDests =
-        vendor.aliases?.({
-          srcAbs,
-          destAbs,
-          destRel: link.destRel,
-          basename: basename(link.destRel),
-        }) ?? [];
-      for (const aliasDest of aliasDests) {
-        plan.push({ srcAbs, destAbs: aliasDest, vendor: vendor.name, reason: "alias" });
-      }
     }
   }
   return plan;
