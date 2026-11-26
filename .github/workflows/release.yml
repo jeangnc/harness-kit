@@ -11,7 +11,10 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6
-      - run: sudo apt-get install -y --no-install-recommends direnv
+      - name: Install direnv
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/direnv https://github.com/direnv/direnv/releases/download/v2.38.2/direnv.linux-amd64
+          sudo chmod +x /usr/local/bin/direnv
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
