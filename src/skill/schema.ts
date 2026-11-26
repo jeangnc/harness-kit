@@ -36,7 +36,3 @@ export const SkillSchema = z
   .strict();
 
 export type Skill = z.infer<typeof SkillSchema>;
-
-export function defineSkill(skill: Skill): Skill {
-  return SkillSchema.parse(skill);
-}

@@ -1,21 +1,10 @@
-export {
-  CompanionSchema,
-  SkillSchema,
-  defineSkill,
-  isReservedCompanionFilename,
-} from "./schema.js";
+export { CompanionSchema, SkillSchema, isReservedCompanionFilename } from "./schema.js";
 export type { Companion, Skill } from "./schema.js";
 
-export { findSkillFile, formatLoadSkillError, loadSkill } from "./source.js";
-export type {
-  FindSkillFileError,
-  LoadSkillError,
-  LoadedSkill,
-  SkillFile,
-  SkillSource,
-} from "./source.js";
+export { SKILL_FILE, findSkillFile, formatLoadSkillError, loadSkill } from "./source.js";
+export type { LoadSkillError, LoadedSkill } from "./source.js";
 
 export { checkCompanionFiles } from "./invariants.js";
 
-export { expandIncludes, formatIncludeError } from "./includes.js";
-export type { ExpandedBody, IncludeError, IncludeRoots } from "./includes.js";
+export { IDENTITY_VIEW, expandIncludes, formatIncludeError } from "./includes.js";
+export type { ExpandedBody, IncludeError, IncludeRoots, SourceView } from "./includes.js";

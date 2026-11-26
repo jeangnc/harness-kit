@@ -1,67 +1,46 @@
-import { assertRuntimeDetached } from "./install/runtime.js";
 import { rm } from "node:fs/promises";
-import { resolve, join, dirname } from "node:path";
 
 import { resolveRootsForRepo } from "./config/harness.js";
-import { compilePlugins, loadAdapter } from "./compile/index.js";
+import { compilePlugins } from "./compile/index.js";
 import { compileConfigs } from "./configs/compile.js";
 import { emitConfigsManifest } from "./configs/emit.js";
+import { assertRuntimeDetached } from "./install/runtime.js";
 import { defaultSources, discoverInstalled, indexInstalled } from "./installed.js";
-import { collectLocalIds } from "./layout/index.js";
+import { collectLocalIds, layoutAt, loadCatalogOrThrow } from "./layout/index.js";
 import { resolveVendorsForRepo } from "./vendor/registry.js";
 import type { Vendor } from "./vendor/schema.js";
 
 export interface CompileOptions {
-  readonly srcRoot?: string;
-  readonly outRoot?: string;
+  readonly repoRoot?: string;
   readonly silent?: boolean;
   readonly vendors?: readonly Vendor[];
-  readonly repoRoot?: string;
 }
 
 export async function compile(options: CompileOptions = {}): Promise<void> {
-  const srcRoot = resolve(options.srcRoot ?? "./src");
-  const outRoot = resolve(options.outRoot ?? "./dist");
-  const repoRoot = resolve(options.repoRoot ?? dirname(srcRoot));
-  const vendors = options.vendors ?? (await resolveVendorsForRepo(repoRoot));
+  const layout = layoutAt(options.repoRoot ?? ".");
+  const outRoot = layout.buildDir;
+  const vendors = options.vendors ?? (await resolveVendorsForRepo(layout.repoRoot));
   await assertRuntimeDetached({ distRoot: outRoot, vendors });
-  const namedRoots = await resolveRootsForRepo(repoRoot);
-  const adapter = await loadAdapter(srcRoot);
-  const localIds = await collectLocalIds(adapter);
+  const namedRoots = await resolveRootsForRepo(layout.repoRoot);
+  const catalog = await loadCatalogOrThrow(layout);
+  const localIds = await collectLocalIds(catalog);
   const installedIndex = indexInstalled(await discoverInstalled(defaultSources(vendors)));
+  const onWarnings = options.silent ? {} : { onWarnings: reportWarningsToStderr };
 
-  for (const vendor of vendors) {
-    await rm(vendor.vendorOutDir(outRoot), { recursive: true, force: true });
-  }
-  await rm(join(outRoot, "configs.json"), { force: true });
-
+  await rm(outRoot, { recursive: true, force: true });
   await compilePlugins({
-    srcRoot,
-    outRoot,
+    layout,
     vendors,
-    adapter,
+    catalog,
     localIds,
     installedIndex,
-    repoRoot,
     namedRoots,
-    ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
+    ...onWarnings,
   });
-  await compileConfigs({
-    srcRoot,
-    outRoot,
-    vendors,
-    localIds,
-    installedIndex,
-    repoRoot,
-    namedRoots,
-    ...(options.silent ? {} : { onWarnings: reportWarningsToStderr }),
-  });
-  await emitConfigsManifest({
-    outRoot,
-    vendors,
-  });
+  await compileConfigs({ layout, vendors, localIds, installedIndex, namedRoots, ...onWarnings });
+  await emitConfigsManifest({ outRoot, vendors });
   if (!options.silent) {
-    console.log(`compiled → ${outRoot}`);
+    console.log(`built → ${outRoot}`);
   }
 }
 

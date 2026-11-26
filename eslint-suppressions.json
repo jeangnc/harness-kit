@@ -16,7 +16,7 @@
   },
   "src/check/index.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 143
+      "count": 140
     }
   },
   "src/check/index.ts": {
@@ -66,17 +66,12 @@
   },
   "src/compile/index.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 120
+      "count": 114
     }
   },
   "src/compile/index.ts": {
     "tenets/feature-envy": {
       "count": 1
-    }
-  },
-  "src/compile/per-vendor-emit.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 20
     }
   },
   "src/compile/validators.test.ts": {
@@ -87,11 +82,6 @@
   "src/config/harness.test.ts": {
     "tenets/destructure-dot-access": {
       "count": 15
-    }
-  },
-  "src/configs/compile.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 17
     }
   },
   "src/configs/emit.test.ts": {
@@ -226,12 +216,7 @@
   },
   "src/layout/index.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 46
-    }
-  },
-  "src/layout/index.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 2
+      "count": 33
     }
   },
   "src/link/applier.test.ts": {
@@ -247,11 +232,6 @@
   "src/lint.test.ts": {
     "tenets/destructure-dot-access": {
       "count": 6
-    }
-  },
-  "src/marketplace/schema.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 41
     }
   },
   "src/parsing/frontmatter.test.ts": {
@@ -271,7 +251,7 @@
   },
   "src/plugin/schema.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 40
+      "count": 35
     }
   },
   "src/skill/includes.test.ts": {
@@ -291,12 +271,7 @@
   },
   "src/skill/source.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 37
-    }
-  },
-  "src/skill/source.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 2
+      "count": 16
     }
   },
   "src/vendor/registry.test.ts": {
@@ -306,7 +281,7 @@
   },
   "src/vendors/claude/index.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 98
+      "count": 94
     }
   },
   "src/vendors/claude/index.ts": {
@@ -331,7 +306,7 @@
   },
   "src/vendors/shared.ts": {
     "tenets/feature-envy": {
-      "count": 3
+      "count": 1
     }
   }
 }

@@ -2,23 +2,14 @@ export {
   CompanionSchema,
   SkillSchema,
   checkCompanionFiles,
-  defineSkill,
   findSkillFile,
   formatLoadSkillError,
   isReservedCompanionFilename,
   loadSkill,
 } from "./skill/index.js";
-export type {
-  Companion,
-  FindSkillFileError,
-  LoadedSkill,
-  LoadSkillError,
-  Skill,
-  SkillFile,
-  SkillSource,
-} from "./skill/index.js";
+export type { Companion, LoadedSkill, LoadSkillError, Skill } from "./skill/index.js";
 
-export { PluginSchema, definePlugin } from "./plugin/index.js";
+export { PluginSchema } from "./plugin/index.js";
 export type { Plugin } from "./plugin/index.js";
 
 export { formatFrontmatterError, parseFrontmatter } from "./parsing/index.js";

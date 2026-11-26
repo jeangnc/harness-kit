@@ -1,11 +1,13 @@
 import { homedir } from "node:os";
 import { join, parse, resolve } from "node:path";
 
+import { defaultPartition } from "../shared.js";
 import {
-  defaultEmitMarketplaceManifest,
-  defaultEmitPluginManifest,
-  defaultPartition,
-} from "../shared.js";
+  CATALOG_REL,
+  PLUGIN_MANIFEST_REL,
+  emitCodexCatalog,
+  emitCodexPluginManifest,
+} from "./emit.js";
 import type { Vendor, VendorInstallContext } from "../../vendor/schema.js";
 import {
   installCodexPlugin,
@@ -18,8 +20,7 @@ import {
 import type { CodexNativeContext } from "./native.js";
 
 const VENDOR_DIR = "codex";
-const PLUGIN_MANIFEST_REL = ".codex-plugin/plugin.json";
-const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.claude-plugin/marketplace.json`;
+const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/${CATALOG_REL}`;
 
 export function makeCodexVendor(homePath: string): Vendor {
   const home = resolve(homePath);
@@ -37,9 +38,9 @@ export function makeCodexVendor(homePath: string): Vendor {
     pluginOutDir: (outRoot, pluginName) => join(outRoot, VENDOR_DIR, "plugins", pluginName),
     configsOutDir: (outRoot) => join(outRoot, VENDOR_DIR, "configs"),
     configPlacement: () => null,
-    emitPluginManifest: async (ctx) => defaultEmitPluginManifest(PLUGIN_MANIFEST_REL, ctx),
+    emitPluginManifest: emitCodexPluginManifest,
     emitMarketplaceManifest: async (ctx) =>
-      defaultEmitMarketplaceManifest(MARKETPLACE_MANIFEST_REL, ctx),
+      emitCodexCatalog(join(ctx.outRoot, VENDOR_DIR), ctx.catalog),
     install: async (ctx) => refreshPlugins(ctx, inHome(ctx)),
     refresh: async (ctx) => refreshPlugins(ctx, inHome(ctx)),
     async uninstall(ctx) {

@@ -18,7 +18,8 @@ import { dirname, join } from "node:path";
 import { claudeVendor, makeClaudeVendor, readDisabledPluginKeys, stageIntoPlace } from "./index.js";
 import { discoverInstalled } from "../../installed.js";
 import type { CommandRunner } from "../../install/runner.js";
-import type { Marketplace } from "../../marketplace/index.js";
+import type { Catalog, ResolvedPlugin } from "../../layout/index.js";
+import { AGENT_PLUGINS_SCHEMA } from "../../plugin/index.js";
 import type { VendorInstallContext } from "../../vendor/schema.js";
 
 async function withSettings<T>(
@@ -105,36 +106,43 @@ test("claudeVendor.marketplaceManifestPath is claude/.claude-plugin/marketplace.
   assert.equal(claudeVendor.marketplaceManifestPath, "claude/.claude-plugin/marketplace.json");
 });
 
-test("claudeVendor.emitMarketplaceManifest writes per-vendor manifest with relative sources rewritten to ./<plugin>", async () => {
+test("claudeVendor.emitMarketplaceManifest lists discovered plugins with relative sources and descriptions", async () => {
   const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-claude-emit-"));
   try {
-    const marketplace: Marketplace = {
+    const plugin = (name: string): ResolvedPlugin => ({
+      name,
+      pluginDir: `/repo/plugins/${name}`,
+      manifestPath: `/repo/plugins/${name}/plugin.json`,
+      manifest: {
+        $schema: AGENT_PLUGINS_SCHEMA,
+        name,
+        version: "1.0.0",
+        description: `${name} plugin`,
+      },
+      hookRequires: [],
+      skillsDir: `/repo/plugins/${name}/skills`,
+      commandsDir: `/repo/plugins/${name}/commands`,
+      agentsDir: `/repo/plugins/${name}/agents`,
+      hooksDir: `/repo/plugins/${name}/hooks`,
+    });
+    const catalog: Catalog = {
       name: "shop",
       owner: { name: "Acme" },
-      metadata: { pluginRoot: "plugins" },
+      extensions: { claude: { metadata: { version: "2" } } },
+      plugins: [plugin("alpha"), plugin("beta")],
+    };
+    await claudeVendor.emitMarketplaceManifest({ outRoot: sandbox, catalog });
+    const parsed: unknown = JSON.parse(
+      readFileSync(join(sandbox, "claude/.claude-plugin/marketplace.json"), "utf8"),
+    );
+    assert.deepEqual(parsed, {
+      name: "shop",
+      owner: { name: "Acme" },
+      metadata: { version: "2" },
       plugins: [
-        { name: "alpha", source: { kind: "relative", path: "./plugins/alpha" } },
-        { name: "beta", source: { kind: "relative", path: "./plugins/beta" } },
-        {
-          name: "gh",
-          source: { kind: "github", source: "github", repo: "acme/gh" },
-        },
+        { name: "alpha", source: "./plugins/alpha", description: "alpha plugin" },
+        { name: "beta", source: "./plugins/beta", description: "beta plugin" },
       ],
-    };
-    await claudeVendor.emitMarketplaceManifest({ outRoot: sandbox, marketplace });
-    const target = join(sandbox, "claude/.claude-plugin/marketplace.json");
-    const parsed = JSON.parse(readFileSync(target, "utf8")) as {
-      name: string;
-      metadata?: { pluginRoot?: string };
-      plugins: ReadonlyArray<{ name: string; source: unknown }>;
-    };
-    assert.equal(parsed.name, "shop");
-    assert.equal(parsed.metadata?.pluginRoot, undefined);
-    assert.deepEqual(parsed.plugins[0], { name: "alpha", source: "./plugins/alpha" });
-    assert.deepEqual(parsed.plugins[1], { name: "beta", source: "./plugins/beta" });
-    assert.deepEqual(parsed.plugins[2], {
-      name: "gh",
-      source: { source: "github", repo: "acme/gh" },
     });
   } finally {
     rmSync(sandbox, { recursive: true, force: true });

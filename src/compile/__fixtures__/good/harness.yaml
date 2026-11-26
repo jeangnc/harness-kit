@@ -1,0 +1,4 @@
+marketplace: test-marketplace
+owner:
+  name: harness-kit-tests
+vendors: [claude, codex]

@@ -9,20 +9,7 @@ const AuthorSchema = z
     email: z.string().min(1).optional(),
     url: z.string().min(1).optional(),
   })
-  .passthrough();
-
-const DependencyEntrySchema = z.union([
-  z.string().min(1),
-  z
-    .object({
-      name: z.string().min(1),
-      version: z.string().min(1).optional(),
-      marketplace: z.string().min(1).optional(),
-    })
-    .passthrough(),
-]);
-
-export type DependencyEntry = z.infer<typeof DependencyEntrySchema>;
+  .strict();
 
 const SLUG_REF = z.string().min(1).regex(FQ_ID, "must match <plugin>:<name> kebab-case");
 
@@ -46,8 +33,13 @@ export const HookRequirementSchema = HookRequirementBase.strict().superRefine((v
 
 export type HookRequirement = z.infer<typeof HookRequirementSchema>;
 
+export const AGENT_PLUGINS_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+
+const ExtensionBlockSchema = z.record(z.string().min(1), z.unknown());
+
 export const PluginSchema = z
   .object({
+    $schema: z.literal(AGENT_PLUGINS_SCHEMA),
     name: kebabName,
     version: z.string().min(1),
     description,
@@ -56,16 +48,29 @@ export const PluginSchema = z
     repository: z.string().min(1).optional(),
     license: z.string().min(1).optional(),
     keywords: z.array(z.string().min(1)).optional(),
-    dependencies: z.array(DependencyEntrySchema).optional(),
-    commands: z.string().min(1).optional(),
-    agents: z.string().min(1).optional(),
-    hooks: z.string().min(1).optional(),
-    hookRequires: z.array(HookRequirementSchema).optional(),
+    extensions: z.record(z.string().min(1), ExtensionBlockSchema).optional(),
   })
-  .passthrough();
+  .strict();
 
 export type Plugin = z.infer<typeof PluginSchema>;
 
-export function definePlugin(plugin: Plugin): Plugin {
-  return PluginSchema.parse(plugin);
+export type ExtensionBlock = z.infer<typeof ExtensionBlockSchema>;
+
+export const HarnessExtensionSchema = z
+  .object({
+    hookRequires: z.array(HookRequirementSchema).optional(),
+  })
+  .strict();
+
+export type HarnessExtension = z.infer<typeof HarnessExtensionSchema>;
+
+export const HARNESS_EXTENSION = "harness";
+
+export function extensionBlock(plugin: Plugin, namespace: string): ExtensionBlock {
+  return plugin.extensions?.[namespace] ?? {};
+}
+
+export function withoutExtensions(plugin: Plugin): Omit<Plugin, "$schema" | "extensions"> {
+  const { $schema: _schema, extensions: _extensions, ...rest } = plugin;
+  return rest;
 }

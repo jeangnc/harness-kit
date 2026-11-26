@@ -50,8 +50,8 @@ test("Codex leaves every runtime config user-owned", () => {
   }
 });
 
-test("Codex emits a marketplace at a native-supported location", () => {
-  assert.equal(codexVendor.marketplaceManifestPath, "codex/.claude-plugin/marketplace.json");
+test("Codex emits its catalog at the native .agents marketplace path", () => {
+  assert.equal(codexVendor.marketplaceManifestPath, "codex/.agents/plugins/marketplace.json");
 });
 
 test("local installation registers the vendor catalog before installing enabled plugins", async () => {

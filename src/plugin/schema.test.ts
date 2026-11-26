@@ -1,99 +1,95 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
 
-import { HookRequirementSchema, PluginSchema, definePlugin } from "./schema.js";
+import {
+  AGENT_PLUGINS_SCHEMA,
+  HarnessExtensionSchema,
+  HookRequirementSchema,
+  PluginSchema,
+  extensionBlock,
+  withoutExtensions,
+} from "./schema.js";
 
-test("PluginSchema rejects non-kebab-case name", () => {
-  const result = PluginSchema.safeParse({
-    name: "Foo",
-    version: "1.0.0",
-    description: "demo",
-  });
+const minimal = {
+  $schema: AGENT_PLUGINS_SCHEMA,
+  name: "foo",
+  version: "1.0.0",
+  description: "demo",
+};
+
+test("PluginSchema accepts a minimal Agent Plugins manifest", () => {
+  assert.equal(PluginSchema.safeParse(minimal).success, true);
+});
+
+test("PluginSchema rejects a manifest without $schema", () => {
+  const { $schema: _schema, ...rest } = minimal;
+  assert.equal(PluginSchema.safeParse(rest).success, false);
+});
+
+test("PluginSchema rejects a $schema for another spec version", () => {
+  const result = PluginSchema.safeParse({ ...minimal, $schema: "https://example.com/other.json" });
   assert.equal(result.success, false);
 });
 
-test("PluginSchema accepts a minimal valid plugin", () => {
-  const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "demo",
-  });
-  assert.equal(result.success, true);
+test("PluginSchema rejects a non-kebab-case name", () => {
+  assert.equal(PluginSchema.safeParse({ ...minimal, name: "Foo" }).success, false);
 });
 
-test("PluginSchema rejects multi-line description", () => {
-  const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "line one\nline two",
-  });
+test("PluginSchema rejects a multi-line description", () => {
+  const result = PluginSchema.safeParse({ ...minimal, description: "line one\nline two" });
   assert.equal(result.success, false);
 });
 
-test("PluginSchema rejects description over 1024 chars", () => {
-  const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "x".repeat(1025),
-  });
+test("PluginSchema rejects a description over 1024 chars", () => {
+  const result = PluginSchema.safeParse({ ...minimal, description: "x".repeat(1025) });
   assert.equal(result.success, false);
 });
 
-test("PluginSchema accepts a plugin with all optional metadata", () => {
+test("PluginSchema accepts every optional metadata field", () => {
   const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "demo",
+    ...minimal,
     author: { name: "A", email: "a@b.c", url: "https://example.com" },
     homepage: "https://example.com",
     repository: "https://example.com/repo",
     license: "MIT",
     keywords: ["claude", "plugin"],
-    dependencies: ["bar"],
   });
   assert.equal(result.success, true);
 });
 
-test("definePlugin returns the parsed plugin on valid input", () => {
-  const plugin = definePlugin({
-    name: "foo",
-    version: "1.0.0",
-    description: "demo",
-  });
-  assert.equal(plugin.name, "foo");
-  assert.equal(plugin.version, "1.0.0");
+test("PluginSchema rejects a vendor-specific field at the top level", () => {
+  assert.equal(PluginSchema.safeParse({ ...minimal, dependencies: ["bar"] }).success, false);
 });
 
-test("definePlugin throws on invalid input", () => {
-  assert.throws(() =>
-    definePlugin({
-      name: "Bad",
-      version: "1.0.0",
-      description: "demo",
-    }),
-  );
-});
-
-test("PluginSchema accepts commands/agents/hooks path overrides", () => {
-  const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "demo",
-    commands: "cmds",
-    agents: "ai/agents",
-    hooks: "wiring/hooks",
-  });
-  assert.equal(result.success, true);
-});
-
-test("PluginSchema rejects empty-string path overrides", () => {
-  const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "demo",
-    commands: "",
-  });
+test("PluginSchema rejects an extension that is not an object", () => {
+  const result = PluginSchema.safeParse({ ...minimal, extensions: { claude: "x" } });
   assert.equal(result.success, false);
+});
+
+test("extensionBlock returns the named vendor block", () => {
+  const plugin = PluginSchema.parse({
+    ...minimal,
+    extensions: { claude: { dependencies: ["bar"] } },
+  });
+  assert.deepEqual(extensionBlock(plugin, "claude"), { dependencies: ["bar"] });
+});
+
+test("extensionBlock returns an empty block when the vendor has none", () => {
+  assert.deepEqual(extensionBlock(PluginSchema.parse(minimal), "codex"), {});
+});
+
+test("withoutExtensions drops $schema and extensions but keeps metadata", () => {
+  const plugin = PluginSchema.parse({ ...minimal, license: "MIT", extensions: { claude: {} } });
+  assert.deepEqual(withoutExtensions(plugin), {
+    name: "foo",
+    version: "1.0.0",
+    description: "demo",
+    license: "MIT",
+  });
+});
+
+test("HarnessExtensionSchema rejects an unknown key", () => {
+  assert.equal(HarnessExtensionSchema.safeParse({ bogus: 1 }).success, false);
 });
 
 test("HookRequirementSchema accepts an event with exactly one of skill/command/agent", () => {
@@ -117,61 +113,4 @@ test("HookRequirementSchema rejects an event with more than one slug", () => {
     command: "foo:do",
   });
   assert.equal(result.success, false);
-});
-
-test("PluginSchema accepts hookRequires", () => {
-  const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "demo",
-    hookRequires: [
-      { event: "SessionStart", skill: "foo:bar" },
-      { event: "Stop", agent: "foo:rev" },
-    ],
-  });
-  assert.equal(result.success, true);
-});
-
-test("PluginSchema accepts hooks as a bare path-override string", () => {
-  const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "demo",
-    hooks: "wiring/hooks",
-  });
-  assert.equal(result.success, true);
-});
-
-test("PluginSchema accepts object-form dependencies with marketplace and version", () => {
-  const result = PluginSchema.safeParse({
-    name: "gq-core",
-    version: "1.3.5",
-    description: "demo",
-    dependencies: [
-      { name: "slack", marketplace: "claude-plugins-official" },
-      { name: "other", version: "^2.0.0" },
-      "legacy-string-dep",
-    ],
-  });
-  assert.equal(result.success, true);
-  if (!result.success) return;
-  const deps = result.data.dependencies;
-  assert.ok(Array.isArray(deps));
-  assert.equal(deps?.length, 3);
-});
-
-test("PluginSchema preserves upstream passthrough fields on parse", () => {
-  const result = PluginSchema.safeParse({
-    name: "foo",
-    version: "1.0.0",
-    description: "demo",
-    category: "development",
-    tags: ["ai", "tools"],
-    mcpServers: { example: { command: "node", args: ["server.js"] } },
-  });
-  assert.equal(result.success, true);
-  if (!result.success) return;
-  assert.equal((result.data as { category?: string }).category, "development");
-  assert.deepEqual((result.data as { tags?: string[] }).tags, ["ai", "tools"]);
-  assert.ok((result.data as { mcpServers?: unknown }).mcpServers);
 });

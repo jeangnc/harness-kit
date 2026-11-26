@@ -1,7 +1,6 @@
 import type { InstallMode } from "../install/mode.js";
 import type { CommandRunner } from "../install/runner.js";
-import type { Marketplace } from "../marketplace/index.js";
-import type { Plugin } from "../plugin/index.js";
+import type { Catalog, ResolvedPlugin } from "../layout/index.js";
 
 export interface LinkedFile {
   readonly srcAbs: string;
@@ -36,13 +35,13 @@ export interface VendorInstallContext {
 }
 
 export interface VendorEmitContext {
-  readonly manifest: Plugin;
+  readonly plugin: ResolvedPlugin;
   readonly pluginOutDir: string;
 }
 
 export interface VendorMarketplaceEmitContext {
   readonly outRoot: string;
-  readonly marketplace: Marketplace;
+  readonly catalog: Catalog;
 }
 
 export interface Vendor {

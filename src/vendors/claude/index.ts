@@ -12,21 +12,24 @@ import {
   writeInstalledPlugins,
 } from "./installedPlugins.js";
 import type { InstalledPlugins } from "./installedPlugins.js";
-import { defaultEmitMarketplaceManifest, defaultEmitPluginManifest } from "../shared.js";
+import {
+  CATALOG_REL,
+  PLUGIN_MANIFEST_REL,
+  emitClaudeCatalog,
+  emitClaudePluginManifest,
+} from "./emit.js";
 import type {
   DiscoveredVendorPlugin,
   LinkedFile,
   PluginPartition,
   Vendor,
-  VendorEmitContext,
   VendorInstallContext,
   VendorMarketplaceEmitContext,
 } from "../../vendor/schema.js";
 
 const VENDOR_DIR = "claude";
 const STAGING_ROOT_DIR = ".staging";
-const PLUGIN_MANIFEST_REL = ".claude-plugin/plugin.json";
-const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/.claude-plugin/marketplace.json`;
+const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/${CATALOG_REL}`;
 
 function pluginKey(name: string, marketplace: string): string {
   return `${name}@${marketplace}`;
@@ -115,11 +118,9 @@ export function makeClaudeVendor(home: string): Vendor {
     aliases(file: LinkedFile): readonly string[] {
       return file.basename === "AGENTS.md" ? [join(home, "CLAUDE.md")] : [];
     },
-    async emitPluginManifest(ctx: VendorEmitContext): Promise<void> {
-      await defaultEmitPluginManifest(PLUGIN_MANIFEST_REL, ctx);
-    },
+    emitPluginManifest: emitClaudePluginManifest,
     async emitMarketplaceManifest(ctx: VendorMarketplaceEmitContext): Promise<void> {
-      await defaultEmitMarketplaceManifest(MARKETPLACE_MANIFEST_REL, ctx);
+      await emitClaudeCatalog(join(ctx.outRoot, VENDOR_DIR), ctx.catalog);
     },
     async install(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;

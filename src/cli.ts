@@ -28,17 +28,13 @@ const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
 const pkg = PackageJsonSchema.parse(JSON.parse(readFileSync(pkgPath, "utf8")));
 
 const compileCmd = defineCommand({
-  meta: { name: "compile", description: "Compile harness sources to dist/" },
+  meta: { name: "compile", description: "Build per-vendor marketplaces into .harness/" },
   args: {
-    src: { type: "string", default: "./src", description: "source root" },
-    out: { type: "string", default: "./dist", description: "output root" },
     repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
     silent: { type: "boolean", default: false, description: "suppress success log" },
   },
   run: async ({ args }) => {
     await compile({
-      srcRoot: args.src,
-      outRoot: args.out,
       repoRoot: args.repo,
       silent: args.silent,
     });
@@ -185,16 +181,16 @@ const checkCmd = defineCommand({
     description: "Validate plugin references",
   },
   args: {
-    src: { type: "string", default: "./src", description: "source root" },
+    repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
     docs: {
       type: "string",
       description:
-        "comma-separated files or directories outside src/ to check for stale references",
+        "comma-separated files or directories outside plugins/ to check for stale references",
     },
     silent: { type: "boolean", default: false, description: "suppress non-error output" },
   },
   run: async ({ args }) => {
-    const result = await check({ srcRoot: args.src, docRoots: commaSeparated(args.docs) });
+    const result = await check({ repoRoot: args.repo, docRoots: commaSeparated(args.docs) });
     if (!args.silent) {
       const breakdown = result.indexedSources.map((s) => `${s.source}=${s.skillCount}`).join(", ");
       const total = result.indexedSources.reduce((acc, s) => acc + s.skillCount, 0);

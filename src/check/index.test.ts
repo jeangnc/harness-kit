@@ -3,12 +3,10 @@ import { strict as assert } from "node:assert";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { check } from "./index.js";
+import { AGENT_PLUGINS_SCHEMA } from "../plugin/index.js";
 import type { PluginSource } from "../installed.js";
-
-const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 const NO_INSTALLED: readonly PluginSource[] = [];
 
@@ -47,30 +45,29 @@ interface LocalFixture {
 
 async function withLocalSrcFixture<T>(
   fixture: LocalFixture,
-  fn: (srcRoot: string) => Promise<T>,
+  fn: (repoRoot: string) => Promise<T>,
 ): Promise<T> {
-  const sandbox = mkdtempSync(join(repoRoot, ".test-tmp-check-local-"));
-  const srcRoot = join(sandbox, "src");
+  const repoRoot = mkdtempSync(join(tmpdir(), "harness-kit-check-local-"));
   const pluginNames = new Set<string>();
   for (const s of fixture.skills ?? []) pluginNames.add(s.plugin);
   for (const c of fixture.commands ?? []) pluginNames.add(c.plugin);
   for (const a of fixture.agents ?? []) pluginNames.add(a.plugin);
   for (const p of Object.keys(fixture.dependencies ?? {})) pluginNames.add(p);
   for (const plugin of pluginNames) {
-    const pluginDir = join(srcRoot, "plugins", plugin);
-    const manifestDir = join(pluginDir, ".claude-plugin");
-    mkdirSync(manifestDir, { recursive: true });
+    const pluginDir = join(repoRoot, "plugins", plugin);
+    mkdirSync(pluginDir, { recursive: true });
     const manifest: Record<string, unknown> = {
+      $schema: AGENT_PLUGINS_SCHEMA,
       name: plugin,
       version: "0.0.1",
       description: "fixture",
     };
     const deps = fixture.dependencies?.[plugin];
-    if (deps && deps.length > 0) manifest["dependencies"] = deps;
-    writeFileSync(join(manifestDir, "plugin.json"), JSON.stringify(manifest, null, 2) + "\n");
+    if (deps && deps.length > 0) manifest["extensions"] = { claude: { dependencies: deps } };
+    writeFileSync(join(pluginDir, "plugin.json"), JSON.stringify(manifest, null, 2) + "\n");
   }
   for (const file of fixture.skills ?? []) {
-    const skillDir = join(srcRoot, "plugins", file.plugin, "skills", file.skill);
+    const skillDir = join(repoRoot, "plugins", file.plugin, "skills", file.skill);
     mkdirSync(skillDir, { recursive: true });
     const companions = file.companions ?? [];
     const lines = [
@@ -91,7 +88,7 @@ async function withLocalSrcFixture<T>(
     }
   }
   for (const file of fixture.commands ?? []) {
-    const dir = join(srcRoot, "plugins", file.plugin, "commands");
+    const dir = join(repoRoot, "plugins", file.plugin, "commands");
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       join(dir, `${file.command}.md`),
@@ -99,28 +96,18 @@ async function withLocalSrcFixture<T>(
     );
   }
   for (const file of fixture.agents ?? []) {
-    const dir = join(srcRoot, "plugins", file.plugin, "agents");
+    const dir = join(repoRoot, "plugins", file.plugin, "agents");
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       join(dir, `${file.agent}.md`),
       `---\nname: ${file.agent}\ndescription: x\n---\n\n${file.body ?? ""}`,
     );
   }
-  const marketplaceDir = join(srcRoot, ".claude-plugin");
-  mkdirSync(marketplaceDir, { recursive: true });
   writeFileSync(
-    join(marketplaceDir, "marketplace.json"),
-    JSON.stringify(
-      {
-        name: "check-local-test",
-        owner: { name: "harness-kit-tests" },
-        plugins: [...pluginNames].map((p) => ({ name: p, source: `./plugins/${p}` })),
-      },
-      null,
-      2,
-    ) + "\n",
+    join(repoRoot, "harness.yaml"),
+    "marketplace: check-local-test\nowner:\n  name: harness-kit-tests\nvendors: [claude]\n",
   );
-  return fn(srcRoot).finally(() => rmSync(sandbox, { recursive: true, force: true }));
+  return fn(repoRoot).finally(() => rmSync(repoRoot, { recursive: true, force: true }));
 }
 
 interface InstalledArtifact {
@@ -176,8 +163,8 @@ test("check resolves a {{skill:}} ref to an installed plugin's skill", async () 
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "see {{skill:superpowers:tdd}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
         assert.deepEqual([...result.warnings], []);
         assert.equal(result.checkedFiles, 1);
@@ -191,8 +178,8 @@ test("check warns, not fails, on an unresolved external skill ref", async () => 
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "see {{skill:nope:missing}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
         assert.equal(result.warnings.length, 1);
         const warning = result.warnings[0]!;
@@ -208,8 +195,8 @@ test("check fails on an unresolved internal skill ref", async () => {
   await withInstalledFixture([], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "see {{skill:foo:ghost}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.equal(result.violations.length, 1);
         assert.equal(result.violations[0]!.kind, "unresolved");
         assert.match(result.violations[0]!.message, /not found in this marketplace/i);
@@ -224,8 +211,8 @@ test("check reports a malformed skill ref when value does not match <plugin>:<sk
   await withInstalledFixture([], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "see {{skill:lonelyid}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.equal(result.violations.length, 1);
         assert.equal(result.violations[0]!.kind, "malformed");
       },
@@ -237,8 +224,8 @@ test("check suggests the closest match when an unresolved external skill id is a
   await withInstalledFixture([{ plugin: "superpowers", skill: "tdd" }], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "see {{skill:supperpowers:tdd}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
         assert.equal(result.warnings.length, 1);
         assert.match(result.warnings[0]!.message, /superpowers:tdd/);
@@ -259,8 +246,8 @@ test("check reports line:col into the source file for an external warning", asyn
           },
         ],
       },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         const warning = result.warnings[0]!;
         assert.equal(warning.kind, "unresolved-external");
         assert.equal(warning.line, 7);
@@ -280,8 +267,8 @@ test("check counts each scanned skill file once, regardless of how many bodies i
           { plugin: "foo", skill: "baz", body: "no refs\n" },
         ],
       },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.equal(result.checkedFiles, 2);
         assert.deepEqual([...result.violations], []);
       },
@@ -289,49 +276,12 @@ test("check counts each scanned skill file once, regardless of how many bodies i
   });
 });
 
-test("check works with TS-authored skills (body in body.md)", async () => {
-  const sandbox = mkdtempSync(join(repoRoot, ".test-tmp-check-ts-"));
-  const srcRoot = join(sandbox, "src");
-  const skillDir = join(srcRoot, "plugins/foo/skills/bar");
-  mkdirSync(skillDir, { recursive: true });
-  writeFileSync(
-    join(skillDir, "SKILL.ts"),
-    `import { defineSkill } from "#harness-kit";\nexport default defineSkill({ name: "bar", description: "x" });\n`,
-  );
-  writeFileSync(join(skillDir, "body.md"), "see {{skill:foo:ghost}}\n");
-  const marketplaceDir = join(srcRoot, ".claude-plugin");
-  mkdirSync(marketplaceDir, { recursive: true });
-  writeFileSync(
-    join(marketplaceDir, "marketplace.json"),
-    JSON.stringify({
-      name: "check-ts-test",
-      owner: { name: "harness-kit-tests" },
-      plugins: [{ name: "foo", source: "./plugins/foo" }],
-    }),
-  );
-  mkdirSync(join(srcRoot, "plugins/foo/.claude-plugin"), { recursive: true });
-  writeFileSync(
-    join(srcRoot, "plugins/foo/.claude-plugin/plugin.json"),
-    JSON.stringify({ name: "foo", version: "0.0.1", description: "x" }),
-  );
-  try {
-    await withInstalledFixture([], async (sources) => {
-      const result = await check({ srcRoot, sources });
-      assert.equal(result.violations.length, 1);
-      assert.equal(result.violations[0]!.kind, "unresolved");
-      assert.match(result.violations[0]!.message, /not found in this marketplace/i);
-    });
-  } finally {
-    rmSync(sandbox, { recursive: true, force: true });
-  }
-});
-
 test("check returns no violations when a command ref resolves to an installed command", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", command: "open-pr" }], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "run {{command:dev-tools:open-pr}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
       },
     );
@@ -342,8 +292,8 @@ test("check warns on an unresolved external command ref", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", command: "open-pr" }], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "run {{command:dev-tools:ghost}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
         assert.equal(result.warnings.length, 1);
         assert.equal(result.warnings[0]!.kind, "unresolved-external");
@@ -357,8 +307,8 @@ test("check suggests the closest command match when an external command id is a 
   await withInstalledFixture([{ plugin: "dev-tools", command: "open-pr" }], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "run {{command:dev-tools:open-prs}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
         assert.equal(result.warnings.length, 1);
         assert.match(result.warnings[0]!.message, /dev-tools:open-pr/);
@@ -371,8 +321,8 @@ test("check does not cross-suggest a skill id for an unresolved external command
   await withInstalledFixture([{ plugin: "dev-tools", skill: "open-pr" }], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "run {{command:dev-tools:open-pr}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
         assert.equal(result.warnings.length, 1);
         assert.equal(result.warnings[0]!.kind, "unresolved-external");
@@ -390,8 +340,8 @@ test("check returns no violations when an agent ref resolves to an installed age
           { plugin: "foo", skill: "bar", body: "dispatch {{agent:dev-tools:code-reviewer}}\n" },
         ],
       },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
       },
     );
@@ -402,8 +352,8 @@ test("check warns on an unresolved external agent ref", async () => {
   await withInstalledFixture([{ plugin: "dev-tools", agent: "code-reviewer" }], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "dispatch {{agent:dev-tools:ghost}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
         assert.equal(result.warnings.length, 1);
         assert.equal(result.warnings[0]!.kind, "unresolved-external");
@@ -417,8 +367,8 @@ test("check reports a malformed command ref when value does not match <plugin>:<
   await withInstalledFixture([], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "{{command:lonely}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.equal(result.violations.length, 1);
         assert.equal(result.violations[0]!.kind, "malformed");
       },
@@ -430,8 +380,8 @@ test("check reports a malformed agent ref when value does not match <plugin>:<ag
   await withInstalledFixture([], async (sources) => {
     await withLocalSrcFixture(
       { skills: [{ plugin: "foo", skill: "bar", body: "{{agent:lonely}}\n" }] },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.equal(result.violations.length, 1);
         assert.equal(result.violations[0]!.kind, "malformed");
       },
@@ -447,8 +397,8 @@ test("check resolves a {{skill:}} ref to a local plugin's skill", async () => {
         { plugin: "foo", skill: "baz", body: "no refs\n" },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual([...result.violations], []);
     },
   );
@@ -457,8 +407,8 @@ test("check resolves a {{skill:}} ref to a local plugin's skill", async () => {
 test("check fails on an unresolved internal {{skill:}} when the local plugin lacks the skill", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "bar", body: "see {{skill:foo:missing}}\n" }] },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "unresolved");
       assert.match(result.violations[0]!.message, /not found in this marketplace/i);
@@ -473,8 +423,8 @@ test("check resolves a {{command:}} ref to a local plugin's command", async () =
       skills: [{ plugin: "foo", skill: "bar", body: "run {{command:foo:open-pr}}\n" }],
       commands: [{ plugin: "foo", command: "open-pr" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual([...result.violations], []);
     },
   );
@@ -486,8 +436,8 @@ test("check fails on an unresolved internal {{command:}} when the local plugin l
       skills: [{ plugin: "foo", skill: "bar", body: "run {{command:foo:ghost}}\n" }],
       commands: [{ plugin: "foo", command: "open-pr" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "unresolved");
       assert.match(result.violations[0]!.token, /command:foo:ghost/);
@@ -501,8 +451,8 @@ test("check resolves a {{agent:}} ref to a local plugin's agent", async () => {
       skills: [{ plugin: "foo", skill: "bar", body: "dispatch {{agent:foo:reviewer}}\n" }],
       agents: [{ plugin: "foo", agent: "reviewer" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual([...result.violations], []);
     },
   );
@@ -514,8 +464,8 @@ test("check fails on an unresolved internal {{agent:}} when the local plugin lac
       skills: [{ plugin: "foo", skill: "bar", body: "dispatch {{agent:foo:ghost}}\n" }],
       agents: [{ plugin: "foo", agent: "reviewer" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "unresolved");
       assert.match(result.violations[0]!.token, /agent:foo:ghost/);
@@ -526,8 +476,8 @@ test("check fails on an unresolved internal {{agent:}} when the local plugin lac
 test("check scans command bodies for placeholder violations", async () => {
   await withLocalSrcFixture(
     { commands: [{ plugin: "foo", command: "do-thing", body: "see {{skill:foo:ghost}}\n" }] },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "unresolved");
       assert.match(result.violations[0]!.token, /skill:foo:ghost/);
@@ -538,8 +488,8 @@ test("check scans command bodies for placeholder violations", async () => {
 test("check scans agent bodies for placeholder violations", async () => {
   await withLocalSrcFixture(
     { agents: [{ plugin: "foo", agent: "reviewer", body: "see {{skill:foo:ghost}}\n" }] },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "unresolved");
       assert.match(result.violations[0]!.token, /skill:foo:ghost/);
@@ -550,8 +500,8 @@ test("check scans agent bodies for placeholder violations", async () => {
 test("check reports a malformed {{skill:}} when value does not match <plugin>:<name>", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "bar", body: "see {{skill:lonely}}\n" }] },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "malformed");
     },
@@ -570,8 +520,8 @@ test("check resolves refs against the union of local and installed", async () =>
           },
         ],
       },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.deepEqual([...result.violations], []);
         assert.deepEqual([...result.warnings], []);
       },
@@ -587,8 +537,8 @@ test("check splits a mixed body: internal-missing fails, external-missing warns"
           { plugin: "foo", skill: "bar", body: "{{skill:nope:missing}} {{skill:foo:ghost}}\n" },
         ],
       },
-      async (srcRoot) => {
-        const result = await check({ srcRoot, sources });
+      async (repoRoot) => {
+        const result = await check({ repoRoot, sources });
         assert.equal(result.violations.length, 1);
         assert.equal(result.violations[0]!.kind, "unresolved");
         assert.match(result.violations[0]!.token, /skill:foo:ghost/);
@@ -600,19 +550,14 @@ test("check splits a mixed body: internal-missing fails, external-missing warns"
   });
 });
 
-test("check rejects when the source root has no marketplace manifest", async () => {
-  const sandbox = mkdtempSync(join(repoRoot, ".test-tmp-check-nomarket-"));
-  const srcRoot = join(sandbox, "src");
-  mkdirSync(srcRoot, { recursive: true });
+test("check rejects when the repo has no harness.yaml", async () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), "harness-kit-check-noconfig-"));
   try {
     await withInstalledFixture([], async (sources) => {
-      await assert.rejects(
-        check({ srcRoot, sources }),
-        /failed to load layout: marketplace manifest not found at .+marketplace\.json/,
-      );
+      await assert.rejects(check({ repoRoot, sources }), /harness\.yaml not found/);
     });
   } finally {
-    rmSync(sandbox, { recursive: true, force: true });
+    rmSync(repoRoot, { recursive: true, force: true });
   }
 });
 
@@ -622,8 +567,8 @@ test("check warns about a slash reference to a known command written outside a p
       skills: [{ plugin: "foo", skill: "bar", body: "run /foo:ship directly\n" }],
       commands: [{ plugin: "foo", command: "ship", body: "x\n" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual([...result.violations], []);
       const bypass = result.warnings.filter((w) => w.kind === "bypass");
       assert.equal(bypass.length, 1);
@@ -641,8 +586,8 @@ test("check does not warn when a known skill is referenced through a placeholder
         { plugin: "foo", skill: "baz", body: "x\n" },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual([...result.warnings], []);
     },
   );
@@ -660,8 +605,8 @@ test("check validates placeholder references inside a declared companion file", 
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "unresolved");
       assert.match(result.violations[0]!.file, /details\.md$/);
@@ -682,8 +627,8 @@ test("check warns about a bypass reference inside a declared companion file", as
       ],
       agents: [{ plugin: "foo", agent: "bar", body: "y\n" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const bypass = result.warnings.filter((w) => w.kind === "bypass");
       assert.equal(bypass.length, 1);
       assert.equal(bypass[0]!.id, "foo:bar");
@@ -706,8 +651,8 @@ test("check warns about a bareword reference inside a companion summary", async 
       ],
       agents: [{ plugin: "foo", agent: "helper", body: "z\n" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const bypass = result.warnings.filter((w) => w.kind === "bypass");
       assert.equal(bypass.length, 1);
       assert.equal(bypass[0]!.id, "foo:helper");
@@ -733,8 +678,8 @@ test("check scans every companion summary, even when two share identical text", 
       ],
       agents: [{ plugin: "foo", agent: "helper", body: "z\n" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const bypass = result.warnings.filter((w) => w.kind === "bypass");
       assert.equal(bypass.length, 2);
       assert.deepEqual(bypass.map((b) => b.line).sort(), [6, 8]);
@@ -754,8 +699,8 @@ test("check flags a backticked sibling companion .md inside a companion summary"
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const refs = result.violations.filter((v) => v.kind === "ref-bareword");
       assert.equal(refs.length, 1);
       assert.equal(refs[0]!.token, "details.md");
@@ -776,8 +721,8 @@ test("check flags an unresolved reference inside the skill description", async (
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const unresolved = result.violations.filter((v) => v.kind === "unresolved");
       assert.equal(unresolved.length, 1);
       assert.equal(unresolved[0]!.token, "{{skill:foo:ghost}}");
@@ -800,8 +745,8 @@ test("check warns about a bareword reference inside the skill description", asyn
       ],
       agents: [{ plugin: "foo", agent: "helper", body: "z\n" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const bypass = result.warnings.filter((w) => w.kind === "bypass");
       assert.equal(bypass.length, 1);
       assert.equal(bypass[0]!.id, "foo:helper");
@@ -823,8 +768,8 @@ test("check flags a bare companion .md path referenced in prose", async () => {
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const refs = result.violations.filter((v) => v.kind === "ref-bareword");
       assert.equal(refs.length, 1);
       assert.equal(refs[0]!.token, "details.md");
@@ -845,8 +790,8 @@ test("check does not flag a companion .md path used as a markdown link target", 
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual(
         result.violations.filter((v) => v.kind === "ref-bareword"),
         [],
@@ -867,8 +812,8 @@ test("check does not flag a companion .md path in a reference-style link definit
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual(
         result.violations.filter((v) => v.kind === "ref-bareword"),
         [],
@@ -889,8 +834,8 @@ test("check does not flag a companion .md path in an angle-bracket link target",
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual(
         result.violations.filter((v) => v.kind === "ref-bareword"),
         [],
@@ -900,38 +845,19 @@ test("check does not flag a companion .md path in an angle-bracket link target",
 });
 
 test("check fails with a clear error when a declared companion file is missing on disk", async () => {
-  const sandbox = mkdtempSync(join(repoRoot, ".test-tmp-check-missing-"));
-  const srcRoot = join(sandbox, "src");
-  const skillDir = join(srcRoot, "plugins/foo/skills/bar");
-  mkdirSync(skillDir, { recursive: true });
-  writeFileSync(
-    join(skillDir, "SKILL.md"),
-    "---\nname: bar\ndescription: x\ncompanions:\n  - file: gone.md\n    summary: gone\n---\n\nbody\n",
-  );
-  mkdirSync(join(srcRoot, "plugins/foo/.claude-plugin"), { recursive: true });
-  writeFileSync(
-    join(srcRoot, "plugins/foo/.claude-plugin/plugin.json"),
-    JSON.stringify({ name: "foo", version: "0.0.1", description: "x" }),
-  );
-  mkdirSync(join(srcRoot, ".claude-plugin"), { recursive: true });
-  writeFileSync(
-    join(srcRoot, ".claude-plugin/marketplace.json"),
-    JSON.stringify({
-      name: "check-missing-test",
-      owner: { name: "harness-kit-tests" },
-      plugins: [{ name: "foo", source: "./plugins/foo" }],
-    }),
-  );
-  try {
-    await withInstalledFixture([], async (sources) => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "bar", body: "body\n" }] },
+    async (repoRoot) => {
+      writeFileSync(
+        join(repoRoot, "plugins/foo/skills/bar/SKILL.md"),
+        "---\nname: bar\ndescription: x\ncompanions:\n  - file: gone.md\n    summary: gone\n---\n\nbody\n",
+      );
       await assert.rejects(
-        check({ srcRoot, sources }),
+        check({ repoRoot, sources: NO_INSTALLED }),
         /companion "gone\.md" declared but not present/,
       );
-    });
-  } finally {
-    rmSync(sandbox, { recursive: true, force: true });
-  }
+    },
+  );
 });
 
 test("check flags a backticked bareword that names a known local skill", async () => {
@@ -942,8 +868,8 @@ test("check flags a backticked bareword that names a known local skill", async (
         { plugin: "foo", skill: "worker", body: "does work\n" },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const bareword = result.violations.filter((v) => v.kind === "bareword");
       assert.equal(bareword.length, 1);
       assert.equal(bareword[0]!.token, "worker");
@@ -955,8 +881,8 @@ test("check flags a backticked bareword that names a known local skill", async (
 test("check does not flag a skill backticking its own leaf name", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "verify", body: "`verify` runs the suite\n" }] },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual(
         result.violations.filter((v) => v.kind === "bareword"),
         [],
@@ -971,8 +897,8 @@ test("check flags a backticked leaf inside a command invoke body", async () => {
       skills: [{ plugin: "foo", skill: "ship", body: "ships it\n" }],
       commands: [{ plugin: "foo", command: "go", body: "Invoke `ship` skill on `$1`.\n" }],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const bareword = result.violations.filter((v) => v.kind === "bareword");
       assert.equal(bareword.length, 1);
       assert.equal(bareword[0]!.token, "ship");
@@ -984,12 +910,12 @@ test("check flags a backticked leaf inside a command invoke body", async () => {
 test("check flags a backticked bareword in a plugin-root doc file (README, auto-invoke)", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "worker", body: "does work\n" }] },
-    async (srcRoot) => {
+    async (repoRoot) => {
       writeFileSync(
-        join(srcRoot, "plugins", "foo", "README.md"),
+        join(repoRoot, "plugins", "foo", "README.md"),
         "the `worker` skill does the work\n",
       );
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const bareword = result.violations.filter((v) => v.kind === "bareword");
       assert.equal(bareword.length, 1);
       assert.equal(bareword[0]!.token, "worker");
@@ -1006,8 +932,8 @@ test("check does not flag a backticked lang-skill leaf", async () => {
         { plugin: "foo", skill: "caller", body: "run `rspec` to test\n" },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual(
         result.violations.filter((v) => v.kind === "bareword"),
         [],
@@ -1028,8 +954,8 @@ test("check flags a backticked sibling companion .md as a ref bypass", async () 
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       const refs = result.violations.filter((v) => v.kind === "ref-bareword");
       assert.equal(refs.length, 1);
       assert.equal(refs[0]!.token, "procedure.md");
@@ -1050,8 +976,8 @@ test("check does not flag an already-templated companion ref or a generic .md me
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual(
         result.violations.filter((v) => v.kind === "ref-bareword"),
         [],
@@ -1072,8 +998,8 @@ test("check resolves a {{ref:}} to a companion file that exists", async () => {
         },
       ],
     },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual([...result.violations], []);
     },
   );
@@ -1082,10 +1008,10 @@ test("check resolves a {{ref:}} to a companion file that exists", async () => {
 test("check allows a {{ref:}} up to a shared file inside its own plugin", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "bar", body: "see {{ref:../../shared/thing.md}}\n" }] },
-    async (srcRoot) => {
-      mkdirSync(join(srcRoot, "plugins/foo/shared"), { recursive: true });
-      writeFileSync(join(srcRoot, "plugins/foo/shared/thing.md"), "shared\n");
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      mkdirSync(join(repoRoot, "plugins/foo/shared"), { recursive: true });
+      writeFileSync(join(repoRoot, "plugins/foo/shared/thing.md"), "shared\n");
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.deepEqual([...result.violations], []);
     },
   );
@@ -1099,10 +1025,10 @@ test("check does not treat a sibling plugin sharing a name prefix as inside", as
         { plugin: "foo-extra", skill: "qux", body: "body\n" },
       ],
     },
-    async (srcRoot) => {
-      mkdirSync(join(srcRoot, "plugins/foo-extra/shared"), { recursive: true });
-      writeFileSync(join(srcRoot, "plugins/foo-extra/shared/thing.md"), "shared\n");
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      mkdirSync(join(repoRoot, "plugins/foo-extra/shared"), { recursive: true });
+      writeFileSync(join(repoRoot, "plugins/foo-extra/shared/thing.md"), "shared\n");
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.match(result.violations[0]!.message, /outside its plugin/i);
     },
@@ -1117,10 +1043,10 @@ test("check fails on a {{ref:}} that escapes its own plugin", async () => {
         { plugin: "baz", skill: "qux", body: "body\n" },
       ],
     },
-    async (srcRoot) => {
-      mkdirSync(join(srcRoot, "plugins/baz/shared"), { recursive: true });
-      writeFileSync(join(srcRoot, "plugins/baz/shared/thing.md"), "shared\n");
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+    async (repoRoot) => {
+      mkdirSync(join(repoRoot, "plugins/baz/shared"), { recursive: true });
+      writeFileSync(join(repoRoot, "plugins/baz/shared/thing.md"), "shared\n");
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "unresolved");
       assert.match(result.violations[0]!.message, /outside its plugin/i);
@@ -1128,27 +1054,27 @@ test("check fails on a {{ref:}} that escapes its own plugin", async () => {
   );
 });
 
-test("check ignores docs outside src/ when no doc roots are given", async () => {
+test("check ignores docs outside the plugins dir when no doc roots are given", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "bar", body: "body\n" }] },
-    async (srcRoot) => {
-      const docsDir = join(srcRoot, "..", "docs");
+    async (repoRoot) => {
+      const docsDir = join(repoRoot, "docs");
       mkdirSync(docsDir, { recursive: true });
       writeFileSync(join(docsDir, "reference.md"), "invoke `bar` to do the thing\n");
-      const result = await check({ srcRoot, sources: NO_INSTALLED });
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
       assert.equal(result.violations.length, 0);
     },
   );
 });
 
-test("check flags a bareword skill name in a doc root outside src/", async () => {
+test("check flags a bareword skill name in a doc root outside the plugins dir", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "bar", body: "body\n" }] },
-    async (srcRoot) => {
-      const docsDir = join(srcRoot, "..", "docs");
+    async (repoRoot) => {
+      const docsDir = join(repoRoot, "docs");
       mkdirSync(docsDir, { recursive: true });
       writeFileSync(join(docsDir, "reference.md"), "invoke `bar` to do the thing\n");
-      const result = await check({ srcRoot, docRoots: [docsDir], sources: NO_INSTALLED });
+      const result = await check({ repoRoot, docRoots: [docsDir], sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "bareword");
       assert.equal(result.violations[0]!.token, "bar");
@@ -1159,10 +1085,10 @@ test("check flags a bareword skill name in a doc root outside src/", async () =>
 test("check flags an unresolved reference in a single-file doc root", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "bar", body: "body\n" }] },
-    async (srcRoot) => {
-      const readme = join(srcRoot, "..", "README.md");
+    async (repoRoot) => {
+      const readme = join(repoRoot, "README.md");
       writeFileSync(readme, "see {{skill:foo:ghost}}\n");
-      const result = await check({ srcRoot, docRoots: [readme], sources: NO_INSTALLED });
+      const result = await check({ repoRoot, docRoots: [readme], sources: NO_INSTALLED });
       assert.equal(result.violations.length, 1);
       assert.equal(result.violations[0]!.kind, "unresolved");
     },
@@ -1172,8 +1098,12 @@ test("check flags an unresolved reference in a single-file doc root", async () =
 test("check does not double-report a doc root that overlaps a plugin dir", async () => {
   await withLocalSrcFixture(
     { skills: [{ plugin: "foo", skill: "bar", body: "invoke `bar-baz` here\n" }] },
-    async (srcRoot) => {
-      const result = await check({ srcRoot, docRoots: [srcRoot], sources: NO_INSTALLED });
+    async (repoRoot) => {
+      const result = await check({
+        repoRoot,
+        docRoots: [join(repoRoot, "plugins")],
+        sources: NO_INSTALLED,
+      });
       assert.equal(result.violations.length, 0);
     },
   );

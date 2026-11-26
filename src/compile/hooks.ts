@@ -3,9 +3,8 @@ import { join } from "node:path";
 
 import { throwInvariantViolations } from "./discovery.js";
 import { unemittedSegment } from "./emit-paths.js";
-import { SOURCE_PLUGIN_MANIFEST_TS } from "../layout/conventions.js";
 import { pathExists } from "../fs.js";
-import type { LayoutAdapter } from "../layout/index.js";
+import type { Catalog } from "../layout/index.js";
 
 const ROOT_ASSIGNMENT = /\broot=.*CLAUDE_PLUGIN_ROOT/;
 const ROOT_PATH_REF = /\$\{?root\}?\/([^"'\s)]+)/g;
@@ -29,30 +28,24 @@ interface UnmirroredSkill {
   readonly skillId: string;
 }
 
-export async function checkHookRootReads(adapter: LayoutAdapter): Promise<void> {
-  for (const plugin of adapter.plugins) {
+export async function checkHookRootReads(catalog: Catalog): Promise<void> {
+  for (const plugin of catalog.plugins) {
     const violations = collectUnemittedReads(await readHookScripts(plugin.hooksDir));
     if (violations.length > 0) {
-      throwInvariantViolations(
-        join(plugin.pluginDir, SOURCE_PLUGIN_MANIFEST_TS),
-        violations.map(formatViolation),
-      );
+      throwInvariantViolations(plugin.manifestPath, violations.map(formatViolation));
     }
   }
 }
 
-export async function checkHookSkillMirror(adapter: LayoutAdapter): Promise<void> {
-  const pluginNames = new Set(adapter.plugins.map((plugin) => plugin.name));
-  for (const plugin of adapter.plugins) {
+export async function checkHookSkillMirror(catalog: Catalog): Promise<void> {
+  const pluginNames = new Set(catalog.plugins.map((plugin) => plugin.name));
+  for (const plugin of catalog.plugins) {
     const mirrored = await readMirroredSkills(join(plugin.pluginDir, LANG_SKILLS_REL));
     if (mirrored === undefined) continue;
     const scripts = await readHookScripts(plugin.hooksDir);
     const violations = collectUnmirroredSkills(scripts, mirrored, pluginNames);
     if (violations.length > 0) {
-      throwInvariantViolations(
-        join(plugin.pluginDir, SOURCE_PLUGIN_MANIFEST_TS),
-        violations.map(formatMirrorViolation),
-      );
+      throwInvariantViolations(plugin.manifestPath, violations.map(formatMirrorViolation));
     }
   }
 }

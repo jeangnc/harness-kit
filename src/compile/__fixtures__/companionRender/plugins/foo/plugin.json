@@ -1,4 +1,5 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "foo",
   "version": "0.0.1",
   "description": "Test fixture plugin"

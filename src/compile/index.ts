@@ -1,16 +1,17 @@
 import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 import { compileTree, type WarningSink } from "./emit.js";
 import { checkHookRootReads, checkHookSkillMirror } from "./hooks.js";
 import { throwInvariantViolations } from "./discovery.js";
 import { pathExists } from "../fs.js";
 import { PluginManifestSchema } from "../install/discovery.js";
-import { SOURCE_PLUGIN_MANIFEST_JSON, SOURCE_PLUGIN_MANIFEST_TS } from "../layout/conventions.js";
 import {
+  PLUGIN_MANIFEST,
   collectLocalIds,
-  loadLayout,
-  type LayoutAdapter,
+  loadCatalogOrThrow,
+  type Catalog,
+  type Layout,
   type LocalIds,
   type ResolvedPlugin,
 } from "../layout/index.js";
@@ -25,42 +26,40 @@ import type { HookRequirement } from "../plugin/index.js";
 import type { Vendor } from "../vendor/schema.js";
 
 export type { WarningSink } from "./emit.js";
-export { loadAdapter };
 
 export interface CompilePluginsOptions {
-  readonly srcRoot: string;
-  readonly outRoot: string;
+  readonly layout: Layout;
   readonly vendors: readonly Vendor[];
   readonly onWarnings?: WarningSink;
   readonly sources?: readonly PluginSource[];
-  readonly adapter?: LayoutAdapter;
+  readonly catalog?: Catalog;
   readonly localIds?: LocalIds;
   readonly installedIndex?: InstalledIndex;
-  readonly repoRoot?: string;
   readonly namedRoots?: Readonly<Record<string, string>>;
 }
 
 export async function compilePlugins(options: CompilePluginsOptions): Promise<void> {
-  const { srcRoot, outRoot, vendors } = options;
+  const { layout, vendors } = options;
+  const outRoot = layout.buildDir;
   if (vendors.length === 0) {
     throw new Error("compilePlugins requires at least one vendor");
   }
-  const adapter = options.adapter ?? (await loadAdapter(srcRoot));
-  const localIds = options.localIds ?? (await collectLocalIds(adapter));
+  const catalog = options.catalog ?? (await loadCatalogOrThrow(layout));
+  const localIds = options.localIds ?? (await collectLocalIds(catalog));
   const installedIndex =
     options.installedIndex ??
     (await loadInstalledIndex(options.sources ?? defaultSources(vendors)));
-  checkHookRequires(adapter, localIds);
-  await checkHookRootReads(adapter);
-  await checkHookSkillMirror(adapter);
+  checkHookRequires(catalog, localIds);
+  await checkHookRootReads(catalog);
+  await checkHookSkillMirror(catalog);
 
-  const skipRelPaths: ReadonlySet<string> = new Set(vendors.map((v) => v.pluginManifestPath));
+  const skipRelPaths: ReadonlySet<string> = new Set([PLUGIN_MANIFEST]);
   for (const vendor of vendors) {
-    await vendor.emitMarketplaceManifest({ outRoot, marketplace: adapter.marketplace });
+    await vendor.emitMarketplaceManifest({ outRoot, catalog });
   }
-  const repoRoot = options.repoRoot ?? dirname(srcRoot);
+  const repoRoot = layout.repoRoot;
   const namedRoots = options.namedRoots ?? {};
-  for (const plugin of adapter.plugins) {
+  for (const plugin of catalog.plugins) {
     for (const vendor of vendors) {
       await emitPluginForVendor(plugin, vendor, {
         outRoot,
@@ -113,34 +112,6 @@ async function loadInstalledIndex(sources: readonly PluginSource[]): Promise<Ins
   return indexInstalled(artifacts);
 }
 
-async function loadAdapter(srcRoot: string): Promise<LayoutAdapter> {
-  const result = await loadLayout(srcRoot);
-  if (result.ok) return result.value;
-  const error = result.error;
-  switch (error.kind) {
-    case "marketplace-missing":
-      throw new Error(`marketplace.json not found at ${error.path}`);
-    case "marketplace-invalid":
-      return throwInvariantViolations(error.path, error.issues);
-    case "plugin-missing":
-      throw new Error(`plugin "${error.name}" not found at ${error.path}`);
-    case "manifest-missing":
-      return throwInvariantViolations(error.pluginDir, [
-        `plugin "${error.name}": no ${SOURCE_PLUGIN_MANIFEST_TS} or ${SOURCE_PLUGIN_MANIFEST_JSON}`,
-      ]);
-    case "manifest-collision":
-      return throwInvariantViolations(join(error.pluginDir, SOURCE_PLUGIN_MANIFEST_TS), [
-        `both ${SOURCE_PLUGIN_MANIFEST_TS} and ${SOURCE_PLUGIN_MANIFEST_JSON} exist at ${error.pluginDir} — pick one`,
-      ]);
-    case "manifest-invalid":
-      return throwInvariantViolations(error.path, error.issues);
-    case "plugin-name-mismatch":
-      return throwInvariantViolations(error.path, [
-        `name "${error.manifestName}" does not match folder "${error.entryName}"`,
-      ]);
-  }
-}
-
 interface EmitPluginOptions {
   readonly outRoot: string;
   readonly localIds: LocalIds;
@@ -157,7 +128,7 @@ async function emitPluginForVendor(
   options: EmitPluginOptions,
 ): Promise<void> {
   const pluginOutDir = vendor.pluginOutDir(options.outRoot, plugin.name);
-  await vendor.emitPluginManifest({ manifest: plugin.manifest, pluginOutDir });
+  await vendor.emitPluginManifest({ plugin, pluginOutDir });
   await compileTree({
     srcRoot: plugin.pluginDir,
     outRoot: pluginOutDir,
@@ -170,15 +141,15 @@ async function emitPluginForVendor(
   });
 }
 
-function checkHookRequires(adapter: LayoutAdapter, localIds: LocalIds): void {
-  for (const plugin of adapter.plugins) {
+function checkHookRequires(catalog: Catalog, localIds: LocalIds): void {
+  for (const plugin of catalog.plugins) {
     const errors: string[] = [];
-    for (const req of plugin.manifest.hookRequires ?? []) {
+    for (const req of plugin.hookRequires) {
       const violation = hookRequireViolation(req, localIds);
       if (violation) errors.push(`hookRequires (${req.event}): ${violation}`);
     }
     if (errors.length > 0) {
-      throwInvariantViolations(join(plugin.pluginDir, SOURCE_PLUGIN_MANIFEST_TS), errors);
+      throwInvariantViolations(plugin.manifestPath, errors);
     }
   }
 }

@@ -1,6 +1,0 @@
-{
-  "name": "with-plugin-marketplace",
-  "owner": { "name": "harness-kit-tests" },
-  "metadata": { "pluginRoot": "./plugins", "version": "0.0.1" },
-  "plugins": [{ "name": "foo", "source": "./plugins/foo" }]
-}

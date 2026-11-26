@@ -1,24 +1,27 @@
-import { copyFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 import { throwInvariantViolations } from "../compile/discovery.js";
 import { precomputeExistingRefs } from "../compile/frontmatter.js";
 import { buildRegistry } from "../compile/validators.js";
 import type { WarningSink } from "../compile/index.js";
-import { pathExists } from "../fs.js";
 import type { InstalledIndex } from "../installed.js";
-import type { LocalIds } from "../layout/index.js";
+import type { Layout, LocalIds } from "../layout/index.js";
+import {
+  effectiveTree,
+  formatOverlayError,
+  sourceView,
+  type EffectiveTree,
+} from "../overlay/index.js";
 import { substitute } from "../placeholders/index.js";
-import { expandIncludes, formatIncludeError } from "../skill/index.js";
+import { expandIncludes, formatIncludeError, type SourceView } from "../skill/index.js";
 import type { Vendor } from "../vendor/schema.js";
 
 export interface CompileConfigsOptions {
-  readonly srcRoot: string;
-  readonly outRoot: string;
+  readonly layout: Layout;
   readonly vendors: readonly Vendor[];
   readonly localIds?: LocalIds;
   readonly installedIndex?: InstalledIndex;
-  readonly repoRoot?: string;
   readonly namedRoots?: Readonly<Record<string, string>>;
   readonly onWarnings?: WarningSink;
 }
@@ -38,15 +41,23 @@ const EMPTY_INSTALLED_INDEX: InstalledIndex = {
 export async function compileConfigs(options: CompileConfigsOptions): Promise<void> {
   const localIds = options.localIds ?? EMPTY_LOCAL_IDS;
   const installedIndex = options.installedIndex ?? EMPTY_INSTALLED_INDEX;
-  const repoRoot = options.repoRoot ?? dirname(options.srcRoot);
+  const { layout } = options;
+  const repoRoot = layout.repoRoot;
   const namedRoots = options.namedRoots ?? {};
+  const registeredVendors = options.vendors.map((vendor) => vendor.name);
 
   for (const vendor of options.vendors) {
-    const configsSrc = join(options.srcRoot, vendor.name, "configs");
-    if (!(await pathExists(configsSrc))) continue;
+    const tree = await vendorTree(layout.configsDir, vendor.name, registeredVendors);
+    if (tree.files.size === 0) continue;
+    const rootTrees = await Promise.all(
+      Object.values(namedRoots).map(async (root) =>
+        vendorTree(root, vendor.name, registeredVendors),
+      ),
+    );
     await compileVendor({
-      configsSrc,
-      configsOut: vendor.configsOutDir(options.outRoot),
+      tree,
+      view: sourceView([tree, ...rootTrees]),
+      configsOut: vendor.configsOutDir(layout.buildDir),
       localIds,
       installedIndex,
       repoRoot,
@@ -56,8 +67,19 @@ export async function compileConfigs(options: CompileConfigsOptions): Promise<vo
   }
 }
 
+async function vendorTree(
+  root: string,
+  vendor: string,
+  registeredVendors: readonly string[],
+): Promise<EffectiveTree> {
+  const tree = await effectiveTree({ root, vendor, registeredVendors });
+  if (!tree.ok) throwInvariantViolations(root, tree.error.map(formatOverlayError));
+  return tree.value;
+}
+
 interface CompileVendorOptions {
-  readonly configsSrc: string;
+  readonly tree: EffectiveTree;
+  readonly view: SourceView;
   readonly configsOut: string;
   readonly localIds: LocalIds;
   readonly installedIndex: InstalledIndex;
@@ -67,11 +89,11 @@ interface CompileVendorOptions {
 }
 
 async function compileVendor(opts: CompileVendorOptions): Promise<void> {
-  for await (const absPath of walk(opts.configsSrc)) {
-    const rel = relative(opts.configsSrc, absPath);
+  for (const [rel, absPath] of opts.tree.files) {
+    if (rel.split("/").some((segment) => segment.startsWith("."))) continue;
     const outPath = join(opts.configsOut, rel);
     if (absPath.endsWith(".md")) {
-      await emitSubstituted(absPath, outPath, opts.configsSrc, opts);
+      await emitSubstituted(absPath, outPath, dirname(absPath), opts);
     } else {
       await mkdir(dirname(outPath), { recursive: true });
       await copyFile(absPath, outPath);
@@ -89,6 +111,7 @@ async function emitSubstituted(
   const expanded = await expandIncludes(raw, srcPath, {
     repoRoot: opts.repoRoot,
     named: opts.namedRoots,
+    view: opts.view,
   });
   if (!expanded.ok) {
     throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
@@ -109,14 +132,4 @@ async function emitSubstituted(
   if (result.warnings.length > 0) opts.onWarnings?.(srcPath, result.warnings);
   await mkdir(dirname(outPath), { recursive: true });
   await writeFile(outPath, result.rendered);
-}
-
-async function* walk(dir: string): AsyncGenerator<string> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(full);
-    else if (entry.isFile()) yield full;
-  }
 }

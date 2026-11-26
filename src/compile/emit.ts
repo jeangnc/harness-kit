@@ -8,6 +8,7 @@ import {
   formatLoadSkillError,
   isReservedCompanionFilename,
   loadSkill,
+  SKILL_FILE,
 } from "../skill/index.js";
 import { substitute } from "../placeholders/index.js";
 
@@ -21,8 +22,6 @@ import { buildRegistry } from "./validators.js";
 import { emitsEntry } from "./emit-paths.js";
 import type { LocalIds } from "../layout/index.js";
 import type { InstalledIndex } from "../installed.js";
-
-const SKILL_SOURCE_FILENAMES: ReadonlySet<string> = new Set(["SKILL.ts", "SKILL.md"]);
 
 export type { LocalIds } from "../layout/index.js";
 
@@ -61,10 +60,10 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
   const handledAbsPaths = new Set<string>();
 
   for await (const absPath of walk(srcRoot)) {
-    if (!SKILL_SOURCE_FILENAMES.has(basename(absPath))) continue;
+    if (basename(absPath) !== SKILL_FILE) continue;
     const target = join(outRoot, relative(srcRoot, absPath));
     const companions = skillFolders.get(dirname(absPath)) ?? [];
-    const result = await emitSkill(absPath, join(dirname(target), "SKILL.md"), companions, ctx);
+    const result = await emitSkill(absPath, target, companions, ctx);
     for (const p of result.resolvedIncludes) handledAbsPaths.add(p);
     for (const p of result.emittedCompanions) handledAbsPaths.add(p);
   }
@@ -72,9 +71,7 @@ export async function compileTree(options: CompileTreeOptions): Promise<void> {
   for await (const absPath of walk(srcRoot)) {
     const file = basename(absPath);
     const rel = relative(srcRoot, absPath);
-    if (SKILL_SOURCE_FILENAMES.has(file)) continue;
-    if (absPath.endsWith(".ts")) continue;
-    if (file === "body.md") continue;
+    if (file === SKILL_FILE) continue;
     if (handledAbsPaths.has(absPath)) continue;
     if (skipRelPaths.has(rel)) continue;
     if (isUnderAnySkipDir(rel, skipRelPaths)) continue;
@@ -103,7 +100,7 @@ async function collectSkillFolders(srcRoot: string): Promise<Map<string, string[
   for await (const absPath of walk(srcRoot)) {
     const dir = dirname(absPath);
     const file = basename(absPath);
-    if (SKILL_SOURCE_FILENAMES.has(file)) {
+    if (file === SKILL_FILE) {
       result.set(dir, result.get(dir) ?? []);
     } else if (file.endsWith(".md") && !isReservedCompanionFilename(file)) {
       const list = result.get(dir) ?? [];

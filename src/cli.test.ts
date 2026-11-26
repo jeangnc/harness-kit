@@ -17,10 +17,10 @@ function runCli(args: readonly string[]): {
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-test("cli compile --help exits 0 and mentions --src", () => {
+test("cli compile --help exits 0 and mentions --repo", () => {
   const { status, stdout } = runCli(["compile", "--help"]);
   assert.equal(status, 0);
-  assert.match(stdout, /--src/);
+  assert.match(stdout, /--repo/);
 });
 
 test("cli install --help exits 0 and mentions --dry-run", () => {
@@ -74,10 +74,10 @@ test("cli --version prints the package version", () => {
   );
 });
 
-test("cli check --help exits 0 and mentions --src", () => {
+test("cli check --help exits 0 and mentions --repo", () => {
   const { status, stdout } = runCli(["check", "--help"]);
   assert.equal(status, 0);
-  assert.match(stdout, /--src/);
+  assert.match(stdout, /--repo/);
 });
 
 test("cli lint --help exits 0 and mentions --out", () => {

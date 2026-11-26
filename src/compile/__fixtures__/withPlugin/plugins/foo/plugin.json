@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "foo",
+  "version": "1.2.3",
+  "description": "demo plugin used by withPlugin fixture",
+  "license": "MIT",
+  "keywords": ["fixture", "demo"],
+  "extensions": {
+    "claude": {
+      "dependencies": ["bar-core"]
+    }
+  }
+}

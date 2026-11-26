@@ -1,52 +1,35 @@
 import { test } from "node:test";
 import { strict as assert } from "node:assert";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { compilePlugins } from "./index.js";
 import { claudeVendor } from "../vendors/claude/index.js";
+import { layoutAt, type Layout } from "../layout/index.js";
+import { AGENT_PLUGINS_SCHEMA } from "../plugin/index.js";
 
 const vendors = [claudeVendor];
 
-const fixturesRoot = fileURLToPath(new URL("./__fixtures__", import.meta.url));
+function testLayout(repoRoot: string, distRoot: string): Layout {
+  return { ...layoutAt(repoRoot), buildDir: distRoot };
+}
 
-function ensurePluginInMarketplace(srcRoot: string, pluginName: string): void {
-  const pluginDir = join(srcRoot, "plugins", pluginName);
-  mkdirSync(join(pluginDir, ".claude-plugin"), { recursive: true });
-  const pluginJsonPath = join(pluginDir, ".claude-plugin/plugin.json");
-  if (!existsSync(pluginJsonPath)) {
-    writeFileSync(
-      pluginJsonPath,
-      JSON.stringify(
-        { name: pluginName, version: "0.0.1", description: "test fixture plugin" },
-        null,
-        2,
-      ) + "\n",
-    );
-  }
-
-  const marketplacePath = join(srcRoot, ".claude-plugin/marketplace.json");
-  mkdirSync(join(srcRoot, ".claude-plugin"), { recursive: true });
-  const existing = existsSync(marketplacePath)
-    ? (JSON.parse(readFileSync(marketplacePath, "utf8")) as {
-        plugins: Array<{ name: string; source: string }>;
-      })
-    : null;
-  if (existing) {
-    if (existing.plugins.some((p) => p.name === pluginName)) return;
-    existing.plugins.push({ name: pluginName, source: `./plugins/${pluginName}` });
-    writeFileSync(marketplacePath, JSON.stringify(existing, null, 2) + "\n");
-    return;
-  }
+function seedPlugin(repoRoot: string, pluginName: string): void {
   writeFileSync(
-    marketplacePath,
+    join(repoRoot, "harness.yaml"),
+    "marketplace: test-marketplace\nowner:\n  name: harness-kit-tests\nvendors: [claude]\n",
+  );
+  const pluginDir = join(repoRoot, "plugins", pluginName);
+  mkdirSync(pluginDir, { recursive: true });
+  writeFileSync(
+    join(pluginDir, "plugin.json"),
     JSON.stringify(
       {
-        name: "test-marketplace",
-        owner: { name: "harness-kit-tests" },
-        plugins: [{ name: pluginName, source: `./plugins/${pluginName}` }],
+        $schema: AGENT_PLUGINS_SCHEMA,
+        name: pluginName,
+        version: "0.0.1",
+        description: "test fixture plugin",
       },
       null,
       2,
@@ -56,17 +39,16 @@ function ensurePluginInMarketplace(srcRoot: string, pluginName: string): void {
 
 async function withHookFixture<T>(
   hookScript: string,
-  fn: (srcRoot: string, distRoot: string) => Promise<T>,
+  fn: (repoRoot: string, distRoot: string) => Promise<T>,
 ): Promise<T> {
-  const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_hooks_"));
-  const srcRoot = join(sandbox, "src");
+  const repoRoot = mkdtempSync(join(tmpdir(), "harness-kit-repo-"));
   const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
-  const hooksDir = join(srcRoot, "plugins/foo/hooks");
+  const hooksDir = join(repoRoot, "plugins/foo/hooks");
   mkdirSync(hooksDir, { recursive: true });
   writeFileSync(join(hooksDir, "context.sh"), hookScript);
-  ensurePluginInMarketplace(srcRoot, "foo");
-  return fn(srcRoot, distRoot).finally(() => {
-    rmSync(sandbox, { recursive: true, force: true });
+  seedPlugin(repoRoot, "foo");
+  return fn(repoRoot, distRoot).finally(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
     rmSync(distRoot, { recursive: true, force: true });
   });
 }
@@ -76,19 +58,18 @@ const ROOT_ASSIGN = `root="\${CLAUDE_PLUGIN_ROOT:?CLAUDE_PLUGIN_ROOT must be set
 async function withLangSkillsFixture<T>(
   hookScript: string,
   langSkills: string,
-  fn: (srcRoot: string, distRoot: string) => Promise<T>,
+  fn: (repoRoot: string, distRoot: string) => Promise<T>,
 ): Promise<T> {
-  const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_mirror_"));
-  const srcRoot = join(sandbox, "src");
+  const repoRoot = mkdtempSync(join(tmpdir(), "harness-kit-repo-"));
   const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
-  const pluginDir = join(srcRoot, "plugins/foo");
+  const pluginDir = join(repoRoot, "plugins/foo");
   mkdirSync(join(pluginDir, "hooks"), { recursive: true });
   mkdirSync(join(pluginDir, "shared"), { recursive: true });
   writeFileSync(join(pluginDir, "hooks/require-skill.sh"), hookScript);
   writeFileSync(join(pluginDir, "shared/lang-skills.md"), langSkills);
-  ensurePluginInMarketplace(srcRoot, "foo");
-  return fn(srcRoot, distRoot).finally(() => {
-    rmSync(sandbox, { recursive: true, force: true });
+  seedPlugin(repoRoot, "foo");
+  return fn(repoRoot, distRoot).finally(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
     rmSync(distRoot, { recursive: true, force: true });
   });
 }
@@ -103,9 +84,9 @@ test("compile fails when a hook names a skill that shared/lang-skills.md does no
   const script = `#!/usr/bin/env bash
 skills="foo:react-components"
 `;
-  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (srcRoot, distRoot) => {
+  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (repoRoot, distRoot) => {
     await assert.rejects(
-      compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+      compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
       /foo:react-components/,
     );
   });
@@ -118,8 +99,8 @@ case "$rule_key" in
   react) skills="foo:react" ;;
 esac
 `;
-  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
   });
 });
@@ -130,8 +111,8 @@ url="https://example.com/x"
 note="unrelated:token"
 skills="foo:ruby"
 `;
-  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withLangSkillsFixture(script, LANG_SKILLS_TABLE, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
   });
 });
@@ -140,8 +121,8 @@ test("compile skips the skill-mirror check for a plugin with no shared/lang-skil
   const script = `#!/usr/bin/env bash
 skills="foo:not-in-any-table"
 `;
-  await withHookFixture(script, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withHookFixture(script, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
   });
 });
@@ -152,9 +133,9 @@ set -euo pipefail
 ${ROOT_ASSIGN}
 table="$(<"$root/.fragments/foo.md")"
 `;
-  await withHookFixture(script, async (srcRoot, distRoot) => {
+  await withHookFixture(script, async (repoRoot, distRoot) => {
     await assert.rejects(
-      compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+      compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
       /\.fragments\/foo\.md/,
     );
   });
@@ -166,8 +147,8 @@ set -euo pipefail
 ${ROOT_ASSIGN}
 table="$(<"$root/skill-triggers.md")"
 `;
-  await withHookFixture(script, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withHookFixture(script, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
   });
 });
@@ -178,8 +159,8 @@ set -euo pipefail
 ${ROOT_ASSIGN}
 cat "$root/shared/x.md"
 `;
-  await withHookFixture(script, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withHookFixture(script, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
   });
 });
@@ -190,8 +171,8 @@ set -euo pipefail
 ${ROOT_ASSIGN}
 cat "$root/.mcp.json"
 `;
-  await withHookFixture(script, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withHookFixture(script, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
   });
 });
@@ -204,8 +185,8 @@ for f in instructions.md conventions.md; do
   cat "$root/$f"
 done
 `;
-  await withHookFixture(script, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withHookFixture(script, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
   });
 });
@@ -216,9 +197,9 @@ set -euo pipefail
 ${ROOT_ASSIGN}
 cat "\${root}/.fragments/foo.md"
 `;
-  await withHookFixture(script, async (srcRoot, distRoot) => {
+  await withHookFixture(script, async (repoRoot, distRoot) => {
     await assert.rejects(
-      compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+      compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
       /\.fragments\/foo\.md/,
     );
   });

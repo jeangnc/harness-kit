@@ -1,2 +1,10 @@
-export { HookRequirementSchema, PluginSchema, definePlugin } from "./schema.js";
-export type { DependencyEntry, HookRequirement, Plugin } from "./schema.js";
+export {
+  AGENT_PLUGINS_SCHEMA,
+  HARNESS_EXTENSION,
+  HarnessExtensionSchema,
+  HookRequirementSchema,
+  PluginSchema,
+  extensionBlock,
+  withoutExtensions,
+} from "./schema.js";
+export type { ExtensionBlock, HarnessExtension, HookRequirement, Plugin } from "./schema.js";

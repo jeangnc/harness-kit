@@ -19,7 +19,7 @@ test("loadHarnessConfig parses a valid harness.yaml", async () => {
   await withSandbox(async (dir) => {
     writeFileSync(
       join(dir, "harness.yaml"),
-      "marketplace: my-market\nvendors:\n  - claude\n  - codex\n",
+      "marketplace: my-market\nowner: { name: t }\nvendors:\n  - claude\n  - codex\n",
     );
     const cfg = await loadHarnessConfig(dir);
     assert.equal(cfg.marketplace, "my-market");
@@ -29,7 +29,10 @@ test("loadHarnessConfig parses a valid harness.yaml", async () => {
 
 test("loadHarnessConfig prefers harness.yml when harness.yaml absent", async () => {
   await withSandbox(async (dir) => {
-    writeFileSync(join(dir, "harness.yml"), "marketplace: m\nvendors: [claude]\n");
+    writeFileSync(
+      join(dir, "harness.yml"),
+      "marketplace: m\nowner: { name: t }\nvendors: [claude]\n",
+    );
     const cfg = await loadHarnessConfig(dir);
     assert.equal(cfg.marketplace, "m");
     assert.deepEqual(cfg.vendors, ["claude"]);
@@ -38,8 +41,14 @@ test("loadHarnessConfig prefers harness.yml when harness.yaml absent", async () 
 
 test("loadHarnessConfig throws when both harness.yaml and harness.yml exist", async () => {
   await withSandbox(async (dir) => {
-    writeFileSync(join(dir, "harness.yaml"), "marketplace: a\nvendors: [claude]\n");
-    writeFileSync(join(dir, "harness.yml"), "marketplace: b\nvendors: [codex]\n");
+    writeFileSync(
+      join(dir, "harness.yaml"),
+      "marketplace: a\nowner: { name: t }\nvendors: [claude]\n",
+    );
+    writeFileSync(
+      join(dir, "harness.yml"),
+      "marketplace: b\nowner: { name: t }\nvendors: [codex]\n",
+    );
     await assert.rejects(
       async () => loadHarnessConfig(dir),
       /both harness\.yaml and harness\.yml/i,
@@ -63,21 +72,27 @@ test("loadHarnessConfig throws when marketplace is missing", async () => {
 
 test("loadHarnessConfig throws when vendors is empty", async () => {
   await withSandbox(async (dir) => {
-    writeFileSync(join(dir, "harness.yaml"), "marketplace: m\nvendors: []\n");
+    writeFileSync(join(dir, "harness.yaml"), "marketplace: m\nowner: { name: t }\nvendors: []\n");
     await assert.rejects(async () => loadHarnessConfig(dir), /at least one vendor/i);
   });
 });
 
 test("loadHarnessConfig throws when vendors contains a non-string", async () => {
   await withSandbox(async (dir) => {
-    writeFileSync(join(dir, "harness.yaml"), "marketplace: m\nvendors:\n  - 123\n");
+    writeFileSync(
+      join(dir, "harness.yaml"),
+      "marketplace: m\nowner: { name: t }\nvendors:\n  - 123\n",
+    );
     await assert.rejects(async () => loadHarnessConfig(dir), /vendors/);
   });
 });
 
 test("loadHarnessConfig throws on malformed YAML", async () => {
   await withSandbox(async (dir) => {
-    writeFileSync(join(dir, "harness.yaml"), "marketplace: m\n  bad indent: x\n");
+    writeFileSync(
+      join(dir, "harness.yaml"),
+      "marketplace: m\nowner: { name: t }\n  bad indent: x\n",
+    );
     await assert.rejects(async () => loadHarnessConfig(dir), /harness\.yaml/i);
   });
 });
@@ -86,7 +101,7 @@ test("loadHarnessConfig parses an optional roots map", async () => {
   await withSandbox(async (dir) => {
     writeFileSync(
       join(dir, "harness.yaml"),
-      "marketplace: m\nvendors: [claude]\nroots:\n  shared: ./src/shared\n",
+      "marketplace: m\nowner: { name: t }\nvendors: [claude]\nroots:\n  shared: ./src/shared\n",
     );
     const cfg = await loadHarnessConfig(dir);
     assert.deepEqual(cfg.roots, { shared: "./src/shared" });
@@ -95,7 +110,10 @@ test("loadHarnessConfig parses an optional roots map", async () => {
 
 test("loadHarnessConfig leaves roots undefined when absent", async () => {
   await withSandbox(async (dir) => {
-    writeFileSync(join(dir, "harness.yaml"), "marketplace: m\nvendors: [claude]\n");
+    writeFileSync(
+      join(dir, "harness.yaml"),
+      "marketplace: m\nowner: { name: t }\nvendors: [claude]\n",
+    );
     const cfg = await loadHarnessConfig(dir);
     assert.equal(cfg.roots, undefined);
   });
@@ -105,7 +123,7 @@ test("loadHarnessConfig rejects an empty roots value", async () => {
   await withSandbox(async (dir) => {
     writeFileSync(
       join(dir, "harness.yaml"),
-      "marketplace: m\nvendors: [claude]\nroots:\n  shared: ''\n",
+      "marketplace: m\nowner: { name: t }\nvendors: [claude]\nroots:\n  shared: ''\n",
     );
     await assert.rejects(async () => loadHarnessConfig(dir), /roots/);
   });

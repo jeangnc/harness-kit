@@ -6,12 +6,27 @@ import { z } from "zod";
 
 import { formatZodIssues } from "../errors/index.js";
 import { pathExists } from "../fs.js";
+import { kebabName } from "../schema-primitives.js";
 
-const HarnessConfigSchema = z.object({
-  marketplace: z.string().min(1, "marketplace is required"),
-  vendors: z.array(z.string().min(1)).min(1, "at least one vendor must be declared"),
-  roots: z.record(z.string().min(1), z.string().min(1)).optional(),
-});
+const OwnerSchema = z
+  .object({
+    name: z.string().min(1),
+    email: z.string().min(1).optional(),
+    url: z.string().min(1).optional(),
+  })
+  .strict();
+
+const HarnessConfigSchema = z
+  .object({
+    marketplace: kebabName,
+    owner: OwnerSchema,
+    vendors: z.array(z.string().min(1)).min(1, "at least one vendor must be declared"),
+    roots: z.record(z.string().min(1), z.string().min(1)).optional(),
+    extensions: z.record(z.string().min(1), z.record(z.string().min(1), z.unknown())).optional(),
+  })
+  .strict();
+
+export type Owner = z.infer<typeof OwnerSchema>;
 
 export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
 

@@ -17,6 +17,8 @@ import { fileURLToPath } from "node:url";
 import { compilePlugins } from "./index.js";
 import { claudeVendor } from "../vendors/claude/index.js";
 import type { PluginSource } from "../installed.js";
+import { layoutAt, type Layout } from "../layout/index.js";
+import { AGENT_PLUGINS_SCHEMA } from "../plugin/index.js";
 
 const vendors = [claudeVendor];
 
@@ -26,147 +28,141 @@ const companionRenderRoot = join(fixturesRoot, "companionRender");
 const withPluginRoot = join(fixturesRoot, "withPlugin");
 const mdSourceRoot = join(fixturesRoot, "mdSource");
 
+const HARNESS_YAML = `marketplace: test-marketplace
+owner:
+  name: harness-kit-tests
+vendors: [claude]
+`;
+
+function testLayout(repoRoot: string, distRoot: string): Layout {
+  return { ...layoutAt(repoRoot), buildDir: distRoot };
+}
+
 async function withTempDist<T>(fn: (dist: string) => Promise<T>): Promise<T> {
   const dist = mkdtempSync(join(tmpdir(), "harness-kit-test-"));
   return fn(dist).finally(() => rmSync(dist, { recursive: true, force: true }));
 }
 
-function ensurePluginInMarketplace(srcRoot: string, pluginName: string): void {
-  const pluginDir = join(srcRoot, "plugins", pluginName);
-  mkdirSync(pluginDir, { recursive: true });
-  const pluginTsPath = join(pluginDir, "PLUGIN.ts");
-  const pluginJsonPath = join(pluginDir, ".claude-plugin/plugin.json");
-  if (!existsSync(pluginTsPath) && !existsSync(pluginJsonPath)) {
-    mkdirSync(join(pluginDir, ".claude-plugin"), { recursive: true });
-    writeFileSync(
-      pluginJsonPath,
-      JSON.stringify(
-        { name: pluginName, version: "0.0.1", description: "test fixture plugin" },
-        null,
-        2,
-      ) + "\n",
-    );
-  }
+function pluginManifest(
+  name: string,
+  overrides: Readonly<Record<string, unknown>> = {},
+): Record<string, unknown> {
+  return {
+    $schema: AGENT_PLUGINS_SCHEMA,
+    name,
+    version: "0.0.1",
+    description: "test fixture plugin",
+    ...overrides,
+  };
+}
 
-  const marketplacePath = join(srcRoot, ".claude-plugin/marketplace.json");
-  mkdirSync(join(srcRoot, ".claude-plugin"), { recursive: true });
-  const existing = existsSync(marketplacePath)
-    ? (JSON.parse(readFileSync(marketplacePath, "utf8")) as {
-        plugins: Array<{ name: string; source: string }>;
-      })
-    : null;
-  if (existing) {
-    if (existing.plugins.some((p) => p.name === pluginName)) return;
-    existing.plugins.push({ name: pluginName, source: `./plugins/${pluginName}` });
-    writeFileSync(marketplacePath, JSON.stringify(existing, null, 2) + "\n");
-    return;
+function writePluginManifest(
+  repoRoot: string,
+  folderName: string,
+  manifest: Readonly<Record<string, unknown>>,
+): void {
+  const pluginDir = join(repoRoot, "plugins", folderName);
+  mkdirSync(pluginDir, { recursive: true });
+  writeFileSync(join(pluginDir, "plugin.json"), JSON.stringify(manifest, null, 2) + "\n");
+}
+
+function ensurePlugin(repoRoot: string, pluginName: string): void {
+  const harnessPath = join(repoRoot, "harness.yaml");
+  if (!existsSync(harnessPath)) {
+    mkdirSync(repoRoot, { recursive: true });
+    writeFileSync(harnessPath, HARNESS_YAML);
   }
-  writeFileSync(
-    marketplacePath,
-    JSON.stringify(
-      {
-        name: "test-marketplace",
-        owner: { name: "harness-kit-tests" },
-        plugins: [{ name: pluginName, source: `./plugins/${pluginName}` }],
-      },
-      null,
-      2,
-    ) + "\n",
-  );
+  if (!existsSync(join(repoRoot, "plugins", pluginName, "plugin.json"))) {
+    writePluginManifest(repoRoot, pluginName, pluginManifest(pluginName));
+  }
+}
+
+async function withRepo<T>(fn: (repoRoot: string, distRoot: string) => Promise<T>): Promise<T> {
+  const repoRoot = mkdtempSync(join(tmpdir(), "harness-kit-repo-"));
+  const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
+  return fn(repoRoot, distRoot).finally(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+    rmSync(distRoot, { recursive: true, force: true });
+  });
+}
+
+function skillMarkdown(name: string, body: string): string {
+  return `---\nname: ${name}\ndescription: fixture skill\n---\n\n${body}`;
 }
 
 interface SkillFixtureOptions {
-  readonly skillSource?: string;
-  readonly skillMd?: string;
-  readonly bodyMd?: string;
+  readonly skillMd: string;
   readonly companionFiles?: Readonly<Record<string, string>>;
 }
 
 async function withSkillFixture<T>(
   options: SkillFixtureOptions,
-  fn: (srcRoot: string, distRoot: string) => Promise<T>,
+  fn: (repoRoot: string, distRoot: string) => Promise<T>,
 ): Promise<T> {
-  const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_"));
-  const srcRoot = join(sandbox, "src");
-  const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
-  const skillDir = join(srcRoot, "plugins/foo/skills/bar");
-  mkdirSync(skillDir, { recursive: true });
-  if (options.skillSource !== undefined) {
-    writeFileSync(join(skillDir, "SKILL.ts"), options.skillSource);
-  }
-  if (options.skillMd !== undefined) {
+  return withRepo(async (repoRoot, distRoot) => {
+    const skillDir = join(repoRoot, "plugins/foo/skills/bar");
+    mkdirSync(skillDir, { recursive: true });
     writeFileSync(join(skillDir, "SKILL.md"), options.skillMd);
-  }
-  if (options.bodyMd !== undefined) {
-    writeFileSync(join(skillDir, "body.md"), options.bodyMd);
-  }
-  for (const [name, content] of Object.entries(options.companionFiles ?? {})) {
-    writeFileSync(join(skillDir, name), content);
-  }
-  ensurePluginInMarketplace(srcRoot, "foo");
-  return fn(srcRoot, distRoot).finally(() => {
-    rmSync(sandbox, { recursive: true, force: true });
-    rmSync(distRoot, { recursive: true, force: true });
+    for (const [name, content] of Object.entries(options.companionFiles ?? {})) {
+      writeFileSync(join(skillDir, name), content);
+    }
+    ensurePlugin(repoRoot, "foo");
+    return fn(repoRoot, distRoot);
   });
 }
 
 interface PluginFixtureOptions {
-  readonly pluginName?: string;
-  readonly pluginSource: string;
+  readonly folderName?: string;
+  readonly manifest?: Readonly<Record<string, unknown>>;
   readonly extraFiles?: Readonly<Record<string, string>>;
 }
 
 async function withPluginFixture<T>(
   options: PluginFixtureOptions,
-  fn: (srcRoot: string, distRoot: string) => Promise<T>,
+  fn: (repoRoot: string, distRoot: string) => Promise<T>,
 ): Promise<T> {
-  const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_"));
-  const srcRoot = join(sandbox, "src");
-  const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
-  const pluginDir = join(srcRoot, "plugins", options.pluginName ?? "foo");
-  mkdirSync(pluginDir, { recursive: true });
-  writeFileSync(join(pluginDir, "PLUGIN.ts"), options.pluginSource);
-  for (const [relPath, content] of Object.entries(options.extraFiles ?? {})) {
-    const target = join(pluginDir, relPath);
-    mkdirSync(join(target, ".."), { recursive: true });
-    writeFileSync(target, content);
-  }
-  ensurePluginInMarketplace(srcRoot, options.pluginName ?? "foo");
-  return fn(srcRoot, distRoot).finally(() => {
-    rmSync(sandbox, { recursive: true, force: true });
-    rmSync(distRoot, { recursive: true, force: true });
+  return withRepo(async (repoRoot, distRoot) => {
+    const folderName = options.folderName ?? "foo";
+    writeFileSync(join(repoRoot, "harness.yaml"), HARNESS_YAML);
+    writePluginManifest(repoRoot, folderName, options.manifest ?? pluginManifest(folderName));
+    for (const [relPath, content] of Object.entries(options.extraFiles ?? {})) {
+      const target = join(repoRoot, "plugins", folderName, relPath);
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(target, content);
+    }
+    return fn(repoRoot, distRoot);
   });
 }
 
-function makeStubSkill(srcRoot: string, plugin: string, name: string): void {
-  const dir = join(srcRoot, "plugins", plugin, "skills", name);
+function makeStubSkill(repoRoot: string, plugin: string, name: string): void {
+  const dir = join(repoRoot, "plugins", plugin, "skills", name);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, "SKILL.ts"),
-    `import { defineSkill } from "#harness-kit";\nexport default defineSkill({ name: "${name}", description: "stub" });\n`,
-  );
-  writeFileSync(join(dir, "body.md"), `# ${name}\n`);
-  ensurePluginInMarketplace(srcRoot, plugin);
+  writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: stub\n---\n\n# ${name}\n`);
+  ensurePlugin(repoRoot, plugin);
 }
 
-function makeStubCommand(srcRoot: string, plugin: string, name: string): void {
-  const dir = join(srcRoot, "plugins", plugin, "commands");
+function makeStubCommand(repoRoot: string, plugin: string, name: string): void {
+  const dir = join(repoRoot, "plugins", plugin, "commands");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, `${name}.md`),
     `---\nname: ${name}\ndescription: stub command\n---\n\n# ${name}\n`,
   );
-  ensurePluginInMarketplace(srcRoot, plugin);
+  ensurePlugin(repoRoot, plugin);
 }
 
-function makeStubAgent(srcRoot: string, plugin: string, name: string): void {
-  const dir = join(srcRoot, "plugins", plugin, "agents");
+function makeStubAgent(repoRoot: string, plugin: string, name: string): void {
+  const dir = join(repoRoot, "plugins", plugin, "agents");
   mkdirSync(dir, { recursive: true });
   writeFileSync(
     join(dir, `${name}.md`),
     `---\nname: ${name}\ndescription: stub agent\n---\n\n# ${name}\n`,
   );
-  ensurePluginInMarketplace(srcRoot, plugin);
+  ensurePlugin(repoRoot, plugin);
+}
+
+function readJson(path: string): Record<string, unknown> {
+  return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
 }
 
 interface InstalledArtifact {
@@ -218,21 +214,9 @@ async function withInstalledSources<T>(
   );
 }
 
-const SKILL_TS_BARE = `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "fixture skill" });
-`;
-
-const SKILL_TS_WITH_COMPANION = `import { defineSkill } from "#harness-kit";
-export default defineSkill({
-  name: "bar",
-  description: "fixture skill with companions",
-  companions: [{ file: "a.md", summary: "First." }],
-});
-`;
-
-test("compile emits SKILL.md with frontmatter and body for a typed skill source", async () => {
+test("compile emits SKILL.md with frontmatter and body for a SKILL.md source", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: goodRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(goodRoot, dist), vendors });
 
     const skillPath = join(dist, "claude/plugins/foo/skills/bar/SKILL.md");
     assert.ok(existsSync(skillPath), `expected ${skillPath} to exist`);
@@ -245,58 +229,48 @@ test("compile emits SKILL.md with frontmatter and body for a typed skill source"
   });
 });
 
-test("compile copies non-skill plugin files verbatim", async () => {
+test("compile does not copy the source plugin.json verbatim into the vendor tree", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: goodRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(goodRoot, dist), vendors });
 
-    const manifestPath = join(dist, "claude/plugins/foo/.claude-plugin/plugin.json");
-    assert.ok(existsSync(manifestPath), `expected ${manifestPath} to exist`);
-
-    const original = readFileSync(join(goodRoot, "plugins/foo/.claude-plugin/plugin.json"), "utf8");
-    const copied = readFileSync(manifestPath, "utf8");
-    assert.equal(copied, original);
+    const stray = join(dist, "claude/plugins/foo/plugin.json");
+    assert.ok(!existsSync(stray), `did not expect ${stray} to exist`);
   });
 });
 
-test("compile does not write SKILL.ts source files into dist", async () => {
+test("compile names the claude catalog after the harness.yaml marketplace", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: goodRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(goodRoot, dist), vendors });
 
-    const tsPath = join(dist, "claude/plugins/foo/skills/bar/SKILL.ts");
-    assert.ok(!existsSync(tsPath), `did not expect ${tsPath} to exist`);
+    const catalog = readJson(join(dist, "claude/.claude-plugin/marketplace.json"));
+    assert.equal(catalog["name"], "test-marketplace");
+    assert.deepEqual(catalog["owner"], { name: "harness-kit-tests" });
   });
 });
 
-test("compile emits a per-vendor marketplace.json under dist/<vendor>/.<vendor>-plugin/", async () => {
+test("compile lists each discovered plugin in the claude catalog with its source and description", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: goodRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(goodRoot, dist), vendors });
 
-    const distManifest = join(dist, "claude/.claude-plugin/marketplace.json");
-    assert.ok(existsSync(distManifest), `expected ${distManifest} to exist`);
-    const emitted = JSON.parse(readFileSync(distManifest, "utf8")) as {
-      name: string;
-      plugins: ReadonlyArray<{ name: string; source: unknown }>;
-    };
-    const original = JSON.parse(
-      readFileSync(join(goodRoot, ".claude-plugin/marketplace.json"), "utf8"),
-    ) as { name: string };
-    assert.equal(emitted.name, original.name);
-    assert.ok(emitted.plugins.length > 0);
+    const catalog = readJson(join(dist, "claude/.claude-plugin/marketplace.json"));
+    assert.deepEqual(catalog["plugins"], [
+      { name: "foo", source: "./plugins/foo", description: "Test fixture plugin" },
+    ]);
   });
 });
 
-test("compile ignores top-level files outside plugins/ and .claude-plugin/", async () => {
+test("compile ignores top-level files outside plugins/", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: goodRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(goodRoot, dist), vendors });
 
     const stray = join(dist, "README.md");
     assert.ok(!existsSync(stray), `did not expect ${stray} to exist`);
   });
 });
 
-test("compile renders typed companions into the {{companions}} placeholder", async () => {
+test("compile renders frontmatter companions into the {{companions}} placeholder", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: companionRenderRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(companionRenderRoot, dist), vendors });
 
     const skillPath = join(dist, "claude/plugins/foo/skills/bar/SKILL.md");
     const content = readFileSync(skillPath, "utf8");
@@ -314,46 +288,14 @@ test("compile renders typed companions into the {{companions}} placeholder", asy
   });
 });
 
-test("compile reads body from sibling body.md", async () => {
-  await withSkillFixture(
-    {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "# Bar from body.md\n\nReal body content.\n",
-    },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
-      const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
-      assert.match(out, /# Bar from body\.md\n\nReal body content\./);
-    },
-  );
-});
-
-test("compile fails when body.md is missing", async () => {
-  await withSkillFixture({ skillSource: SKILL_TS_BARE }, async (srcRoot, distRoot) => {
-    await assert.rejects(compilePlugins({ srcRoot, outRoot: distRoot, vendors }), /body\.md/);
-  });
-});
-
-test("compile does not copy body.md into dist", async () => {
-  await withSkillFixture(
-    { skillSource: SKILL_TS_BARE, bodyMd: "# Bar\n" },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
-      const stray = join(distRoot, "claude/plugins/foo/skills/bar/body.md");
-      assert.ok(!existsSync(stray), `did not expect ${stray} to exist`);
-    },
-  );
-});
-
 test("compile substitutes {{skill:...}} for a discovered local skill", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "see {{skill:dev-tools:ruby}} for ruby idioms",
+      skillMd: skillMarkdown("bar", "see {{skill:dev-tools:ruby}} for ruby idioms"),
     },
-    async (srcRoot, distRoot) => {
-      makeStubSkill(srcRoot, "dev-tools", "ruby");
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      makeStubSkill(repoRoot, "dev-tools", "ruby");
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /see `dev-tools:ruby` for ruby idioms/);
     },
@@ -363,14 +305,12 @@ test("compile substitutes {{skill:...}} for a discovered local skill", async () 
 test("compile warns but still renders when {{skill:...}} resolves to neither a local nor an installed skill", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "see {{skill:superpowers:nonexistent}}",
+      skillMd: skillMarkdown("bar", "see {{skill:superpowers:nonexistent}}"),
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -387,12 +327,11 @@ test("compile warns but still renders when {{skill:...}} resolves to neither a l
 test("compile fails when {{skill:...}} value does not have <plugin>:<skill> shape", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "see {{skill:lonelyid}} for nothing",
+      skillMd: skillMarkdown("bar", "see {{skill:lonelyid}} for nothing"),
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /<plugin>:<skill>/,
       );
     },
@@ -400,15 +339,23 @@ test("compile fails when {{skill:...}} value does not have <plugin>:<skill> shap
 });
 
 test("compile fails when companions are declared but {{companions}} token is absent", async () => {
+  const skillMd = `---
+name: bar
+description: fixture skill with companions
+companions:
+  - file: a.md
+    summary: First.
+---
+
+# Bar
+
+No token here.
+`;
   await withSkillFixture(
-    {
-      skillSource: SKILL_TS_WITH_COMPANION,
-      bodyMd: "# Bar\n\nNo token here.\n",
-      companionFiles: { "a.md": "# A\n" },
-    },
-    async (srcRoot, distRoot) => {
+    { skillMd, companionFiles: { "a.md": "# A\n" } },
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /\{\{companions\}\}/,
       );
     },
@@ -418,12 +365,11 @@ test("compile fails when companions are declared but {{companions}} token is abs
 test("compile fails when {{companions}} is present but no companions are declared", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "# Bar\n\n{{companions}}\n",
+      skillMd: skillMarkdown("bar", "# Bar\n\n{{companions}}\n"),
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /no companions are declared/,
       );
     },
@@ -433,111 +379,117 @@ test("compile fails when {{companions}} is present but no companions are declare
 test("compile fails on unknown placeholder prefix", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "# Bar\n\n{{nope:foo}}\n",
+      skillMd: skillMarkdown("bar", "# Bar\n\n{{nope:foo}}\n"),
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /unknown placeholder prefix "nope"/,
       );
     },
   );
 });
 
-test("compile rejects a default export that violates SkillSchema (e.g. defineSkill is bypassed)", async () => {
-  const SKILL_TS_BYPASSES_DEFINE_SKILL = `import type { Skill } from "#harness-kit";
-export default { name: "bar", description: "line one\\nline two" } as Skill;
-`;
-  await withSkillFixture(
-    {
-      skillSource: SKILL_TS_BYPASSES_DEFINE_SKILL,
-      bodyMd: "# Bar\n",
-    },
-    async (srcRoot, distRoot) => {
-      await assert.rejects(compilePlugins({ srcRoot, outRoot: distRoot, vendors }), /description/i);
-    },
-  );
+test("compile fails when a SKILL.md description spans multiple lines", async () => {
+  const skillMd = `---\nname: bar\ndescription: "line one\\nline two"\n---\n\n# Bar\n`;
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    await assert.rejects(
+      compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
+      /description/i,
+    );
+  });
 });
 
-test("compile emits plugin.json from PLUGIN.ts with legacy keys preserved", async () => {
+test("compile emits the claude plugin manifest with Agent Plugins fields preserved", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: withPluginRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(withPluginRoot, dist), vendors });
 
-    const manifestPath = join(dist, "claude/plugins/foo/.claude-plugin/plugin.json");
-    assert.ok(existsSync(manifestPath), `expected ${manifestPath} to exist`);
-
-    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    const manifest = readJson(join(dist, "claude/plugins/foo/.claude-plugin/plugin.json"));
     assert.equal(manifest["name"], "foo");
     assert.equal(manifest["version"], "1.2.3");
     assert.equal(manifest["description"], "demo plugin used by withPlugin fixture");
     assert.equal(manifest["license"], "MIT");
     assert.deepEqual(manifest["keywords"], ["fixture", "demo"]);
+  });
+});
+
+test("compile merges extensions.claude into the top level of the claude plugin manifest", async () => {
+  await withTempDist(async (dist) => {
+    await compilePlugins({ layout: testLayout(withPluginRoot, dist), vendors });
+
+    const manifest = readJson(join(dist, "claude/plugins/foo/.claude-plugin/plugin.json"));
     assert.deepEqual(manifest["dependencies"], ["bar-core"]);
   });
 });
 
-test("compile does not write PLUGIN.ts source files into dist", async () => {
+test("compile drops $schema and extensions from the claude plugin manifest", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: withPluginRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(withPluginRoot, dist), vendors });
 
-    const tsPath = join(dist, "claude/plugins/foo/PLUGIN.ts");
-    assert.ok(!existsSync(tsPath), `did not expect ${tsPath} to exist`);
+    const manifest = readJson(join(dist, "claude/plugins/foo/.claude-plugin/plugin.json"));
+    assert.equal("$schema" in manifest, false);
+    assert.equal("extensions" in manifest, false);
   });
 });
 
-test("compile rejects collision when both PLUGIN.ts and .claude-plugin/plugin.json exist", async () => {
+test("compile fails when plugin.json name does not match the plugin folder", async () => {
   await withPluginFixture(
-    {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
-      extraFiles: {
-        ".claude-plugin/plugin.json": JSON.stringify({ name: "foo", version: "1.0.0" }),
-      },
-    },
-    async (srcRoot, distRoot) => {
+    { folderName: "foo", manifest: pluginManifest("wrong") },
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
-        /both PLUGIN\.ts and \.claude-plugin\/plugin\.json/,
-      );
-    },
-  );
-});
-
-test("compile fails when PLUGIN.ts name does not match the plugin folder", async () => {
-  await withPluginFixture(
-    {
-      pluginName: "foo",
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "wrong", version: "1.0.0", description: "demo" });
-`,
-    },
-    async (srcRoot, distRoot) => {
-      await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /name "wrong" does not match folder "foo"/,
       );
     },
   );
 });
 
+test("compile fails when a plugins/ folder has no plugin.json", async () => {
+  await withRepo(async (repoRoot, distRoot) => {
+    writeFileSync(join(repoRoot, "harness.yaml"), HARNESS_YAML);
+    mkdirSync(join(repoRoot, "plugins/foo/skills"), { recursive: true });
+    await assert.rejects(
+      compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
+      /expected plugin\.json in plugin folder .*plugins\/foo/,
+    );
+  });
+});
+
+test("compile fails when plugin.json declares an unknown top-level key", async () => {
+  await withPluginFixture(
+    { manifest: pluginManifest("foo", { category: "development" }) },
+    async (repoRoot, distRoot) => {
+      await assert.rejects(
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
+        /plugin manifest at .*plugin\.json is invalid/,
+      );
+    },
+  );
+});
+
+test("compile fails when plugin.json omits $schema", async () => {
+  const { $schema: _schema, ...withoutSchema } = pluginManifest("foo");
+  await withPluginFixture({ manifest: withoutSchema }, async (repoRoot, distRoot) => {
+    await assert.rejects(
+      compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
+      /\$schema/,
+    );
+  });
+});
+
 test("compile substitutes {{ref:path}} for a file that exists relative to the skill", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "shared/linear-ids.md": "# Linear IDs\n",
-        "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "fixture" });
-`,
-        "skills/bar/body.md": "see {{ref:../../shared/linear-ids.md}} for the map\n",
+        "skills/bar/SKILL.md": skillMarkdown(
+          "bar",
+          "see {{ref:../../shared/linear-ids.md}} for the map\n",
+        ),
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /see `\.\.\/\.\.\/shared\/linear-ids\.md` for the map/);
     },
@@ -547,19 +499,13 @@ export default defineSkill({ name: "bar", description: "fixture" });
 test("compile fails when {{ref:path}} resolves to a missing file", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
-        "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "fixture" });
-`,
-        "skills/bar/body.md": "see {{ref:../../shared/missing.md}}\n",
+        "skills/bar/SKILL.md": skillMarkdown("bar", "see {{ref:../../shared/missing.md}}\n"),
       },
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /ref.*missing\.md.*not found/,
       );
     },
@@ -569,14 +515,11 @@ export default defineSkill({ name: "bar", description: "fixture" });
 test("compile preserves the executable bit on hook scripts copied through dist", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: { "hooks/example.sh": "#!/usr/bin/env bash\necho hi\n" },
     },
-    async (srcRoot, distRoot) => {
-      chmodSync(join(srcRoot, "plugins/foo/hooks/example.sh"), 0o755);
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      chmodSync(join(repoRoot, "plugins/foo/hooks/example.sh"), 0o755);
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
 
       const distScript = join(distRoot, "claude/plugins/foo/hooks/example.sh");
       assert.ok(existsSync(distScript), `expected ${distScript} to exist`);
@@ -593,15 +536,12 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
 test("compile strips dot-prefixed directories from a plugin's source tree", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         ".fragments/snippet.md": "build-time only\n",
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const pluginDist = claudeVendor.pluginOutDir(distRoot, "foo");
       const stray = join(pluginDist, ".fragments/snippet.md");
       assert.ok(!existsSync(stray), `did not expect ${stray} to exist`);
@@ -614,15 +554,12 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
 test("compile keeps non-dot companion directories in a plugin's source tree", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "companions/runtime.md": "runtime data\n",
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const pluginDist = claudeVendor.pluginOutDir(distRoot, "foo");
       const kept = join(pluginDist, "companions/runtime.md");
       assert.ok(existsSync(kept), `expected ${kept} to exist`);
@@ -639,8 +576,8 @@ description: plain markdown skill
 # Bar
 inline body
 `;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(
       out,
@@ -657,8 +594,8 @@ description: plain skill
 
 see {{skill:superpowers:tdd}} for tdd
 `;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /see `superpowers:tdd` for tdd/);
     assert.ok(!out.includes("{{skill:"), "raw token should not survive in dist");
@@ -682,8 +619,8 @@ companions:
 `;
   await withSkillFixture(
     { skillMd, companionFiles: { "a.md": "# A\n", "b.md": "# B\n" } },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       assert.ok(
         out.includes(
@@ -710,8 +647,8 @@ companions:
 `;
   await withSkillFixture(
     { skillMd, companionFiles: { "a.md": "# A\n" } },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       const frontmatterMatch = /^---\n([\s\S]*?)\n---/.exec(out);
       assert.ok(frontmatterMatch, "dist file should have frontmatter");
@@ -723,36 +660,10 @@ companions:
   );
 });
 
-test("compile fails when both SKILL.ts and SKILL.md exist in the same skill folder", async () => {
-  await withSkillFixture(
-    {
-      skillSource: SKILL_TS_BARE,
-      skillMd: `---\nname: bar\ndescription: x\n---\n\n# Bar\n`,
-      bodyMd: "# Bar\n",
-    },
-    async (srcRoot, distRoot) => {
-      await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
-        /both SKILL\.ts and SKILL\.md/,
-      );
-    },
-  );
-});
-
-test("compile fails when SKILL.md and body.md coexist in the same skill folder", async () => {
-  const skillMd = `---\nname: bar\ndescription: x\n---\n\n# Bar\n`;
-  await withSkillFixture({ skillMd, bodyMd: "# rogue body\n" }, async (srcRoot, distRoot) => {
-    await assert.rejects(
-      compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
-      /body\.md.*forbidden/i,
-    );
-  });
-});
-
 test("compile does not write the source SKILL.md as both rewritten skill and verbatim copy", async () => {
   const skillMd = `---\nname: bar\ndescription: x\n---\n\nsee {{skill:foo:bar}}\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.ok(
       !out.includes("{{skill:"),
@@ -761,11 +672,11 @@ test("compile does not write the source SKILL.md as both rewritten skill and ver
   });
 });
 
-test("compile renders {{skill:...}} from a plain SKILL.md to a TS-authored sibling", async () => {
+test("compile renders {{skill:...}} from a plain SKILL.md to a skill in another local plugin", async () => {
   const skillMd = `---\nname: bar\ndescription: x\n---\n\nsee {{skill:dev-tools:ruby}}\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    makeStubSkill(srcRoot, "dev-tools", "ruby");
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    makeStubSkill(repoRoot, "dev-tools", "ruby");
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /see `dev-tools:ruby`/);
   });
@@ -773,12 +684,12 @@ test("compile renders {{skill:...}} from a plain SKILL.md to a TS-authored sibli
 
 test("compile discovers a SKILL.md skill as a local skill (visible to {{skill:...}} from elsewhere)", async () => {
   const skillMd = `---\nname: bar\ndescription: x\n---\n\nsee {{skill:other:peer}}\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    const peerDir = join(srcRoot, "plugins/other/skills/peer");
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    const peerDir = join(repoRoot, "plugins/other/skills/peer");
     mkdirSync(peerDir, { recursive: true });
     writeFileSync(join(peerDir, "SKILL.md"), `---\nname: peer\ndescription: peer\n---\n\n# Peer\n`);
-    ensurePluginInMarketplace(srcRoot, "other");
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    ensurePlugin(repoRoot, "other");
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /see `other:peer`/);
   });
@@ -788,8 +699,8 @@ test("compile expands {{include:./path.md}} in a SKILL.md body", async () => {
   const skillMd = `---\nname: bar\ndescription: x\n---\n\nbefore\n{{include:./fragment.md}}\nafter\n`;
   await withSkillFixture(
     { skillMd, companionFiles: { "fragment.md": "INLINED-CONTENT\n" } },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /before\nINLINED-CONTENT\nafter/);
       assert.ok(!out.includes("{{include:"), `raw include token survived in:\n${out}`);
@@ -801,8 +712,8 @@ test("compile resolves placeholders inside an included file against the host ski
   const skillMd = `---\nname: bar\ndescription: x\n---\n\n{{include:./shared.md}}\n`;
   await withSkillFixture(
     { skillMd, companionFiles: { "shared.md": "see {{skill:foo:bar}} please\n" } },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /see `foo:bar` please/);
     },
@@ -816,18 +727,21 @@ test("compile fails on an include cycle", async () => {
       skillMd,
       companionFiles: { "a.md": "{{include:./b.md}}", "b.md": "{{include:./a.md}}" },
     },
-    async (srcRoot, distRoot) => {
-      await assert.rejects(compilePlugins({ srcRoot, outRoot: distRoot, vendors }), /cycle/);
+    async (repoRoot, distRoot) => {
+      await assert.rejects(
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
+        /cycle/,
+      );
     },
   );
 });
 
 test("compile inlines a #-anchored include from the repo root", async () => {
   const skillMd = `---\nname: bar\ndescription: x\n---\n\nx {{include:#shared/frag.md}} y\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    mkdirSync(join(srcRoot, "shared"), { recursive: true });
-    writeFileSync(join(srcRoot, "shared/frag.md"), "FRAG");
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors, repoRoot: srcRoot });
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    mkdirSync(join(repoRoot, "shared"), { recursive: true });
+    writeFileSync(join(repoRoot, "shared/frag.md"), "FRAG");
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /x FRAG y/);
   });
@@ -835,11 +749,11 @@ test("compile inlines a #-anchored include from the repo root", async () => {
 
 test("compile inlines a cross-skill include without emitting the fragment to dist", async () => {
   const skillMd = `---\nname: bar\ndescription: x\n---\n\nx {{include:../sibling/.fragments/frag.md}} y\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    const fragDir = join(srcRoot, "plugins/foo/skills/sibling/.fragments");
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    const fragDir = join(repoRoot, "plugins/foo/skills/sibling/.fragments");
     mkdirSync(fragDir, { recursive: true });
     writeFileSync(join(fragDir, "frag.md"), "SHARED");
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /x SHARED y/);
     const stray = join(distRoot, "claude/plugins/foo/skills/sibling/.fragments/frag.md");
@@ -849,8 +763,11 @@ test("compile inlines a cross-skill include without emitting the fragment to dis
 
 test("compile fails when an include target is missing", async () => {
   const skillMd = `---\nname: bar\ndescription: x\n---\n\n{{include:./ghost.md}}\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    await assert.rejects(compilePlugins({ srcRoot, outRoot: distRoot, vendors }), /not found/);
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    await assert.rejects(
+      compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
+      /not found/,
+    );
   });
 });
 
@@ -858,8 +775,8 @@ test("compile does not copy included .md files into dist", async () => {
   const skillMd = `---\nname: bar\ndescription: x\n---\n\n{{include:./fragment.md}}\n`;
   await withSkillFixture(
     { skillMd, companionFiles: { "fragment.md": "inlined\n" } },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const stray = join(distRoot, "claude/plugins/foo/skills/bar/fragment.md");
       assert.ok(!existsSync(stray), `included file should not land in dist at ${stray}`);
     },
@@ -870,8 +787,8 @@ test("compile leaves frontmatter untouched when {{include:...}} appears in body"
   const skillMd = `---\nname: bar\ndescription: untouched description\n---\n\n{{include:./fragment.md}}\n`;
   await withSkillFixture(
     { skillMd, companionFiles: { "fragment.md": "body content\n" } },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /^---\nname: bar\ndescription: untouched description\n---\n\n/);
     },
@@ -882,17 +799,17 @@ test("compile does not flag an included sibling as an undeclared companion", asy
   const skillMd = `---\nname: bar\ndescription: x\n---\n\n{{include:./fragment.md}}\n`;
   await withSkillFixture(
     { skillMd, companionFiles: { "fragment.md": "inlined\n" } },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     },
   );
 });
 
 test("compile substitutes {{skill:...}} inside the frontmatter description", async () => {
   const skillMd = `---\nname: bar\ndescription: use {{skill:dev-tools:ruby}} instead\n---\n\n# Bar\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    makeStubSkill(srcRoot, "dev-tools", "ruby");
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    makeStubSkill(repoRoot, "dev-tools", "ruby");
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /description: use `dev-tools:ruby` instead/);
     assert.ok(!out.includes("{{skill:"), `raw token survived in frontmatter:\n${out}`);
@@ -901,8 +818,8 @@ test("compile substitutes {{skill:...}} inside the frontmatter description", asy
 
 test("compile substitutes a cross-marketplace {{skill:...}} inside the frontmatter description", async () => {
   const skillMd = `---\nname: bar\ndescription: see {{skill:superpowers:tdd}} for details\n---\n\n# Bar\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
+    await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
     const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
     assert.match(out, /description: see `superpowers:tdd` for details/);
     assert.ok(!out.includes("{{skill:"), `raw token survived in frontmatter:\n${out}`);
@@ -911,11 +828,10 @@ test("compile substitutes a cross-marketplace {{skill:...}} inside the frontmatt
 
 test("compile warns when a frontmatter description references a skill resolved nowhere", async () => {
   const skillMd = `---\nname: bar\ndescription: see {{skill:superpowers:ghost}}\n---\n\n# Bar\n`;
-  await withSkillFixture({ skillMd }, async (srcRoot, distRoot) => {
+  await withSkillFixture({ skillMd }, async (repoRoot, distRoot) => {
     const warnings: string[] = [];
     await compilePlugins({
-      srcRoot,
-      outRoot: distRoot,
+      layout: testLayout(repoRoot, distRoot),
       vendors,
       onWarnings: (_file, ws) => warnings.push(...ws),
     });
@@ -946,8 +862,8 @@ companions:
       skillMd,
       companionFiles: { "procedure.md": "see {{skill:superpowers:tdd}} for tdd\n" },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const companion = readFileSync(
         join(distRoot, "claude/plugins/foo/skills/bar/procedure.md"),
         "utf8",
@@ -976,11 +892,10 @@ companions:
       skillMd,
       companionFiles: { "procedure.md": "see {{skill:superpowers:ghost}}\n" },
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -1012,17 +927,14 @@ companions:
 `;
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "shared/notes.md": "# Notes\n",
         "skills/bar/SKILL.md": skillMd,
         "skills/bar/procedure.md": "see {{ref:../../shared/notes.md}}\n",
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(
         join(distRoot, "claude/plugins/foo/skills/bar/procedure.md"),
         "utf8",
@@ -1035,16 +947,13 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
 test("compile substitutes placeholders inside agent files", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "skills/bar/SKILL.md": `---\nname: bar\ndescription: x\n---\n\n# Bar\n`,
         "agents/reviewer.md": `---\nname: reviewer\ndescription: x\n---\n\nInvoke {{skill:foo:bar}} for help.\n`,
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/agents/reviewer.md"), "utf8");
       assert.match(out, /Invoke `foo:bar` for help\./);
     },
@@ -1054,18 +963,14 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
 test("compile warns when an agent file references a skill resolved nowhere", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "agents/reviewer.md": `---\nname: reviewer\ndescription: x\n---\n\nSee {{skill:superpowers:ghost}}.\n`,
       },
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -1082,16 +987,13 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
 test("compile substitutes placeholders inside command files", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "skills/bar/SKILL.md": `---\nname: bar\ndescription: x\n---\n\n# Bar\n`,
         "commands/ship.md": `---\nname: ship\ndescription: x\n---\n\nRun {{skill:foo:bar}} first.\n`,
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/commands/ship.md"), "utf8");
       assert.match(out, /Run `foo:bar` first\./);
     },
@@ -1101,18 +1003,14 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
 test("compile warns when a command file references a skill resolved nowhere", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "commands/ship.md": `---\nname: ship\ndescription: x\n---\n\nRun {{skill:superpowers:ghost}}.\n`,
       },
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -1129,16 +1027,13 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
 test("compile resolves {{ref:...}} in agent files relative to the agent file", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "shared/notes.md": "# Notes\n",
         "agents/reviewer.md": `---\nname: reviewer\ndescription: x\n---\n\nsee {{ref:../shared/notes.md}}\n`,
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/agents/reviewer.md"), "utf8");
       assert.match(out, /see `\.\.\/shared\/notes\.md`/);
     },
@@ -1147,7 +1042,7 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
 
 test("compile builds the markdown-only fixture end-to-end", async () => {
   await withTempDist(async (dist) => {
-    await compilePlugins({ srcRoot: mdSourceRoot, outRoot: dist, vendors });
+    await compilePlugins({ layout: testLayout(mdSourceRoot, dist), vendors });
 
     const skillPath = join(dist, "claude/plugins/foo/skills/bar/SKILL.md");
     assert.ok(existsSync(skillPath), `expected ${skillPath} to exist`);
@@ -1167,12 +1062,11 @@ test("compile builds the markdown-only fixture end-to-end", async () => {
 test("compile substitutes {{command:plugin:name}} as `/plugin:name` for a discovered local command", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "run {{command:dev-tools:open-pr}} to ship\n",
+      skillMd: skillMarkdown("bar", "run {{command:dev-tools:open-pr}} to ship\n"),
     },
-    async (srcRoot, distRoot) => {
-      makeStubCommand(srcRoot, "dev-tools", "open-pr");
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      makeStubCommand(repoRoot, "dev-tools", "open-pr");
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /run `\/dev-tools:open-pr` to ship/);
     },
@@ -1182,14 +1076,12 @@ test("compile substitutes {{command:plugin:name}} as `/plugin:name` for a discov
 test("compile warns but still renders when {{command:...}} resolves to neither a local nor an installed command", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "see {{command:dev-tools:ghost}}\n",
+      skillMd: skillMarkdown("bar", "see {{command:dev-tools:ghost}}\n"),
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -1206,12 +1098,11 @@ test("compile warns but still renders when {{command:...}} resolves to neither a
 test("compile fails when {{command:...}} value does not have <plugin>:<command> shape", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "{{command:lonelyid}}\n",
+      skillMd: skillMarkdown("bar", "{{command:lonelyid}}\n"),
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /<plugin>:<command>/,
       );
     },
@@ -1221,12 +1112,11 @@ test("compile fails when {{command:...}} value does not have <plugin>:<command> 
 test("compile substitutes {{agent:plugin:name}} as the scoped `plugin:name` handle for a discovered local agent", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "dispatch {{agent:dev-tools:code-reviewer}} for review\n",
+      skillMd: skillMarkdown("bar", "dispatch {{agent:dev-tools:code-reviewer}} for review\n"),
     },
-    async (srcRoot, distRoot) => {
-      makeStubAgent(srcRoot, "dev-tools", "code-reviewer");
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      makeStubAgent(repoRoot, "dev-tools", "code-reviewer");
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
       assert.match(out, /dispatch `dev-tools:code-reviewer` for review/);
     },
@@ -1236,14 +1126,12 @@ test("compile substitutes {{agent:plugin:name}} as the scoped `plugin:name` hand
 test("compile warns but still renders when {{agent:...}} resolves to neither a local nor an installed agent", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "see {{agent:dev-tools:ghost}}\n",
+      skillMd: skillMarkdown("bar", "see {{agent:dev-tools:ghost}}\n"),
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -1260,12 +1148,11 @@ test("compile warns but still renders when {{agent:...}} resolves to neither a l
 test("compile fails when {{agent:...}} value does not have <plugin>:<agent> shape", async () => {
   await withSkillFixture(
     {
-      skillSource: SKILL_TS_BARE,
-      bodyMd: "{{agent:lonelyid}}\n",
+      skillMd: skillMarkdown("bar", "{{agent:lonelyid}}\n"),
     },
-    async (srcRoot, distRoot) => {
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /<plugin>:<agent>/,
       );
     },
@@ -1276,14 +1163,12 @@ test("compile resolves {{agent:...}} against an installed plugin and renders the
   await withInstalledSources([{ plugin: "dev-tools", agent: "code-reviewer" }], async (sources) => {
     await withSkillFixture(
       {
-        skillSource: SKILL_TS_BARE,
-        bodyMd: "dispatch {{agent:dev-tools:code-reviewer}} for review\n",
+        skillMd: skillMarkdown("bar", "dispatch {{agent:dev-tools:code-reviewer}} for review\n"),
       },
-      async (srcRoot, distRoot) => {
+      async (repoRoot, distRoot) => {
         const warnings: string[] = [];
         await compilePlugins({
-          srcRoot,
-          outRoot: distRoot,
+          layout: testLayout(repoRoot, distRoot),
           vendors,
           sources,
           onWarnings: (_file, ws) => warnings.push(...ws),
@@ -1300,11 +1185,10 @@ test("compile resolves {{command:...}} against an installed plugin and renders `
   await withInstalledSources([{ plugin: "dev-tools", command: "open-pr" }], async (sources) => {
     await withSkillFixture(
       {
-        skillSource: SKILL_TS_BARE,
-        bodyMd: "run {{command:dev-tools:open-pr}} after merging\n",
+        skillMd: skillMarkdown("bar", "run {{command:dev-tools:open-pr}} after merging\n"),
       },
-      async (srcRoot, distRoot) => {
-        await compilePlugins({ srcRoot, outRoot: distRoot, vendors, sources });
+      async (repoRoot, distRoot) => {
+        await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors, sources });
         const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
         assert.match(out, /run `\/dev-tools:open-pr` after merging/);
       },
@@ -1318,11 +1202,13 @@ test("compile renders {{agent:code-simplifier:code-simplifier}} for a plugin who
     async (sources) => {
       await withSkillFixture(
         {
-          skillSource: SKILL_TS_BARE,
-          bodyMd: "dispatch {{agent:code-simplifier:code-simplifier}} after coding\n",
+          skillMd: skillMarkdown(
+            "bar",
+            "dispatch {{agent:code-simplifier:code-simplifier}} after coding\n",
+          ),
         },
-        async (srcRoot, distRoot) => {
-          await compilePlugins({ srcRoot, outRoot: distRoot, vendors, sources });
+        async (repoRoot, distRoot) => {
+          await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors, sources });
           const out = readFileSync(
             join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"),
             "utf8",
@@ -1337,16 +1223,13 @@ test("compile renders {{agent:code-simplifier:code-simplifier}} for a plugin who
 test("compile substitutes placeholders in an undeclared .md file", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
         "notes/part.md": "shared body\n",
         "notes/scratch.md": "doc {{include:./part.md}} end\n",
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       const out = readFileSync(join(distRoot, "claude/plugins/foo/notes/scratch.md"), "utf8");
       assert.match(out, /shared body/);
       assert.doesNotMatch(out, /\{\{include/);
@@ -1354,27 +1237,26 @@ export default definePlugin({ name: "foo", version: "1.0.0", description: "demo"
   );
 });
 
+function hookRequiresManifest(
+  hookRequires: ReadonlyArray<Record<string, string>>,
+): Record<string, unknown> {
+  return pluginManifest("foo", { extensions: { harness: { hookRequires } } });
+}
+
 test("compile accepts hookRequires that point to existing local artifacts", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({
-  name: "foo",
-  version: "1.0.0",
-  description: "demo",
-  hookRequires: [
-    { event: "SessionStart", skill: "foo:bar" },
-    { event: "UserPromptSubmit", command: "foo:open" },
-    { event: "Stop", agent: "foo:rev" },
-  ],
-});
-`,
+      manifest: hookRequiresManifest([
+        { event: "SessionStart", skill: "foo:bar" },
+        { event: "UserPromptSubmit", command: "foo:open" },
+        { event: "Stop", agent: "foo:rev" },
+      ]),
     },
-    async (srcRoot, distRoot) => {
-      makeStubSkill(srcRoot, "foo", "bar");
-      makeStubCommand(srcRoot, "foo", "open");
-      makeStubAgent(srcRoot, "foo", "rev");
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      makeStubSkill(repoRoot, "foo", "bar");
+      makeStubCommand(repoRoot, "foo", "open");
+      makeStubAgent(repoRoot, "foo", "rev");
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       assert.ok(existsSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json")));
     },
   );
@@ -1382,19 +1264,10 @@ export default definePlugin({
 
 test("compile fails when a hookRequires skill slug is not a local skill", async () => {
   await withPluginFixture(
-    {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({
-  name: "foo",
-  version: "1.0.0",
-  description: "demo",
-  hookRequires: [{ event: "SessionStart", skill: "foo:ghost" }],
-});
-`,
-    },
-    async (srcRoot, distRoot) => {
+    { manifest: hookRequiresManifest([{ event: "SessionStart", skill: "foo:ghost" }]) },
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /hookRequires.*foo:ghost.*not a local skill/i,
       );
     },
@@ -1403,19 +1276,10 @@ export default definePlugin({
 
 test("compile fails when a hookRequires command slug is not a local command", async () => {
   await withPluginFixture(
-    {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({
-  name: "foo",
-  version: "1.0.0",
-  description: "demo",
-  hookRequires: [{ event: "UserPromptSubmit", command: "foo:ghost" }],
-});
-`,
-    },
-    async (srcRoot, distRoot) => {
+    { manifest: hookRequiresManifest([{ event: "UserPromptSubmit", command: "foo:ghost" }]) },
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /hookRequires.*foo:ghost.*not a local command/i,
       );
     },
@@ -1424,52 +1288,55 @@ export default definePlugin({
 
 test("compile fails when a hookRequires agent slug is not a local agent", async () => {
   await withPluginFixture(
-    {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({
-  name: "foo",
-  version: "1.0.0",
-  description: "demo",
-  hookRequires: [{ event: "Stop", agent: "foo:ghost" }],
-});
-`,
-    },
-    async (srcRoot, distRoot) => {
+    { manifest: hookRequiresManifest([{ event: "Stop", agent: "foo:ghost" }]) },
+    async (repoRoot, distRoot) => {
       await assert.rejects(
-        compilePlugins({ srcRoot, outRoot: distRoot, vendors }),
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
         /hookRequires.*foo:ghost.*not a local agent/i,
       );
     },
   );
 });
 
-test("compile accepts a cross-plugin {{skill:other:bar}} reference when `other` is declared as a dependency (declaration remains supported as manifest metadata)", async () => {
+test("compile cites the plugin.json path when a hookRequires slug is unresolved", async () => {
+  await withPluginFixture(
+    { manifest: hookRequiresManifest([{ event: "Stop", agent: "foo:ghost" }]) },
+    async (repoRoot, distRoot) => {
+      await assert.rejects(
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
+        (error: unknown) =>
+          error instanceof Error &&
+          error.message.includes(join(repoRoot, "plugins/foo/plugin.json")),
+      );
+    },
+  );
+});
+
+test("compile fails when extensions.harness.hookRequires sets more than one slug", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({
-  name: "foo",
-  version: "1.0.0",
-  description: "demo",
-  dependencies: ["other"],
+      manifest: hookRequiresManifest([{ event: "Stop", skill: "foo:bar", agent: "foo:rev" }]),
+    },
+    async (repoRoot, distRoot) => {
+      await assert.rejects(
+        compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors }),
+        /extensions\.harness: .*exactly one of skill \| command \| agent/,
+      );
+    },
+  );
 });
-`,
+
+test("compile accepts a cross-plugin {{skill:other:tdd}} reference when `other` is declared as an extensions.claude dependency", async () => {
+  await withPluginFixture(
+    {
+      manifest: pluginManifest("foo", { extensions: { claude: { dependencies: ["other"] } } }),
       extraFiles: {
-        "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "demo" });
-`,
-        "skills/bar/body.md": "see {{skill:other:tdd}}\n",
+        "skills/bar/SKILL.md": skillMarkdown("bar", "see {{skill:other:tdd}}\n"),
       },
     },
-    async (srcRoot, distRoot) => {
-      const otherDir = join(srcRoot, "plugins/other");
-      mkdirSync(otherDir, { recursive: true });
-      writeFileSync(
-        join(otherDir, "PLUGIN.ts"),
-        `import { definePlugin } from "#harness-kit";\nexport default definePlugin({ name: "other", version: "1.0.0", description: "demo" });\n`,
-      );
-      makeStubSkill(srcRoot, "other", "tdd");
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      makeStubSkill(repoRoot, "other", "tdd");
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       assert.ok(existsSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md")));
     },
   );
@@ -1478,28 +1345,15 @@ export default defineSkill({ name: "bar", description: "demo" });
 test("compile permits a cross-plugin {{skill:other:tdd}} reference between sibling local plugins without any dependencies declared", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
-        "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "demo" });
-`,
-        "skills/bar/body.md": "see {{skill:other:tdd}}\n",
+        "skills/bar/SKILL.md": skillMarkdown("bar", "see {{skill:other:tdd}}\n"),
       },
     },
-    async (srcRoot, distRoot) => {
-      const otherDir = join(srcRoot, "plugins/other");
-      mkdirSync(otherDir, { recursive: true });
-      writeFileSync(
-        join(otherDir, "PLUGIN.ts"),
-        `import { definePlugin } from "#harness-kit";\nexport default definePlugin({ name: "other", version: "1.0.0", description: "demo" });\n`,
-      );
-      makeStubSkill(srcRoot, "other", "tdd");
+    async (repoRoot, distRoot) => {
+      makeStubSkill(repoRoot, "other", "tdd");
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -1513,28 +1367,15 @@ export default defineSkill({ name: "bar", description: "demo" });
 test("compile permits a cross-plugin {{command:other:open}} reference between sibling local plugins without any dependencies declared", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
-        "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "demo" });
-`,
-        "skills/bar/body.md": "run {{command:other:open}}\n",
+        "skills/bar/SKILL.md": skillMarkdown("bar", "run {{command:other:open}}\n"),
       },
     },
-    async (srcRoot, distRoot) => {
-      const otherDir = join(srcRoot, "plugins/other");
-      mkdirSync(otherDir, { recursive: true });
-      writeFileSync(
-        join(otherDir, "PLUGIN.ts"),
-        `import { definePlugin } from "#harness-kit";\nexport default definePlugin({ name: "other", version: "1.0.0", description: "demo" });\n`,
-      );
-      makeStubCommand(srcRoot, "other", "open");
+    async (repoRoot, distRoot) => {
+      makeStubCommand(repoRoot, "other", "open");
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -1548,28 +1389,15 @@ export default defineSkill({ name: "bar", description: "demo" });
 test("compile permits a cross-plugin {{agent:other:reviewer}} reference between sibling local plugins without any dependencies declared", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
-        "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "demo" });
-`,
-        "skills/bar/body.md": "dispatch {{agent:other:reviewer}}\n",
+        "skills/bar/SKILL.md": skillMarkdown("bar", "dispatch {{agent:other:reviewer}}\n"),
       },
     },
-    async (srcRoot, distRoot) => {
-      const otherDir = join(srcRoot, "plugins/other");
-      mkdirSync(otherDir, { recursive: true });
-      writeFileSync(
-        join(otherDir, "PLUGIN.ts"),
-        `import { definePlugin } from "#harness-kit";\nexport default definePlugin({ name: "other", version: "1.0.0", description: "demo" });\n`,
-      );
-      makeStubAgent(srcRoot, "other", "reviewer");
+    async (repoRoot, distRoot) => {
+      makeStubAgent(repoRoot, "other", "reviewer");
       const warnings: string[] = [];
       await compilePlugins({
-        srcRoot,
-        outRoot: distRoot,
+        layout: testLayout(repoRoot, distRoot),
         vendors,
         onWarnings: (_file, ws) => warnings.push(...ws),
       });
@@ -1583,22 +1411,16 @@ export default defineSkill({ name: "bar", description: "demo" });
 test("compile permits same-plugin {{skill:foo:bar}} reference without any dependencies declared", async () => {
   await withPluginFixture(
     {
-      pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
       extraFiles: {
-        "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "demo" });
-`,
-        "skills/bar/body.md": "no self-loop, but: {{skill:foo:other-skill}}\n",
-        "skills/other-skill/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "other-skill", description: "demo" });
-`,
-        "skills/other-skill/body.md": "# Other\n",
+        "skills/bar/SKILL.md": skillMarkdown(
+          "bar",
+          "no self-loop, but: {{skill:foo:other-skill}}\n",
+        ),
+        "skills/other-skill/SKILL.md": skillMarkdown("other-skill", "# Other\n"),
       },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
+    async (repoRoot, distRoot) => {
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
       assert.ok(existsSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md")));
     },
   );
@@ -1608,18 +1430,12 @@ test("compile does NOT enforce dependencies on a {{skill:...}} that resolves out
   await withInstalledSources([{ plugin: "other", skill: "tdd" }], async (sources) => {
     await withPluginFixture(
       {
-        pluginSource: `import { definePlugin } from "#harness-kit";
-export default definePlugin({ name: "foo", version: "1.0.0", description: "demo" });
-`,
         extraFiles: {
-          "skills/bar/SKILL.ts": `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "demo" });
-`,
-          "skills/bar/body.md": "external ref: {{skill:other:tdd}}\n",
+          "skills/bar/SKILL.md": skillMarkdown("bar", "external ref: {{skill:other:tdd}}\n"),
         },
       },
-      async (srcRoot, distRoot) => {
-        await compilePlugins({ srcRoot, outRoot: distRoot, vendors, sources });
+      async (repoRoot, distRoot) => {
+        await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors, sources });
         const out = readFileSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md"), "utf8");
         assert.match(out, /external ref: `other:tdd`/);
       },
@@ -1627,120 +1443,20 @@ export default defineSkill({ name: "bar", description: "demo" });
   });
 });
 
-async function withRawPluginJson<T>(
-  manifest: Record<string, unknown>,
-  fn: (srcRoot: string, distRoot: string) => Promise<T>,
-): Promise<T> {
-  const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_"));
-  const srcRoot = join(sandbox, "src");
-  const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
-  const pluginName = manifest["name"] as string;
-  const pluginDir = join(srcRoot, "plugins", pluginName);
-  mkdirSync(join(pluginDir, ".claude-plugin"), { recursive: true });
-  writeFileSync(
-    join(pluginDir, ".claude-plugin/plugin.json"),
-    JSON.stringify(manifest, null, 2) + "\n",
-  );
-  mkdirSync(join(srcRoot, ".claude-plugin"), { recursive: true });
-  writeFileSync(
-    join(srcRoot, ".claude-plugin/marketplace.json"),
-    JSON.stringify(
-      {
-        name: "test-marketplace",
-        owner: { name: "harness-kit-tests" },
-        plugins: [{ name: pluginName, source: `./plugins/${pluginName}` }],
-      },
-      null,
-      2,
-    ) + "\n",
-  );
-  return fn(srcRoot, distRoot).finally(() => {
-    rmSync(sandbox, { recursive: true, force: true });
-    rmSync(distRoot, { recursive: true, force: true });
-  });
-}
-
-test("compile preserves upstream passthrough keys in emitted plugin.json", async () => {
-  await withRawPluginJson(
+test("compile emits object-form extensions.claude dependencies into the claude plugin manifest", async () => {
+  const dependencies = [{ name: "other", marketplace: "claude-plugins-official" }];
+  await withPluginFixture(
     {
-      name: "foo",
-      version: "1.0.0",
-      description: "demo",
-      category: "development",
-      tags: ["ai", "tools"],
-      mcpServers: { example: { command: "node", args: ["server.js"] } },
+      manifest: pluginManifest("foo", { extensions: { claude: { dependencies } } }),
+      extraFiles: {
+        "skills/bar/SKILL.md": skillMarkdown("bar", "see {{skill:other:tdd}}\n"),
+      },
     },
-    async (srcRoot, distRoot) => {
-      await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
-      const emitted = JSON.parse(
-        readFileSync(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json"), "utf8"),
-      ) as Record<string, unknown>;
-      assert.equal(emitted["category"], "development");
-      assert.deepEqual(emitted["tags"], ["ai", "tools"]);
-      assert.ok(emitted["mcpServers"]);
+    async (repoRoot, distRoot) => {
+      makeStubSkill(repoRoot, "other", "tdd");
+      await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
+      const manifest = readJson(join(distRoot, "claude/plugins/foo/.claude-plugin/plugin.json"));
+      assert.deepEqual(manifest["dependencies"], dependencies);
     },
   );
-});
-
-test("compile accepts object-form dependencies on sibling cross-plugin references", async () => {
-  const sandbox = mkdtempSync(join(fixturesRoot, "_tmp_"));
-  const srcRoot = join(sandbox, "src");
-  const distRoot = mkdtempSync(join(tmpdir(), "harness-kit-dist-"));
-  try {
-    const fooDir = join(srcRoot, "plugins/foo");
-    mkdirSync(join(fooDir, ".claude-plugin"), { recursive: true });
-    writeFileSync(
-      join(fooDir, ".claude-plugin/plugin.json"),
-      JSON.stringify(
-        {
-          name: "foo",
-          version: "1.0.0",
-          description: "demo",
-          dependencies: [{ name: "other", marketplace: "claude-plugins-official" }],
-        },
-        null,
-        2,
-      ) + "\n",
-    );
-    const skillDir = join(fooDir, "skills/bar");
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(
-      join(skillDir, "SKILL.ts"),
-      `import { defineSkill } from "#harness-kit";
-export default defineSkill({ name: "bar", description: "demo" });
-`,
-    );
-    writeFileSync(join(skillDir, "body.md"), "see {{skill:other:tdd}}\n");
-
-    const otherDir = join(srcRoot, "plugins/other");
-    mkdirSync(join(otherDir, ".claude-plugin"), { recursive: true });
-    writeFileSync(
-      join(otherDir, ".claude-plugin/plugin.json"),
-      JSON.stringify({ name: "other", version: "1.0.0", description: "demo" }, null, 2) + "\n",
-    );
-    makeStubSkill(srcRoot, "other", "tdd");
-
-    mkdirSync(join(srcRoot, ".claude-plugin"), { recursive: true });
-    writeFileSync(
-      join(srcRoot, ".claude-plugin/marketplace.json"),
-      JSON.stringify(
-        {
-          name: "test-marketplace",
-          owner: { name: "harness-kit-tests" },
-          plugins: [
-            { name: "foo", source: "./plugins/foo" },
-            { name: "other", source: "./plugins/other" },
-          ],
-        },
-        null,
-        2,
-      ) + "\n",
-    );
-
-    await compilePlugins({ srcRoot, outRoot: distRoot, vendors });
-    assert.ok(existsSync(join(distRoot, "claude/plugins/foo/skills/bar/SKILL.md")));
-  } finally {
-    rmSync(sandbox, { recursive: true, force: true });
-    rmSync(distRoot, { recursive: true, force: true });
-  }
 });

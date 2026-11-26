@@ -13,9 +13,9 @@ import {
 } from "../skill/index.js";
 import {
   collectLocalIds,
-  formatLayoutError,
-  loadLayout,
-  type LayoutAdapter,
+  layoutAt,
+  loadCatalogOrThrow,
+  type Catalog,
   type ResolvedPlugin,
 } from "../layout/index.js";
 import {
@@ -40,7 +40,7 @@ import { unifiedKindConfigs, type KindConfig, type ReferencePrefix } from "./kin
 import { closestMatch } from "./suggest.js";
 
 export interface CheckOptions {
-  readonly srcRoot: string;
+  readonly repoRoot: string;
   readonly docRoots?: readonly string[];
   readonly sources?: readonly PluginSource[];
 }
@@ -115,17 +115,16 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
     skillCount: artifacts.skills.filter((i) => i.source === s.name).length,
   }));
 
-  const loaded = await loadLayout(options.srcRoot);
-  if (!loaded.ok) throw new Error(`failed to load layout: ${formatLayoutError(loaded.error)}`);
-  const localAdapter = loaded.value;
-  const localIds = await collectLocalIds(localAdapter);
-  const localPlugins = new Set(localAdapter.plugins.map((p) => p.name));
+  const layout = layoutAt(options.repoRoot);
+  const catalog = await loadCatalogOrThrow(layout);
+  const localIds = await collectLocalIds(catalog);
+  const localPlugins = new Set(catalog.plugins.map((p) => p.name));
 
   const kinds = unifiedKindConfigs(localIds, installedIndex, localPlugins);
   const haystacks = bypassHaystacks(kinds);
   const leafIndex = buildLeafIndex(haystacks);
 
-  const bodies = await collectBodySources(localAdapter, options.docRoots ?? []);
+  const bodies = await collectBodySources(catalog, options.docRoots ?? []);
   const violations: ReferenceViolation[] = [];
   const warnings: Warning[] = [];
   for (const source of bodies) {
@@ -136,7 +135,7 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
     for (const violation of findBarewordBypasses(source, leafIndex, skip)) {
       violations.push(violation);
     }
-    for (const violation of await findRefBypasses(source, options.srcRoot, skip)) {
+    for (const violation of await findRefBypasses(source, layout.repoRoot, skip)) {
       violations.push(violation);
     }
     for (const violation of findEscapingRefs(source)) {
@@ -237,7 +236,7 @@ function findEscapingRefs(source: BodySource): readonly ReferenceViolation[] {
       file: source.filePath,
       line,
       column,
-      message: `\`${token.value}\` ref resolves outside its plugin — \`{{ref:}}\` renders a relative runtime path and is same-plugin only; the installed layout nests each plugin under a version directory that \`src/\` does not have, so this resolves in \`src/\` and breaks once installed`,
+      message: `\`${token.value}\` ref resolves outside its plugin — \`{{ref:}}\` renders a relative runtime path and is same-plugin only; the installed layout nests each plugin under a version directory that the source tree does not have, so this resolves in the source tree and breaks once installed`,
     });
   }
   return violations;
@@ -249,7 +248,7 @@ function escapesPlugin(target: string, boundary: string): boolean {
 }
 
 async function collectBodySources(
-  adapter: LayoutAdapter,
+  catalog: Catalog,
   docRoots: readonly string[],
 ): Promise<readonly BodySource[]> {
   const seen = new Set<string>();
@@ -269,13 +268,13 @@ async function collectBodySources(
     });
   };
 
-  for (const plugin of adapter.plugins) {
+  for (const plugin of catalog.plugins) {
     for (const file of await collectPluginBodies(plugin)) {
       await push(file);
     }
   }
 
-  for (const file of await collectDocBodies(docRoots, adapter)) {
+  for (const file of await collectDocBodies(docRoots, catalog)) {
     await push(file);
   }
 
@@ -284,9 +283,9 @@ async function collectBodySources(
 
 async function collectDocBodies(
   docRoots: readonly string[],
-  adapter: LayoutAdapter,
+  catalog: Catalog,
 ): Promise<readonly CollectedBody[]> {
-  const ownedByPlugin = pluginOwnershipTest(adapter);
+  const ownedByPlugin = pluginOwnershipTest(catalog);
   const out: CollectedBody[] = [];
   for (const root of docRoots) {
     for await (const filePath of markdownUnder(resolve(root))) {
@@ -303,8 +302,8 @@ async function collectDocBodies(
   return out;
 }
 
-function pluginOwnershipTest(adapter: LayoutAdapter): (filePath: string) => boolean {
-  const pluginDirs = adapter.plugins.map((plugin) => `${resolve(plugin.pluginDir)}${sep}`);
+function pluginOwnershipTest(catalog: Catalog): (filePath: string) => boolean {
+  const pluginDirs = catalog.plugins.map((plugin) => `${resolve(plugin.pluginDir)}${sep}`);
   return (filePath) => pluginDirs.some((dir) => filePath.startsWith(dir));
 }
 
@@ -338,8 +337,7 @@ async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly Col
     for (const entry of await readdir(plugin.skillsDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const skillDir = join(plugin.skillsDir, entry.name);
-      const found = await findSkillFile(skillDir);
-      if (!found.ok || !found.value) continue;
+      if ((await findSkillFile(skillDir)) === null) continue;
       out.push(...(await loadSkillBodies(skillDir, plugin.pluginDir)));
     }
   }
@@ -377,9 +375,9 @@ async function loadSkillBodies(
       `failed to load skill at ${skillDir}:\n  - ${formatLoadSkillError(loaded.error).join("\n  - ")}`,
     );
   }
-  const { skill, body, bodyFilePath, bodyOffset, skillDir: dir } = loaded.value;
+  const { skill, body, skillFilePath, bodyOffset, skillDir: dir } = loaded.value;
   const origin = { role: "skill", ownLeaf: basename(dir) } as const;
-  const primary: CollectedBody = { filePath: bodyFilePath, body, bodyOffset, refBoundary, origin };
+  const primary: CollectedBody = { filePath: skillFilePath, body, bodyOffset, refBoundary, origin };
   const declared = skill.companions ?? [];
   const present = await Promise.all(declared.map(async (c) => pathExists(join(dir, c.file))));
   const missing = checkCompanionFiles(
@@ -401,7 +399,6 @@ async function loadSkillBodies(
       };
     }),
   );
-  if (loaded.value.source !== "md") return [primary, ...companions];
   const skillText = await readFile(loaded.value.skillFilePath, "utf8");
   const frontmatter = frontmatterBodies(
     skillText,

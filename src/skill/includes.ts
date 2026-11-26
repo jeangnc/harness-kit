@@ -11,9 +11,20 @@ export type IncludeError =
   | { readonly tag: "include-anchor-without-path"; readonly raw: string; readonly name: string }
   | { readonly tag: "include-empty"; readonly raw: string };
 
+export interface SourceView {
+  readonly logical: (physicalPath: string) => string;
+  readonly physical: (logicalPath: string) => string;
+}
+
+export const IDENTITY_VIEW: SourceView = {
+  logical: (physicalPath) => physicalPath,
+  physical: (logicalPath) => logicalPath,
+};
+
 export interface IncludeRoots {
   readonly repoRoot: string;
   readonly named: Readonly<Record<string, string>>;
+  readonly view?: SourceView;
 }
 
 export interface ExpandedBody {
@@ -87,14 +98,15 @@ function resolveInclude(
     return err({ tag: "include-empty", raw: token.raw });
   }
   const rel = token.value.trim();
-  const resolution = resolveTarget(rel, fromFile, roots);
+  const view = roots.view ?? IDENTITY_VIEW;
+  const resolution = resolveTarget(rel, view.logical(fromFile), roots);
   if (resolution.kind === "unknown-root") {
     return err({ tag: "include-unknown-root", raw: token.raw, name: resolution.name });
   }
   if (resolution.kind === "anchor-without-path") {
     return err({ tag: "include-anchor-without-path", raw: token.raw, name: resolution.name });
   }
-  return ok({ target: resolution.target, rel });
+  return ok({ target: view.physical(resolution.target), rel });
 }
 
 async function expand(

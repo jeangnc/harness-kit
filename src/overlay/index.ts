@@ -1,9 +1,10 @@
 import type { Dirent } from "node:fs";
 import { readdir, readFile, readlink } from "node:fs/promises";
-import { join, posix } from "node:path";
+import { join, posix, relative, sep } from "node:path";
 
 import { errnoCode } from "../fs.js";
 import { err, ok, type Result } from "../result.js";
+import type { SourceView } from "../skill/index.js";
 
 export interface EffectiveTree {
   readonly root: string;
@@ -45,6 +46,28 @@ export async function effectiveTree(
 
 export function resolveIn(tree: EffectiveTree, relPath: string): string | undefined {
   return tree.files.get(relPath);
+}
+
+export function sourceView(trees: readonly EffectiveTree[]): SourceView {
+  const logicalByPhysical = new Map(
+    trees.flatMap((tree) =>
+      [...tree.files].map(([relPath, absPath]) => [absPath, join(tree.root, relPath)] as const),
+    ),
+  );
+  return {
+    logical: (physicalPath) => logicalByPhysical.get(physicalPath) ?? physicalPath,
+    physical: (logicalPath) => physicalIn(trees, logicalPath) ?? logicalPath,
+  };
+}
+
+function physicalIn(trees: readonly EffectiveTree[], logicalPath: string): string | undefined {
+  for (const tree of trees) {
+    const rel = relative(tree.root, logicalPath);
+    if (rel.startsWith("..") || rel === "") continue;
+    const hit = tree.files.get(rel.split(sep).join("/"));
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
 }
 
 export function formatOverlayError(error: OverlayError): string {

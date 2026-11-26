@@ -1,3 +1,3 @@
-# Should not be copied to dist
+# Should not be copied to the build
 
-This file lives at the srcRoot top level and is not part of `plugins/` or `.claude-plugin/`.
+This file lives at the repo root and is not part of `plugins/`.
