@@ -31,7 +31,7 @@ function seedMinimalPlugin(
   mkdirSync(repoRoot, { recursive: true });
   writeFileSync(
     join(repoRoot, "harness.yaml"),
-    "marketplace: test-marketplace\nowner:\n  name: test\nvendors: [claude, codex]\n",
+    "marketplace: test-marketplace\nowner:\n  name: test\nvendors: { claude: { ref: harness/claude }, codex: { ref: harness/codex } }\n",
   );
   const pluginDir = join(repoRoot, "plugins", pluginName);
   mkdirSync(pluginDir, { recursive: true });
@@ -265,6 +265,23 @@ test("compilePlugins keeps extensions.claude keys out of the codex plugin manife
     equal("dependencies" in manifest, false);
     equal("$schema" in manifest, false);
     equal("extensions" in manifest, false);
+  });
+});
+
+test("compilePlugins merges vendors.claude.catalog into the claude catalog without overriding its name", async () => {
+  await withSandbox(async (root) => {
+    const repoRoot = join(root, "repo");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(repoRoot, "theta");
+    writeFileSync(
+      join(repoRoot, "harness.yaml"),
+      "marketplace: test-marketplace\nowner:\n  name: test\nvendors:\n  claude:\n    ref: harness/claude\n    catalog: { name: other, homepage: https://example.com }\n",
+    );
+
+    await compilePlugins({ layout: testLayout(repoRoot, outRoot), vendors: [claudeVendor] });
+
+    const catalog = readJson(join(outRoot, "claude/.claude-plugin/marketplace.json"));
+    deepEqual([catalog["name"], catalog["homepage"]], ["test-marketplace", "https://example.com"]);
   });
 });
 

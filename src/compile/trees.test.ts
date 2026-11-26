@@ -19,7 +19,7 @@ async function withPlugin(
   try {
     writeFileSync(
       join(repoRoot, "harness.yaml"),
-      "marketplace: m\nowner:\n  name: t\nvendors: [claude, codex]\n",
+      "marketplace: m\nowner:\n  name: t\nvendors: { claude: { ref: harness/claude }, codex: { ref: harness/codex } }\n",
     );
     const pluginDir = join(repoRoot, "plugins/foo");
     mkdirSync(pluginDir, { recursive: true });

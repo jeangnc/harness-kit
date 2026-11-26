@@ -4,7 +4,10 @@ import type { Vendor } from "./schema.js";
 
 export async function resolveVendorsForRepo(repoRoot: string): Promise<readonly Vendor[]> {
   const config = await loadHarnessConfig(repoRoot);
-  return resolveVendors(config.vendors, builtinVendors());
+  return resolveVendors(
+    config.vendors.map((declaration) => declaration.name),
+    builtinVendors(),
+  );
 }
 
 export function resolveVendors(

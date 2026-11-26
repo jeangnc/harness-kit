@@ -64,11 +64,6 @@
       "count": 11
     }
   },
-  "src/config/harness.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 15
-    }
-  },
   "src/configs/emit.test.ts": {
     "tenets/destructure-dot-access": {
       "count": 3
@@ -167,11 +162,6 @@
   "src/install/discovery.test.ts": {
     "tenets/destructure-dot-access": {
       "count": 6
-    }
-  },
-  "src/install/index.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 59
     }
   },
   "src/install/mode.test.ts": {

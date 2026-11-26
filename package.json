@@ -1,6 +1,6 @@
 {
   "name": "@jean.gnc/harness-kit",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "description": "Author agent plugins once in a vendor-neutral tree and publish native Claude Code and Codex marketplaces from it.",
   "license": "MIT",

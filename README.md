@@ -23,24 +23,24 @@ For people who use a published harness repo. Replace `<owner>/<repo>`, `<plugin>
 Claude Code:
 
 ```sh
-claude plugin marketplace add <owner>/<repo>#claude
+claude plugin marketplace add <owner>/<repo>#harness/claude
 claude plugin install <plugin>@<marketplace>
 ```
 
 Codex:
 
 ```sh
-codex plugin marketplace add <owner>/<repo> --ref codex
+codex plugin marketplace add <owner>/<repo> --ref harness/codex
 codex plugin add <plugin>@<marketplace>
 ```
 
-Each vendor installs from the branch named after it. The release workflow keeps those branches current.
+Each vendor installs from the `ref` its `harness.yaml` declares (`harness/<vendor>` by default from `harness init`). The release workflow keeps those branches current.
 
 Working on the harness repo itself? Run `harness build && harness install` to install the local build from `.harness/<vendor>/`. See [docs/cli.md](./docs/cli.md#harness-install).
 
 ## How it works
 
-You write plugins and configs once on `main`, declare which vendors to target, and `harness build` emits a per-vendor tree under `.harness/` (gitignored). `harness publish` pushes each tree to a branch named after its vendor, and vendor CLIs install from that branch. Codex runtime files remain user-owned.
+You write plugins and configs once on `main`, declare which vendors to target, and `harness build` emits a per-vendor tree under `.harness/` (gitignored). `harness publish` pushes each tree to the branch its vendor declares, and vendor CLIs install from that branch. Codex runtime files remain user-owned.
 
 ### `harness.yaml`
 
@@ -51,8 +51,10 @@ marketplace: my-harness
 owner:
   name: you
 vendors:
-  - claude
-  - codex
+  claude:
+    ref: harness/claude
+  codex:
+    ref: harness/codex
 roots: # optional — named include aliases (see docs/authoring.md)
   shared: shared
 ```
@@ -72,7 +74,7 @@ Writing your own vendor: see [docs/vendors.md](./docs/vendors.md).
 
 | Path | What it is |
 | --- | --- |
-| `harness.yaml` | Marketplace name, owner, vendors, and optional named roots. |
+| `harness.yaml` | Marketplace name, owner, vendors with their refs, and optional named roots. |
 | `plugins/<plugin>/plugin.json` | The plugin manifest ([Agent Plugins 1.0](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json)). Vendor fields go under `extensions.<vendor>`. |
 | `plugins/<plugin>/` | Everything else in the plugin — `skills/<name>/SKILL.md`, plus optional `agents/`, `commands/`, and `hooks/`. |
 | `plugins/<plugin>/<vendor>/` | Vendor overlay. A file at the same relative path replaces the neutral file; other files are added. |
@@ -117,7 +119,7 @@ harness init      # scaffold harness.yaml, plugins/, configs/, and .github/workf
 harness build     # build plugins/ + configs/ → .harness/<vendor>/ per declared vendor
 harness lint      # lint built markdown under .harness/
 harness check     # validate plugin references against local + installed sources
-harness publish   # push each .harness/<vendor>/ to the branch named after the vendor
+harness publish   # push each .harness/<vendor>/ to its declared ref
 harness install   # bootstrap: link configs + register plugins per declared vendor (--mode=local|remote)
 harness update    # refresh plugins for an already-installed harness; skips config links, reports version diff
 harness migrate-runtime --vendor codex # back up and detach legacy runtime links before building
@@ -142,7 +144,7 @@ Run `harness migrate-runtime --vendor codex --dry-run` before rebuilding an exis
 
 Publish Codex static defaults with `harness install-defaults --vendor codex`; `--dry-run` previews the destination. Only this command needs administrator permission for `/etc/codex/config.toml`. Existing machine defaults are backed up. Never elevate the whole plugin installer. User settings, personal instructions, hooks, and profiles stay in their native user locations and stop receiving automatic template updates.
 
-Local mode registers `.harness/codex` through Codex. Remote mode registers `<owner>/<repo>` at ref `codex` and upgrades it through Codex. Native commands run outside the invoking project and only select plugins enabled at user/system scope. Project and named-profile enablement is never promoted to a global setting. Unsupported native refreshes fail explicitly instead of editing settings or caches. Run `node scripts/smoke-codex.mjs` after building the toolkit (`pnpm build`) to verify native CLI integration in an isolated temporary home.
+Local mode registers `.harness/codex` through Codex. Remote mode registers `<owner>/<repo>` at `vendors.codex.ref`, re-registering an existing marketplace so a changed ref takes effect, and upgrades it through Codex. Native commands run outside the invoking project and only select plugins enabled at user/system scope. Project and named-profile enablement is never promoted to a global setting. Unsupported native refreshes fail explicitly instead of editing settings or caches. Run `node scripts/smoke-codex.mjs` after building the toolkit (`pnpm build`) to verify native CLI integration in an isolated temporary home.
 
 ## Requirements
 

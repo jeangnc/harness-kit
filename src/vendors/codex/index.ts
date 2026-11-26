@@ -8,6 +8,7 @@ import type { Vendor, VendorInstallContext } from "../../vendor/schema.js";
 import {
   installPlugin,
   listMarketplacePlugins,
+  listMarketplaceNames,
   registerGitMarketplace,
   registerMarketplace,
   removeMarketplace,
@@ -74,9 +75,12 @@ async function refreshPlugins(ctx: VendorInstallContext, native: Invocation): Pr
       marketplace: { name: ctx.marketplace, path: vendorBuild(ctx.distRoot, VENDOR_NAME).root },
     });
   } else {
+    if ((await listMarketplaceNames(native)).includes(ctx.marketplace)) {
+      await removeMarketplace({ ...native, marketplace: ctx.marketplace });
+    }
     await registerGitMarketplace({
       ...native,
-      marketplace: { name: ctx.marketplace, repository: source.repository.slug, ref: VENDOR_NAME },
+      marketplace: { name: ctx.marketplace, repository: source.repository.slug, ref: source.ref },
     });
     await upgradeMarketplace({ ...native, marketplace: ctx.marketplace });
   }

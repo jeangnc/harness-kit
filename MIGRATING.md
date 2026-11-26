@@ -1,6 +1,34 @@
+# Migrating from 1.0 to 2.0
+
+2.0 moves per-vendor settings into a `vendors` map and makes each vendor declare the branch it publishes to. 1.0 published to `claude` and `codex`, which collides with the `claude/<slug>` and `codex/<slug>` branches that Claude Code and Codex create.
+
+1. Rewrite `vendors` and move `extensions.<vendor>` to `vendors.<vendor>.catalog`:
+
+   ```yaml
+   # 1.0
+   vendors: [claude, codex]
+   extensions:
+     claude:
+       homepage: https://example.com
+
+   # 2.0
+   vendors:
+     claude:
+       ref: harness/claude
+       catalog:
+         homepage: https://example.com
+     codex:
+       ref: harness/codex
+   ```
+
+2. Bump the workflow to `uses: jeangnc/harness-kit@v2`.
+3. Point `extraKnownMarketplaces` entries at the new ref: `{ "source": "github", "repo": "<owner>/<repo>", "ref": "harness/claude" }`, including any user `settings.json` copied by an earlier install.
+4. Push to `main`. The workflow creates the new branches. Delete the old `claude` and `codex` branches once users have moved.
+5. `harness update` repoints both vendors. Users without harness re-add once: `claude plugin marketplace add <owner>/<repo>#harness/claude`; `codex plugin marketplace remove <marketplace>` then `codex plugin marketplace add <owner>/<repo> --ref harness/codex`.
+
 # Migrating from 0.23 to 1.0
 
-1.0 changes the repo layout and how users install. There is no migrate command; move the files by hand, then rebuild and publish.
+1.0 changes the repo layout and how users install. Moving straight to 2.0, follow this section, then the one above, and use the 2.0 refs throughout. There is no migrate command; move the files by hand, then rebuild and publish.
 
 ## Layout
 
@@ -35,7 +63,7 @@ A 1.0 `plugin.json`:
 
 `$schema`, `name`, `version`, and `description` are required. `name` must match the folder name. Unknown top-level keys fail the build. Full reference: [docs/catalog.md](./docs/catalog.md).
 
-A 1.0 `harness.yaml`:
+A 1.0 `harness.yaml` (2.0 turns `vendors` into a map; see above):
 
 ```yaml
 marketplace: my-harness
@@ -48,14 +76,14 @@ roots:
 
 ## Commands
 
-| 0.23                                       | 1.0                                                                              |
-| ------------------------------------------ | -------------------------------------------------------------------------------- |
-| `harness compile --src ./src --out ./dist` | `harness build` (writes `.harness/`)                                             |
-| `harness lint --out ./dist`                | `harness lint`                                                                   |
-| `harness check --src ./src`                | `harness check`                                                                  |
-| `harness install --dist ./dist`            | `harness install`                                                                |
-| `harness init --marketplace m --vendors v` | Same, plus `--owner`. Also writes `.github/workflows/harness.yml`.               |
-| —                                          | `harness publish` pushes `.harness/<vendor>/` to the `claude` / `codex` branches |
+| 0.23                                       | 1.0                                                                  |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| `harness compile --src ./src --out ./dist` | `harness build` (writes `.harness/`)                                 |
+| `harness lint --out ./dist`                | `harness lint`                                                       |
+| `harness check --src ./src`                | `harness check`                                                      |
+| `harness install --dist ./dist`            | `harness install`                                                    |
+| `harness init --marketplace m --vendors v` | Same, plus `--owner`. Also writes `.github/workflows/harness.yml`.   |
+| —                                          | `harness publish` pushes `.harness/<vendor>/` to each vendor's `ref` |
 
 Every command takes `--repo` (default `.`). `--src`, `--out`, and `--dist` are gone, except `harness eval --dist`, which now defaults to `./.harness`.
 
@@ -70,7 +98,7 @@ Every command takes `--repo` (default `.`). `--src`, `--out`, and `--dist` are g
 5. Run `harness install`. It relinks configs from `.harness/` and removes links left pointing into `dist/`.
 6. Delete `dist/`.
 7. Add the release workflow. Copy it from [docs/action.md](./docs/action.md); `harness init` refuses to run over an existing `harness.yaml`.
-8. Push to `main`. The workflow publishes the `claude` and `codex` branches.
+8. Push to `main`. The workflow publishes each vendor's `ref`.
 9. If `configs/claude/settings.json` lists your marketplace under `extraKnownMarketplaces`, point that entry at the vendor branch: `{ "source": "github", "repo": "<owner>/<repo>", "ref": "claude" }`. Claude refuses to add a marketplace whose source differs from that entry. A user `settings.json` copied by an earlier install needs the same edit.
 
 ## End users

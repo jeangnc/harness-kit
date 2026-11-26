@@ -105,7 +105,7 @@ async function withLocalSrcFixture<T>(
   }
   writeFileSync(
     join(repoRoot, "harness.yaml"),
-    "marketplace: check-local-test\nowner:\n  name: harness-kit-tests\nvendors: [claude]\n",
+    "marketplace: check-local-test\nowner:\n  name: harness-kit-tests\nvendors: { claude: { ref: harness/claude } }\n",
   );
   return fn(repoRoot).finally(() => rmSync(repoRoot, { recursive: true, force: true }));
 }
@@ -1124,7 +1124,7 @@ test("check does not double-report a doc root that overlaps a plugin dir", async
 });
 
 const BOTH_VENDORS =
-  "marketplace: check-local-test\nowner:\n  name: harness-kit-tests\nvendors: [claude, codex]\n";
+  "marketplace: check-local-test\nowner:\n  name: harness-kit-tests\nvendors: { claude: { ref: harness/claude }, codex: { ref: harness/codex } }\n";
 
 function writeOverlaySkill(repoRoot: string, overlayRel: string): void {
   const skillDir = join(repoRoot, "plugins/foo", overlayRel);

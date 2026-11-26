@@ -18,7 +18,7 @@ function testLayout(repoRoot: string, distRoot: string): Layout {
 function seedPlugin(repoRoot: string, pluginName: string): void {
   writeFileSync(
     join(repoRoot, "harness.yaml"),
-    "marketplace: test-marketplace\nowner:\n  name: harness-kit-tests\nvendors: [claude]\n",
+    "marketplace: test-marketplace\nowner:\n  name: harness-kit-tests\nvendors: { claude: { ref: harness/claude } }\n",
   );
   const pluginDir = join(repoRoot, "plugins", pluginName);
   mkdirSync(pluginDir, { recursive: true });

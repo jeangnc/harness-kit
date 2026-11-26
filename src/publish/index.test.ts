@@ -177,6 +177,17 @@ test("publishBranch reports push-rejected when the remote refuses the push", asy
   });
 });
 
+test("publishBranch refuses a branch that holds source history", async () => {
+  await withSandbox(async ({ request, writeBuild, source, remote }) => {
+    source("push", "-q", "origin", "main");
+    writeBuild("plugins/a/SKILL.md", "a\n");
+    const result = await publishBranch({ ...request, branch: "main" });
+    if (result.ok) fail(`expected source-branch, got ${result.value.kind}`);
+    equal(result.error.kind, "source-branch");
+    equal(remote("rev-parse", "main"), source("rev-parse", "HEAD"));
+  });
+});
+
 function commitOf(outcome: PublishOutcome): string {
   switch (outcome.kind) {
     case "created":
@@ -187,7 +198,7 @@ function commitOf(outcome: PublishOutcome): string {
   }
 }
 
-test("publishVendors publishes each vendor build to the branch named after it", async () => {
+test("publishVendors publishes each vendor build to its declared ref", async () => {
   await withSandbox(async ({ request, writeBuild, remote }) => {
     const build = async (): Promise<void> => {
       writeBuild("plugins/a/SKILL.md", "a\n");
@@ -197,7 +208,10 @@ test("publishVendors publishes each vendor build to the branch named after it", 
     };
     const result = await publishVendors({
       layout: layoutAt(request.repoRoot),
-      vendors: ["claude", "codex"],
+      vendors: [
+        { name: "claude", ref: "harness/claude" },
+        { name: "codex", ref: "harness/codex" },
+      ],
       remote: "origin",
       build,
     });
@@ -205,11 +219,11 @@ test("publishVendors publishes each vendor build to the branch named after it", 
     deepEqual(
       result.value.map((outcome) => [outcome.kind, outcome.branch]),
       [
-        ["created", "claude"],
-        ["created", "codex"],
+        ["created", "harness/claude"],
+        ["created", "harness/codex"],
       ],
     );
-    equal(remote("show", "codex:plugins/a/SKILL.md"), "codex");
+    equal(remote("show", "harness/codex:plugins/a/SKILL.md"), "codex");
   });
 });
 
@@ -218,12 +232,12 @@ test("publishVendors publishes a fresh build instead of a stale one", async () =
     writeBuild("plugins/a/SKILL.md", "stale\n");
     const result = await publishVendors({
       layout: layoutAt(request.repoRoot),
-      vendors: ["claude"],
+      vendors: [{ name: "claude", ref: "harness/claude" }],
       remote: "origin",
       build: async () => writeBuild("plugins/a/SKILL.md", "fresh\n"),
     });
     if (!result.ok) fail(formatPublishError(result.error));
-    equal(remote("show", "claude:plugins/a/SKILL.md"), "fresh");
+    equal(remote("show", "harness/claude:plugins/a/SKILL.md"), "fresh");
   });
 });
 
@@ -233,7 +247,7 @@ test("publishVendors refuses a dirty source before building", async () => {
     let built = false;
     const result = await publishVendors({
       layout: layoutAt(request.repoRoot),
-      vendors: ["claude"],
+      vendors: [{ name: "claude", ref: "harness/claude" }],
       remote: "origin",
       build: async () => {
         built = true;

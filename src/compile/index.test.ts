@@ -31,7 +31,7 @@ const mdSourceRoot = join(fixturesRoot, "mdSource");
 const HARNESS_YAML = `marketplace: test-marketplace
 owner:
   name: harness-kit-tests
-vendors: [claude]
+vendors: { claude: { ref: harness/claude } }
 `;
 
 function testLayout(repoRoot: string, distRoot: string): Layout {

@@ -1,4 +1,4 @@
-export const ACTION_REF = "jeangnc/harness-kit@v1";
+export const ACTION_REF = "jeangnc/harness-kit@v2";
 
 const CONSUMER_WORKFLOW = `name: harness
 on:

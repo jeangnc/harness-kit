@@ -2,7 +2,7 @@
 
 `jeangnc/harness-kit` is a composite action that builds, checks, and lints a harness repo. In `release` mode it also regenerates one branch per vendor (`claude`, `codex`) from `.harness/<vendor>/`, so installers can point straight at a branch. `.harness/<vendor>/configs/` is never published.
 
-The action runs the CLI version from its own `package.json`, so `@v1.4.2` of the action always runs `@jean.gnc/harness-kit@1.4.2`. The floating `@v1` tag follows the latest `1.x` release.
+The action runs the CLI version from its own `package.json`, so `@v2.4.2` of the action always runs `@jean.gnc/harness-kit@2.4.2`. The floating `@v2` tag follows the latest `2.x` release.
 
 ## Usage
 
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: jeangnc/harness-kit@v1
+      - uses: jeangnc/harness-kit@v2
         with:
           mode: verify
 
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: jeangnc/harness-kit@v1
+      - uses: jeangnc/harness-kit@v2
         with:
           mode: release
 ```
@@ -65,6 +65,6 @@ Commits are authored as `github-actions[bot]`. Publishing never force-pushes; a 
 ## Installing from the published branches
 
 ```sh
-claude plugin marketplace add owner/repo#claude
-codex plugin marketplace add owner/repo --ref codex
+claude plugin marketplace add owner/repo#harness/claude
+codex plugin marketplace add owner/repo --ref harness/codex
 ```

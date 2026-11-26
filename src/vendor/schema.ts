@@ -20,7 +20,7 @@ export interface PluginPartition {
 
 export type InstallSource =
   | { readonly kind: "local" }
-  | { readonly kind: "remote"; readonly repository: Repository };
+  | { readonly kind: "remote"; readonly repository: Repository; readonly ref: string };
 
 export interface VendorInstallContext {
   readonly distRoot: string;

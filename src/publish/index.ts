@@ -4,6 +4,7 @@ import { join, relative } from "node:path";
 
 import { errnoCode } from "../fs.js";
 import { git, tryGit } from "../git/index.js";
+import type { VendorDeclaration } from "../config/harness.js";
 import { vendorBuild, type Layout } from "../layout/index.js";
 import { err, ok, type Result } from "../result.js";
 
@@ -20,6 +21,7 @@ export type PublishOutcome =
 export type PublishError =
   | { readonly kind: "dirty-source"; readonly repoRoot: string; readonly paths: readonly string[] }
   | { readonly kind: "build-missing"; readonly buildDir: string }
+  | { readonly kind: "source-branch"; readonly branch: string }
   | { readonly kind: "push-rejected"; readonly branch: string; readonly detail: string };
 
 export interface PublishRequest {
@@ -32,12 +34,13 @@ export interface PublishRequest {
 
 export interface VendorPublishRequest {
   readonly layout: Layout;
-  readonly vendors: readonly string[];
+  readonly vendors: ReadonlyArray<Pick<VendorDeclaration, "name" | "ref">>;
   readonly remote: string;
   readonly build: (this: void) => Promise<void>;
 }
 
 const LS_REMOTE_NO_MATCH = 2;
+const NOT_ANCESTOR = 1;
 
 export function formatPublishError(e: PublishError): string {
   switch (e.kind) {
@@ -48,6 +51,8 @@ export function formatPublishError(e: PublishError): string {
       ].join("\n");
     case "build-missing":
       return `build directory ${e.buildDir} does not exist; run \`harness build\` first`;
+    case "source-branch":
+      return `refusing to publish: branch '${e.branch}' holds source history; pick a ref that only harness publishes, such as harness/<vendor>`;
     case "push-rejected":
       return `push to branch '${e.branch}' was rejected: ${e.detail}`;
   }
@@ -77,11 +82,11 @@ export async function publishVendors(
   await request.build();
   const outcomes: PublishOutcome[] = [];
   for (const vendor of request.vendors) {
-    const build = vendorBuild(request.layout.buildDir, vendor);
+    const build = vendorBuild(request.layout.buildDir, vendor.name);
     const published = await publishBranch({
       repoRoot,
       buildDir: build.root,
-      branch: vendor,
+      branch: vendor.ref,
       remote: request.remote,
       excludedEntries: [relative(build.root, build.configsDir)],
     });
@@ -100,6 +105,9 @@ export async function publishBranch(
   if (!(await isDirectory(buildDir))) return err({ kind: "build-missing", buildDir });
 
   const parent = await fetchBranchHead(repoRoot, remote, branch);
+  if (parent !== null && (await isAncestorOfHead(repoRoot, parent))) {
+    return err({ kind: "source-branch", branch });
+  }
   const tree = await writeBuildTree(request);
   if (parent !== null && (await treeOf(repoRoot, parent)) === tree) {
     return ok({ kind: "unchanged", branch, head: parent });
@@ -112,6 +120,14 @@ export async function publishBranch(
   if (push.code !== 0) return err({ kind: "push-rejected", branch, detail: push.stderr.trim() });
   if (parent === null) return ok({ kind: "created", branch, commit });
   return ok({ kind: "advanced", branch, commit, parent });
+}
+
+async function isAncestorOfHead(repoRoot: string, commit: string): Promise<boolean> {
+  const check = await tryGit(["merge-base", "--is-ancestor", commit, "HEAD"], { cwd: repoRoot });
+  if (check.code === 0 || check.code === NOT_ANCESTOR) return check.code === 0;
+  throw new Error(
+    `git merge-base --is-ancestor ${commit} HEAD in ${repoRoot} exited ${check.code}, expected 0 or ${NOT_ANCESTOR}: ${check.stderr.trim()}`,
+  );
 }
 
 async function dirtyPaths(repoRoot: string): Promise<readonly string[]> {

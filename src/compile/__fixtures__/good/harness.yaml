@@ -1,4 +1,4 @@
 marketplace: test-marketplace
 owner:
   name: harness-kit-tests
-vendors: [claude, codex]
+vendors: { claude: { ref: harness/claude }, codex: { ref: harness/codex } }

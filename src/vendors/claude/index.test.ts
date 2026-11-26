@@ -151,7 +151,11 @@ test("claudeVendor.install in remote mode installs each unregistered plugin with
     await makeVendor(home).install(
       ctx({
         run,
-        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+        source: {
+          kind: "remote",
+          repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+          ref: "harness/claude",
+        },
         distRoot: dist,
         plugins: [
           { name: "alpha", path: alpha, version: "1.0.0" },
@@ -162,7 +166,7 @@ test("claudeVendor.install in remote mode installs each unregistered plugin with
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
     deepEqual(cmds, [
       "claude plugin marketplace remove test-market --scope local",
-      "claude plugin marketplace add foo/bar#claude",
+      "claude plugin marketplace add foo/bar#harness/claude",
       "claude plugin marketplace update test-market",
       "claude plugin install alpha@test-market",
       "claude plugin install beta@test-market",
@@ -180,7 +184,11 @@ test("claudeVendor.install in remote mode repoints the marketplace at the reposi
     await makeVendor(home).install(
       ctx({
         run,
-        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+        source: {
+          kind: "remote",
+          repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+          ref: "harness/claude",
+        },
         distRoot: dist,
         plugins: [{ name: "alpha", path, version: "1.0.0" }],
       }),
@@ -188,7 +196,7 @@ test("claudeVendor.install in remote mode repoints the marketplace at the reposi
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
     deepEqual(cmds.slice(0, 3), [
       "claude plugin marketplace remove test-market --scope local",
-      "claude plugin marketplace add foo/bar#claude",
+      "claude plugin marketplace add foo/bar#harness/claude",
       "claude plugin marketplace update test-market",
     ]);
   } finally {
@@ -206,7 +214,11 @@ test("claudeVendor.install in remote mode fails when the marketplace cannot be a
       makeVendor(home).install(
         ctx({
           run,
-          source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+          source: {
+            kind: "remote",
+            repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+            ref: "harness/claude",
+          },
           distRoot: dist,
           plugins: [{ name: "alpha", path, version: "1.0.0" }],
         }),
@@ -692,7 +704,11 @@ test("claudeVendor.install skips plugins explicitly disabled in settings", async
     await makeVendor(home).install(
       ctx({
         run,
-        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+        source: {
+          kind: "remote",
+          repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+          ref: "harness/claude",
+        },
         distRoot: dist,
         plugins: [
           { name: "alpha", path: alpha, version: "1.0.0" },
@@ -714,7 +730,11 @@ test("claudeVendor.install enables plugins absent from settings (absent = enable
     await makeVendor(home).install(
       ctx({
         run,
-        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+        source: {
+          kind: "remote",
+          repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+          ref: "harness/claude",
+        },
         distRoot: dist,
         plugins: [{ name: "alpha", path: alpha, version: "1.0.0" }],
       }),
@@ -925,7 +945,11 @@ test("claudeVendor.install reads disabled state before any command mutates setti
           writeFileSync(settingsPath, JSON.stringify({ enabledPlugins: {} }));
           if (args[1] === "install") registerPlugin(home, args[2]!);
         },
-        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+        source: {
+          kind: "remote",
+          repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+          ref: "harness/claude",
+        },
         distRoot: dist,
         plugins: [
           { name: "alpha", path: alpha, version: "1.0.0" },

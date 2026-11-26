@@ -16,19 +16,58 @@ const OwnerSchema = z
   })
   .strict();
 
+const BRANCH_SEGMENT = String.raw`(?![^/]*\.lock(?:/|$))[A-Za-z0-9_](?:[A-Za-z0-9._-]*[A-Za-z0-9_-])?`;
+const BRANCH_PATTERN = new RegExp(
+  String.raw`^(?!HEAD$)(?!.*\.\.)${BRANCH_SEGMENT}(?:/${BRANCH_SEGMENT})*$`,
+);
+
+const VendorSettingsSchema = z
+  .object({
+    ref: z.string().regex(BRANCH_PATTERN, "must be a git branch name such as harness/claude"),
+    catalog: z.record(z.string().min(1), z.unknown()).optional(),
+  })
+  .strict();
+
+const VendorsSchema = z
+  .record(z.string().min(1), VendorSettingsSchema)
+  .transform((entries) =>
+    Object.entries(entries).map(([name, settings]) => ({
+      name,
+      ref: settings.ref,
+      catalog: settings.catalog ?? {},
+    })),
+  )
+  .superRefine((declarations, ctx) => {
+    if (declarations.length === 0) {
+      ctx.addIssue({ code: "custom", message: "at least one vendor must be declared" });
+    }
+    const refs = declarations.map(({ ref }) => ref);
+    refs.forEach((ref, index) => {
+      const clash = refs.slice(index + 1).find((other) => refsCollide(ref, other));
+      if (clash !== undefined) {
+        ctx.addIssue({ code: "custom", message: `refs "${ref}" and "${clash}" collide in git` });
+      }
+    });
+  });
+
+function refsCollide(a: string, b: string): boolean {
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
 const HarnessConfigSchema = z
   .object({
     marketplace: kebabName,
     owner: OwnerSchema,
-    vendors: z.array(z.string().min(1)).min(1, "at least one vendor must be declared"),
+    vendors: VendorsSchema,
     roots: z.record(z.string().min(1), z.string().min(1)).optional(),
-    extensions: z.record(z.string().min(1), z.record(z.string().min(1), z.unknown())).optional(),
   })
   .strict();
 
 export type Owner = z.infer<typeof OwnerSchema>;
 
-export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
+export type VendorDeclaration = z.output<typeof VendorsSchema>[number];
+
+export type HarnessConfig = z.output<typeof HarnessConfigSchema>;
 
 const CANDIDATES = ["harness.yaml", "harness.yml"] as const;
 
@@ -55,9 +94,22 @@ export async function loadHarnessConfig(repoRoot: string): Promise<HarnessConfig
   }
   const parsed = HarnessConfigSchema.safeParse(doc);
   if (!parsed.success) {
-    throw new Error(`harness.yaml at ${path}: ${formatZodIssues(parsed.error).join("; ")}`);
+    const issues = [...legacyShapeHints(doc), ...formatZodIssues(parsed.error)];
+    throw new Error(`harness.yaml at ${path}: ${issues.join("; ")}`);
   }
   return parsed.data;
+}
+
+function legacyShapeHints(doc: unknown): readonly string[] {
+  if (typeof doc !== "object" || doc === null) return [];
+  const hints: string[] = [];
+  if ("vendors" in doc && Array.isArray(doc.vendors)) {
+    hints.push("vendors is a map since 2.0: `vendors: { claude: { ref: harness/claude } }`");
+  }
+  if ("extensions" in doc) {
+    hints.push("top-level extensions moved to vendors.<vendor>.catalog in 2.0");
+  }
+  return hints;
 }
 
 export async function resolveRootsForRepo(

@@ -27,7 +27,13 @@ export async function initHarness(options: InitOptions): Promise<void> {
     if (await pathExists(path)) throw new Error(`refusing to overwrite existing ${path}`);
   }
   const doc = yaml.dump(
-    { marketplace: options.marketplace, owner: options.owner, vendors: [...options.vendors] },
+    {
+      marketplace: options.marketplace,
+      owner: options.owner,
+      vendors: Object.fromEntries(
+        options.vendors.map((name) => [name, { ref: `harness/${name}` }]),
+      ),
+    },
     { lineWidth: 120 },
   );
   await writeFile(configPath, doc);

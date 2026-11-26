@@ -213,7 +213,7 @@ test("compileConfigs fails when an overlay file is identical to the neutral file
 function seedPluginSkill(repoRoot: string, skillRel: string): void {
   writeFileSync(
     join(repoRoot, "harness.yaml"),
-    "marketplace: test-marketplace\nowner:\n  name: test\nvendors: [claude, codex]\n",
+    "marketplace: test-marketplace\nowner:\n  name: test\nvendors: { claude: { ref: harness/claude }, codex: { ref: harness/codex } }\n",
   );
   mkdirSync(join(repoRoot, "plugins/foo", dirname(skillRel)), { recursive: true });
   writeFileSync(

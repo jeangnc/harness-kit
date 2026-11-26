@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { strict as assert } from "node:assert";
+import { deepEqual, doesNotMatch, equal, match, ok, rejects } from "node:assert/strict";
 import {
   mkdtempSync,
   rmSync,
@@ -114,6 +114,7 @@ async function withInstallFixture<T>(
 }
 
 const repository = { owner: "foo", name: "bar", slug: "foo/bar" };
+const refs = { claude: "harness/claude", codex: "harness/codex" };
 
 test("install dispatches vendor.install with discovered per-vendor plugins", async () => {
   await withInstallFixture(
@@ -133,18 +134,18 @@ test("install dispatches vendor.install with discovered per-vendor plugins", asy
 
       await installWithRunner({ distRoot, vendors: [claude, codex], silent: true }, recorder.run);
 
-      assert.equal(claudeRecord.installs.length, 1);
-      assert.equal(codexRecord.installs.length, 1);
-      assert.deepEqual(
+      equal(claudeRecord.installs.length, 1);
+      equal(codexRecord.installs.length, 1);
+      deepEqual(
         claudeRecord.installs[0]!.plugins.map((p) => p.name),
         ["alpha"],
       );
-      assert.deepEqual(
+      deepEqual(
         codexRecord.installs[0]!.plugins.map((p) => p.name),
         ["beta"],
       );
-      assert.equal(claudeRecord.installs[0]!.marketplace, "shop");
-      assert.equal(claudeRecord.installs[0]!.distRoot, distRoot);
+      equal(claudeRecord.installs[0]!.marketplace, "shop");
+      equal(claudeRecord.installs[0]!.distRoot, distRoot);
     },
   );
 });
@@ -184,7 +185,7 @@ test("install applies config links before invoking vendors", async () => {
       );
 
       const linked = join(claudeHome, "settings.json");
-      assert.ok(lstatSync(linked).isSymbolicLink(), "config link should have been applied");
+      ok(lstatSync(linked).isSymbolicLink(), "config link should have been applied");
     },
   );
 });
@@ -231,11 +232,11 @@ test("install --dry-run reports plan without touching disk or invoking vendors",
         recorder.run,
       );
 
-      assert.ok(!existsSync(join(claudeHome, "settings.json")), "dry run must not link");
-      assert.equal(claudeRecord.installs.length, 0, "dry run must not invoke vendor.install");
+      ok(!existsSync(join(claudeHome, "settings.json")), "dry run must not link");
+      equal(claudeRecord.installs.length, 0, "dry run must not invoke vendor.install");
       const joined = logs.join("\n");
-      assert.match(joined, /settings\.json/);
-      assert.match(joined, /alpha/);
+      match(joined, /settings\.json/);
+      match(joined, /alpha/);
     },
   );
 });
@@ -265,9 +266,9 @@ test("install --dry-run lists a vendor's disabled plugins under the skipped mark
       );
 
       const joined = logs.join("\n");
-      assert.match(joined, /would install 1 plugin\(s\)/);
-      assert.match(joined, /beta@2\.0\.0 \(skipped — disabled in settings\)/);
-      assert.doesNotMatch(joined, /alpha.*skipped/);
+      match(joined, /would install 1 plugin\(s\)/);
+      match(joined, /beta@2\.0\.0 \(skipped — disabled in settings\)/);
+      doesNotMatch(joined, /alpha.*skipped/);
     },
   );
 });
@@ -285,8 +286,8 @@ test("uninstall dispatches vendor.uninstall with discovered plugins", async () =
 
       await uninstallWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run);
 
-      assert.equal(claudeRecord.uninstalls.length, 1);
-      assert.deepEqual(
+      equal(claudeRecord.uninstalls.length, 1);
+      deepEqual(
         claudeRecord.uninstalls[0]!.plugins.map((p) => p.name),
         ["alpha"],
       );
@@ -303,7 +304,7 @@ test("install rejects a marketplace.json missing the required `name` field", asy
     const recorder = recordingRunner();
     const claudeRecord = emptyRecord();
     const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
-    await assert.rejects(
+    await rejects(
       installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run),
       /name/i,
     );
@@ -327,7 +328,7 @@ test("install rejects a plugin.json missing the required `version` field", async
     const recorder = recordingRunner();
     const claudeRecord = emptyRecord();
     const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
-    await assert.rejects(
+    await rejects(
       installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run),
       /version/i,
     );
@@ -344,8 +345,8 @@ test("install passes an empty plugin list when the vendor dist subtree is empty"
       const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       await installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run);
-      assert.equal(claudeRecord.installs.length, 1);
-      assert.deepEqual(claudeRecord.installs[0]!.plugins, []);
+      equal(claudeRecord.installs.length, 1);
+      deepEqual(claudeRecord.installs[0]!.plugins, []);
     },
   );
 });
@@ -358,12 +359,12 @@ test("install defaults the vendor context source to local", async () => {
       const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       await installWithRunner({ distRoot, vendors: [claude], silent: true }, recorder.run);
-      assert.deepEqual(claudeRecord.installs[0]!.source, { kind: "local" });
+      deepEqual(claudeRecord.installs[0]!.source, { kind: "local" });
     },
   );
 });
 
-test("install in remote mode threads the marketplace repository into the vendor context", async () => {
+test("install in remote mode threads the repository and the vendor's ref into the vendor context", async () => {
   await withInstallFixture(
     { marketplaceName: "shop", plugins: [] },
     async ({ distRoot, sandbox }) => {
@@ -371,10 +372,86 @@ test("install in remote mode threads the marketplace repository into the vendor 
       const claudeRecord = emptyRecord();
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
       await installWithRunner(
-        { distRoot, vendors: [claude], silent: true, mode: "remote", repository },
+        {
+          distRoot,
+          vendors: [claude],
+          silent: true,
+          mode: "remote",
+          repository,
+          refs: { claude: "harness/claude" },
+        },
         recorder.run,
       );
-      assert.deepEqual(claudeRecord.installs[0]!.source, { kind: "remote", repository });
+      deepEqual(claudeRecord.installs[0]!.source, {
+        kind: "remote",
+        repository,
+        ref: "harness/claude",
+      });
+    },
+  );
+});
+
+test("install in remote mode reads each vendor's ref from harness.yaml", async () => {
+  await withInstallFixture(
+    { marketplaceName: "shop", plugins: [] },
+    async ({ distRoot, sandbox }) => {
+      writeFileSync(
+        join(sandbox, "harness.yaml"),
+        "marketplace: shop\nowner: { name: foo }\nvendors: { claude: { ref: out/claude } }\n",
+      );
+      const claudeRecord = emptyRecord();
+      const claude = makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord);
+      await installWithRunner(
+        {
+          distRoot,
+          repoRoot: sandbox,
+          vendors: [claude],
+          silent: true,
+          mode: "remote",
+          repository,
+        },
+        recordingRunner().run,
+      );
+      deepEqual(claudeRecord.installs[0]!.source, {
+        kind: "remote",
+        repository,
+        ref: "out/claude",
+      });
+    },
+  );
+});
+
+test("install in remote mode touches no vendor when one vendor has no ref", async () => {
+  await withInstallFixture(
+    {
+      marketplaceName: "shop",
+      plugins: [
+        { name: "alpha", vendor: "claude", version: "1.0.0" },
+        { name: "beta", vendor: "codex", version: "1.0.0" },
+      ],
+    },
+    async ({ distRoot, sandbox }) => {
+      const claudeRecord = emptyRecord();
+      const codexRecord = emptyRecord();
+      const vendors = [
+        makeRecordingVendor("claude", join(sandbox, "claude"), claudeRecord),
+        makeRecordingVendor("codex", join(sandbox, "codex"), codexRecord),
+      ];
+      await rejects(
+        installWithRunner(
+          {
+            distRoot,
+            vendors,
+            silent: true,
+            mode: "remote",
+            repository,
+            refs: { claude: "harness/claude" },
+          },
+          recordingRunner().run,
+        ),
+        /declare vendors\.codex\.ref/,
+      );
+      equal(claudeRecord.installs.length + codexRecord.installs.length, 0);
     },
   );
 });
@@ -387,11 +464,11 @@ test("update defaults the vendor context source to remote", async () => {
       const claude = makeRecordingVendor("claude", join(sandbox, "claude"), record);
 
       await updateWithRunner(
-        { distRoot, vendors: [claude], silent: true, repository },
+        { distRoot, vendors: [claude], silent: true, repository, refs },
         recordingRunner().run,
       );
 
-      assert.equal(record.refreshes[0]!.source.kind, "remote");
+      equal(record.refreshes[0]!.source.kind, "remote");
     },
   );
 });
@@ -409,13 +486,13 @@ test("update returns a not-installed error when no vendor reports an existing in
       });
 
       const result = await updateWithRunner(
-        { distRoot, vendors: [claude], repository, silent: true },
+        { distRoot, vendors: [claude], repository, refs, silent: true },
         recordingRunner().run,
       );
 
-      assert.equal(result.ok, false);
-      assert.equal(result.ok === false && result.error.kind, "not-installed");
-      assert.equal(record.refreshes.length, 0, "must not refresh when not installed");
+      equal(result.ok, false);
+      equal(result.ok === false && result.error.kind, "not-installed");
+      equal(record.refreshes.length, 0, "must not refresh when not installed");
     },
   );
 });
@@ -433,14 +510,14 @@ test("update invokes vendor.refresh and never vendor.install when the harness is
       });
 
       const result = await updateWithRunner(
-        { distRoot, vendors: [claude], repository, silent: true },
+        { distRoot, vendors: [claude], repository, refs, silent: true },
         recordingRunner().run,
       );
 
-      assert.equal(result.ok, true);
-      assert.equal(record.installs.length, 0, "update must not enable via vendor.install");
-      assert.equal(record.refreshes.length, 1);
-      assert.deepEqual(
+      equal(result.ok, true);
+      equal(record.installs.length, 0, "update must not enable via vendor.install");
+      equal(record.refreshes.length, 1);
+      deepEqual(
         record.refreshes[0]!.plugins.map((p) => p.name),
         ["alpha"],
       );
@@ -476,14 +553,11 @@ test("update does not apply config links", async () => {
       const claude = makeRecordingVendor("claude", claudeHome, record);
 
       await updateWithRunner(
-        { distRoot, repoRoot: sandbox, vendors: [claude], repository, silent: true },
+        { distRoot, repoRoot: sandbox, vendors: [claude], repository, refs, silent: true },
         recordingRunner().run,
       );
 
-      assert.ok(
-        !existsSync(join(claudeHome, "settings.json")),
-        "update must not lay down config links",
-      );
+      ok(!existsSync(join(claudeHome, "settings.json")), "update must not lay down config links");
     },
   );
 });
@@ -512,14 +586,14 @@ test("update reports added, changed, and unchanged plugins against the installed
       const logs: string[] = [];
 
       await updateWithRunner(
-        { distRoot, vendors: [claude], repository, log: (m) => logs.push(m) },
+        { distRoot, vendors: [claude], repository, refs, log: (m) => logs.push(m) },
         recordingRunner().run,
       );
 
       const joined = logs.join("\n");
-      assert.match(joined, /alpha 1\.0\.0 → 2\.0\.0/);
-      assert.match(joined, /beta.*unchanged|unchanged.*beta/i);
-      assert.match(joined, /gamma.*\b2\.0\.0\b|added.*gamma|gamma.*added/i);
+      match(joined, /alpha 1\.0\.0 → 2\.0\.0/);
+      match(joined, /beta.*unchanged|unchanged.*beta/i);
+      match(joined, /gamma.*\b2\.0\.0\b|added.*gamma|gamma.*added/i);
     },
   );
 });
@@ -544,13 +618,13 @@ test("update refreshes only the vendors that report an existing install", async 
       });
 
       const result = await updateWithRunner(
-        { distRoot, vendors: [claude, codex], repository, silent: true },
+        { distRoot, vendors: [claude, codex], repository, refs, silent: true },
         recordingRunner().run,
       );
 
-      assert.equal(result.ok, true);
-      assert.equal(claudeRecord.refreshes.length, 1, "installed vendor is refreshed");
-      assert.equal(codexRecord.refreshes.length, 0, "uninstalled vendor is not refreshed");
+      equal(result.ok, true);
+      equal(claudeRecord.refreshes.length, 1, "installed vendor is refreshed");
+      equal(codexRecord.refreshes.length, 0, "uninstalled vendor is not refreshed");
     },
   );
 });
@@ -582,17 +656,13 @@ test("update reports every shipped plugin regardless of enabled state", async ()
       const logs: string[] = [];
 
       await updateWithRunner(
-        { distRoot, vendors: [claude], repository, log: (m) => logs.push(m) },
+        { distRoot, vendors: [claude], repository, refs, log: (m) => logs.push(m) },
         recordingRunner().run,
       );
 
       const joined = logs.join("\n");
-      assert.match(joined, /alpha 1\.0\.0 → 2\.0\.0/);
-      assert.match(
-        joined,
-        /beta 1\.0\.0 → 2\.0\.0/,
-        "disabled-but-shipped plugin is still refreshed",
-      );
+      match(joined, /alpha 1\.0\.0 → 2\.0\.0/);
+      match(joined, /beta 1\.0\.0 → 2\.0\.0/, "disabled-but-shipped plugin is still refreshed");
     },
   );
 });
@@ -618,15 +688,11 @@ test("update does not report a cached-but-shipped plugin as removed", async () =
       const logs: string[] = [];
 
       await updateWithRunner(
-        { distRoot, vendors: [claude], repository, log: (m) => logs.push(m) },
+        { distRoot, vendors: [claude], repository, refs, log: (m) => logs.push(m) },
         recordingRunner().run,
       );
 
-      assert.doesNotMatch(
-        logs.join("\n"),
-        /removed beta/,
-        "a shipped plugin is not reported removed",
-      );
+      doesNotMatch(logs.join("\n"), /removed beta/, "a shipped plugin is not reported removed");
     },
   );
 });
@@ -649,11 +715,11 @@ test("update reports a plugin that is no longer shipped as removed", async () =>
       const logs: string[] = [];
 
       await updateWithRunner(
-        { distRoot, vendors: [claude], repository, log: (m) => logs.push(m) },
+        { distRoot, vendors: [claude], repository, refs, log: (m) => logs.push(m) },
         recordingRunner().run,
       );
 
-      assert.match(logs.join("\n"), /removed legacy \(was 0\.9\.0\)/);
+      match(logs.join("\n"), /removed legacy \(was 0\.9\.0\)/);
     },
   );
 });
@@ -672,12 +738,12 @@ test("update, without --prune, points at --prune instead of removing the stale p
       const logs: string[] = [];
 
       await updateWithRunner(
-        { distRoot, vendors: [claude], repository, log: (m) => logs.push(m) },
+        { distRoot, vendors: [claude], repository, refs, log: (m) => logs.push(m) },
         recordingRunner().run,
       );
 
-      assert.equal(record.prunes.length, 0, "nothing is removed without the flag");
-      assert.match(logs.join("\n"), /--prune/, "the report names the flag that would remove it");
+      equal(record.prunes.length, 0, "nothing is removed without the flag");
+      match(logs.join("\n"), /--prune/, "the report names the flag that would remove it");
     },
   );
 });
@@ -700,16 +766,16 @@ test("update --prune removes a plugin that is no longer shipped", async () => {
       const logs: string[] = [];
 
       await updateWithRunner(
-        { distRoot, vendors: [claude], repository, prune: true, log: (m) => logs.push(m) },
+        { distRoot, vendors: [claude], repository, refs, prune: true, log: (m) => logs.push(m) },
         recordingRunner().run,
       );
 
-      assert.deepEqual(
+      deepEqual(
         record.prunes.map((p) => p.names),
         [["legacy"]],
         "only the unshipped plugin is pruned",
       );
-      assert.match(logs.join("\n"), /pruned legacy \(was 0\.9\.0\)/);
+      match(logs.join("\n"), /pruned legacy \(was 0\.9\.0\)/);
     },
   );
 });
@@ -727,11 +793,11 @@ test("update --prune leaves a shipped plugin alone", async () => {
       });
 
       await updateWithRunner(
-        { distRoot, vendors: [claude], repository, prune: true },
+        { distRoot, vendors: [claude], repository, refs, prune: true },
         recordingRunner().run,
       );
 
-      assert.equal(record.prunes.length, 0, "vendor.pruneStale is not called with nothing stale");
+      equal(record.prunes.length, 0, "vendor.pruneStale is not called with nothing stale");
     },
   );
 });
@@ -754,6 +820,7 @@ test("update --prune --dry-run reports the prune without performing it", async (
           distRoot,
           vendors: [claude],
           repository,
+          refs,
           prune: true,
           dryRun: true,
           log: (m) => logs.push(m),
@@ -761,13 +828,13 @@ test("update --prune --dry-run reports the prune without performing it", async (
         recordingRunner().run,
       );
 
-      assert.equal(record.prunes.length, 0, "a dry run performs no removal");
-      assert.match(
+      equal(record.prunes.length, 0, "a dry run performs no removal");
+      match(
         logs.join("\n"),
         /would prune legacy \(was 0\.9\.0\)/,
         "a dry run states the intent, never a completed removal",
       );
-      assert.doesNotMatch(
+      doesNotMatch(
         logs.join("\n"),
         /\bpruned legacy\b/,
         "a dry run never claims the removal happened",
@@ -790,14 +857,14 @@ test("update --dry-run reports the plan without invoking vendor.refresh", async 
       const logs: string[] = [];
 
       const result = await updateWithRunner(
-        { distRoot, vendors: [claude], repository, dryRun: true, log: (m) => logs.push(m) },
+        { distRoot, vendors: [claude], repository, refs, dryRun: true, log: (m) => logs.push(m) },
         recordingRunner().run,
       );
 
-      assert.equal(result.ok, true);
-      assert.equal(record.refreshes.length, 0, "dry run must not refresh");
-      assert.equal(record.installs.length, 0, "dry run must not enable");
-      assert.match(logs.join("\n"), /alpha 1\.0\.0 → 2\.0\.0/);
+      equal(result.ok, true);
+      equal(record.refreshes.length, 0, "dry run must not refresh");
+      equal(record.installs.length, 0, "dry run must not enable");
+      match(logs.join("\n"), /alpha 1\.0\.0 → 2\.0\.0/);
     },
   );
 });
@@ -828,10 +895,10 @@ test("update reports only versions present after native refresh", async () => {
         },
       });
       const result = await updateWithRunner(
-        { distRoot, vendors: [vendor], repository, silent: true },
+        { distRoot, vendors: [vendor], repository, refs, silent: true },
         recordingRunner().run,
       );
-      assert.deepEqual(result, {
+      deepEqual(result, {
         ok: true,
         value: {
           changes: [
@@ -859,8 +926,8 @@ test("Codex install dry run leaves plugin selection to the native runtime", asyn
         { distRoot, vendors: [vendor], dryRun: true, log: (message) => logs.push(message) },
         recordingRunner().run,
       );
-      assert.match(logs.join("\n"), /candidates.*native.*execution/);
-      assert.doesNotMatch(logs.join("\n"), /would install/);
+      match(logs.join("\n"), /candidates.*native.*execution/);
+      doesNotMatch(logs.join("\n"), /would install/);
     },
   );
 });
@@ -877,16 +944,16 @@ for (const operation of [installWithRunner, updateWithRunner, uninstallWithRunne
         symlinkSync(source, join(home, "config.toml"));
         const record = emptyRecord();
         const vendor = makeRecordingVendor("codex", home, record, codexTraits);
-        await assert.rejects(
-          operation({ distRoot, vendors: [vendor], silent: true }, recordingRunner().run),
+        await rejects(
+          operation({ distRoot, vendors: [vendor], refs, silent: true }, recordingRunner().run),
           /migrate-runtime/,
         );
-        assert.deepEqual(record, emptyRecord());
+        deepEqual(record, emptyRecord());
         await operation(
-          { distRoot, vendors: [vendor], silent: true, dryRun: true },
+          { distRoot, vendors: [vendor], refs, silent: true, dryRun: true },
           recordingRunner().run,
         );
-        assert.deepEqual(record, emptyRecord());
+        deepEqual(record, emptyRecord());
       },
     );
   });

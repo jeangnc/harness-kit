@@ -58,7 +58,7 @@ Separately, `check` emits **warnings** (never affecting the exit code) when a bo
 Links config files into each vendor's home and registers built plugins through the vendor's own CLI. Run `harness build` first: both modes read the plugin list and marketplace name from `.harness/<vendor>/`.
 
 - `--repo <path>` (default `.`).
-- `--mode <local|remote>` (default `local`) — install source. `local` registers `.harness/<vendor>/` as a local marketplace, installing uncommitted builds without publishing. `remote` installs from the published vendor branches: `claude plugin marketplace add <owner>/<repo>#claude` and `codex plugin marketplace add <owner>/<repo> --ref codex`. The repository comes from `GITHUB_REPOSITORY` or the `origin` remote.
+- `--mode <local|remote>` (default `local`) — install source. `local` registers `.harness/<vendor>/` as a local marketplace, installing uncommitted builds without publishing. `remote` installs from the published vendor branches: `claude plugin marketplace add <owner>/<repo>#<ref>` and `codex plugin marketplace add <owner>/<repo> --ref <ref>`, with each vendor's `ref` from `harness.yaml`. The repository comes from `GITHUB_REPOSITORY` or the `origin` remote.
 - `--dry-run` — print the plan without touching the filesystem.
 - `--silent`.
 
@@ -68,7 +68,7 @@ A plugin set to `false` in the claude vendor's built `settings.json` `enabledPlu
 
 ## `harness publish`
 
-Builds, then pushes each `.harness/<vendor>/` tree to the branch named after the vendor (`claude`, `codex`). `.harness/<vendor>/configs/` is never published.
+Builds, then pushes each `.harness/<vendor>/` tree to the `ref` that vendor declares in `harness.yaml`. `.harness/<vendor>/configs/` is never published.
 
 - `--repo <path>` (default `.`).
 - `--vendors <csv>` — vendors to publish. Empty (the default) publishes every vendor in `harness.yaml`.

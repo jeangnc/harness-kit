@@ -11,7 +11,7 @@ import { layoutAt, loadCatalog } from "./index.js";
 const config: HarnessConfig = {
   marketplace: "test-marketplace",
   owner: { name: "Acme" },
-  vendors: ["claude"],
+  vendors: [{ name: "claude", ref: "harness/claude", catalog: {} }],
 };
 
 async function withRepo<T>(fn: (repoRoot: string) => Promise<T>): Promise<T> {

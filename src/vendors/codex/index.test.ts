@@ -14,6 +14,7 @@ function fixture(
     installed: boolean;
     version: string;
   }> = [],
+  registered: readonly string[] = [],
 ) {
   const calls: string[][] = [];
   const ctx: VendorInstallContext = {
@@ -23,6 +24,9 @@ function fixture(
     plugins: [{ name: "foo", version: "2.0.0", path: "/tmp/foo/dist/codex/plugins/foo" }],
     run: async (cmd, args) => {
       calls.push([cmd, ...args]);
+      if (args[1] === "marketplace" && args[2] === "list") {
+        return JSON.stringify({ marketplaces: registered.map((name) => ({ name })) });
+      }
       if (args.includes("list")) {
         return JSON.stringify({
           installed: entries
@@ -118,16 +122,37 @@ test("remote installation registers the codex ref of the repository before upgra
   const { ctx, calls, vendor } = fixture([]);
   await vendor.install({
     ...ctx,
-    source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+    source: {
+      kind: "remote",
+      repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+      ref: "harness/codex",
+    },
   });
-  deepEqual(calls.slice(0, 2), [
-    ["codex", "plugin", "marketplace", "add", "foo/bar", "--ref", "codex", "--json"],
+  deepEqual(calls.slice(0, 3), [
+    ["codex", "plugin", "marketplace", "list", "--json"],
+    ["codex", "plugin", "marketplace", "add", "foo/bar", "--ref", "harness/codex", "--json"],
     ["codex", "plugin", "marketplace", "upgrade", "foo-market", "--json"],
   ]);
   equal(
     calls.some((call) => call.includes(ctx.distRoot)),
     false,
   );
+});
+
+test("remote refresh re-registers an existing marketplace so a changed ref takes effect", async () => {
+  const { ctx, calls, vendor } = fixture([], ["foo-market"]);
+  await vendor.refresh({
+    ...ctx,
+    source: {
+      kind: "remote",
+      repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+      ref: "harness/codex",
+    },
+  });
+  deepEqual(calls.slice(1, 3), [
+    ["codex", "plugin", "marketplace", "remove", "foo-market", "--json"],
+    ["codex", "plugin", "marketplace", "add", "foo/bar", "--ref", "harness/codex", "--json"],
+  ]);
 });
 
 test("native command failures stop installation", async () => {
@@ -199,9 +224,19 @@ test("remote marketplace errors stop plugin installation", async () => {
   await rejects(
     vendor.install({
       ...ctx,
-      source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+      source: {
+        kind: "remote",
+        repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+        ref: "harness/codex",
+      },
       run: async (_cmd, args) =>
-        JSON.stringify(args[2] === "add" ? { marketplaceName: "foo-market" } : { errors: ["foo"] }),
+        JSON.stringify(
+          args[2] === "list"
+            ? { marketplaces: [] }
+            : args[2] === "add"
+              ? { marketplaceName: "foo-market" }
+              : { errors: ["foo"] },
+        ),
     }),
     /marketplace upgrade/,
   );

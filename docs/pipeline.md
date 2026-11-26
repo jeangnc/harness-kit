@@ -16,7 +16,7 @@ A top-level `.harness/configs.json` link manifest enumerates the symlinks `harne
 
 ## Publish pipeline
 
-`harness publish` turns each `.harness/<vendor>/` into a commit on the branch named after the vendor, without a checkout. `configs/` is excluded. The new commit's parent is the current remote branch head, so history only moves forward. An identical tree is a no-op. Publish never force-pushes; a rejected push fails. The [GitHub Action](./action.md) runs build, check, lint, and publish on every push to `main`.
+`harness publish` turns each `.harness/<vendor>/` into a commit on the `ref` that vendor declares in `harness.yaml`, without a checkout. `configs/` is excluded. The new commit's parent is the current remote branch head, so history only moves forward. An identical tree is a no-op. Publish never force-pushes; a rejected push fails. The [GitHub Action](./action.md) runs build, check, lint, and publish on every push to `main`.
 
 ## Install pipeline
 
@@ -25,7 +25,7 @@ A top-level `.harness/configs.json` link manifest enumerates the symlinks `harne
 1. Refuses runtime files linked into this generated output. Applies permitted links from `.harness/configs.json`: Codex runtime files and Claude `settings.json` are excluded. Other vendor links retain their existing backup and orphan-sweep behavior.
 2. For each declared vendor, discovers built plugins under `.harness/<vendor>/plugins/` and calls the vendor's `install` hook.
 
-`--mode` selects where vendors resolve plugins from. `local` (default) registers `.harness/<vendor>/` as a marketplace, so uncommitted builds install without publishing. `remote` registers the published branch: Claude adds `<owner>/<repo>#claude`, Codex adds `<owner>/<repo> --ref codex` and upgrades it. Claude remote mode first removes a local-scoped marketplace of the same name. Codex owns plugin cache writes and enabled state.
+`--mode` selects where vendors resolve plugins from. `local` (default) registers `.harness/<vendor>/` as a marketplace, so uncommitted builds install without publishing. `remote` registers the published branch: Claude adds `<owner>/<repo>#<ref>`, Codex adds `<owner>/<repo> --ref <ref>` and upgrades it, using each vendor's `ref`. Claude remote mode first removes a local-scoped marketplace of the same name. Codex owns plugin cache writes and enabled state.
 
 `--dry-run` prints the plan without touching the filesystem.
 

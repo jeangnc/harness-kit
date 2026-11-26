@@ -11,20 +11,22 @@ owner:
   email: you@example.com # optional
   url: https://example.com # optional
 vendors:
-  - claude
-  - codex
+  claude:
+    ref: harness/claude # branch that harness publish writes and installs read
+    catalog: # optional — extra fields for this vendor's catalog
+      metadata: { description: My harness }
+  codex:
+    ref: harness/codex
 roots: # optional — named include aliases
   shared: shared
-extensions: # optional — extra fields per vendor catalog
-  claude:
-    metadata: { description: My harness }
 ```
 
 - `marketplace` (required) — kebab-case catalog name. Users install plugins as `<plugin>@<marketplace>`.
 - `owner` (required) — `name`, plus optional `email` and `url`.
-- `vendors` (required) — at least one built-in vendor name.
+- `vendors` (required) — map from built-in vendor name to its settings. At least one.
+  - `ref` (required) — git branch that `harness publish` writes and remote installs read. Each vendor needs its own. Avoid `claude` and `codex`: Claude Code and Codex create `claude/<slug>` and `codex/<slug>` branches, and git cannot hold a branch next to a folder of the same name.
+  - `catalog` — fields merged into that vendor's catalog as-is. They cannot override `name` or `owner`.
 - `roots` — name → repo-relative path. Reachable from markdown as `{{include:@<name>/…}}`. See [authoring.md](./authoring.md#composing-with-includes).
-- `extensions.<vendor>` — fields merged into that vendor's catalog as-is.
 
 Unknown keys fail the build. There is no `repository` key; remote installs read the GitHub repository from `GITHUB_REPOSITORY` or the `origin` remote. `harness.yml` also works, but not both.
 
@@ -85,8 +87,8 @@ Declares that a hook depends on a specific skill, command, or agent. Each entry 
 | `claude` | `.harness/claude/.claude-plugin/marketplace.json` | `.harness/claude/plugins/<p>/.claude-plugin/plugin.json` |
 | `codex`  | `.harness/codex/.agents/plugins/marketplace.json` | `.harness/codex/plugins/<p>/.codex-plugin/plugin.json`   |
 
-Claude's catalog holds `name`, `owner`, `extensions.claude` from `harness.yaml`, and one `{ name, source: "./plugins/<p>", description }` entry per plugin.
+Claude's catalog holds `name`, `owner`, `vendors.claude.catalog` from `harness.yaml`, and one `{ name, source: "./plugins/<p>", description }` entry per plugin.
 
-Codex's catalog holds `name`, `interface.displayName` (the marketplace name), `extensions.codex` from `harness.yaml`, and one `{ name, source: { source: "local", path: "./plugins/<p>" }, policy, category }` entry per plugin.
+Codex's catalog holds `name`, `interface.displayName` (the marketplace name), `vendors.codex.catalog` from `harness.yaml`, and one `{ name, source: { source: "local", path: "./plugins/<p>" }, policy, category }` entry per plugin.
 
-Each vendor plugin manifest is the neutral `plugin.json` without `$schema` and `extensions`, plus that vendor's extension fields. `harness publish` pushes each `.harness/<vendor>/` tree, minus `configs/`, to the branch named after the vendor.
+Each vendor plugin manifest is the neutral `plugin.json` without `$schema` and `extensions`, plus that vendor's extension fields. `harness publish` pushes each `.harness/<vendor>/` tree, minus `configs/`, to that vendor's `ref`.

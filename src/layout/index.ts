@@ -94,7 +94,7 @@ export async function loadCatalog(
   return ok({
     name: config.marketplace,
     owner: config.owner,
-    extensions: config.extensions ?? {},
+    extensions: Object.fromEntries(config.vendors.map((v) => [v.name, v.catalog])),
     plugins,
   });
 }

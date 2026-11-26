@@ -29,11 +29,15 @@ function options(root: string, overrides: Partial<InitOptions> = {}): InitOption
   };
 }
 
-test("init writes harness.yaml with marketplace, owner and vendors", async () => {
+test("init writes harness.yaml with each vendor publishing under harness/", async () => {
   await withSandbox(async (root) => {
     await initHarness(options(root, { vendors: ["claude", "codex"] }));
     const doc = yaml.load(readFileSync(join(root, "harness.yaml"), "utf8"));
-    deepEqual(doc, { marketplace: "shop", owner: { name: "acme" }, vendors: ["claude", "codex"] });
+    deepEqual(doc, {
+      marketplace: "shop",
+      owner: { name: "acme" },
+      vendors: { claude: { ref: "harness/claude" }, codex: { ref: "harness/codex" } },
+    });
   });
 });
 

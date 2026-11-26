@@ -63,7 +63,7 @@ interface VendorCatalogEmitContext {
 
 ### Field responsibilities
 
-- **`name`** — identifier used in the `harness.yaml` `vendors:` list, as the build subtree (`.harness/<name>/`), as the overlay folder name (`plugins/<p>/<name>/`), and as the published branch name.
+- **`name`** — key in the `harness.yaml` `vendors:` map, the build subtree (`.harness/<name>/`), and the overlay folder name (`plugins/<p>/<name>/`). The published branch is the vendor's `ref`, not its name.
 - **`home`** — absolute path to the vendor's user-level home (e.g. `~/.claude`, `~/.codex`). Config links are anchored here.
 - **`pluginManifestPath`** — relative path inside each built plugin where the vendor manifest is written (e.g. `.claude-plugin/plugin.json`).
 - **`catalogPath`** — path relative to `.harness/<name>/` where the vendor catalog is written (e.g. `.claude-plugin/marketplace.json`).
@@ -84,7 +84,7 @@ interface VendorCatalogEmitContext {
 - **Home**: `~/.claude`
 - **Manifest path**: `.claude-plugin/plugin.json`
 - **Catalog path**: `.claude-plugin/marketplace.json`
-- **Marketplace source**: local mode runs `claude plugin marketplace add .harness/claude --scope local`. Remote mode removes that local-scoped entry, runs `claude plugin marketplace add <owner>/<repo>#claude`, then `claude plugin marketplace update <marketplace>`.
+- **Marketplace source**: local mode runs `claude plugin marketplace add .harness/claude --scope local`. Remote mode removes that local-scoped entry, runs `claude plugin marketplace add <owner>/<repo>#<ref>`, then `claude plugin marketplace update <marketplace>`.
 - **Install**: the disabled set is read from the built `settings.json` `enabledPlugins` **first**, before any `claude` command runs — `claude plugin uninstall` strips a plugin's entry from settings, and when `~/.claude/settings.json` is symlinked to the built file that would otherwise erase the `false` mid-install. Then the marketplace is refreshed, and each enabled plugin absent from `~/.claude/plugins/installed_plugins.json` gets `claude plugin install <name>@<marketplace>` — which is what writes the `enabledPlugins[...]=true` entry. An install that does not register the plugin is a hard error, never swallowed. Every enabled plugin then goes through the same cache refresh as below. Install never uninstalls and never deletes a working cache: a plugin already registered keeps its entry, and its cache is replaced by copy-then-swap rather than destroy-then-rebuild.
 - **Refresh**: refreshes the cache for plugins **already installed** without enabling anything. For each shipped plugin already present in `~/.claude/plugins/installed_plugins.json` (the install registry), the built tree is copied into `~/.claude/plugins/.staging/incoming-*/`, the live version dir is moved aside into `~/.claude/plugins/.staging/displaced-*/`, and only then is the new copy renamed into `~/.claude/plugins/cache/<marketplace>/<name>/<version>/`. A failure at any point leaves the live plugin in place — a failed copy never touches it, and a failed swap restores it. Staging lives outside `plugins/cache` so a copy in flight is never discovered as a real plugin. Every registry entry for that plugin (all scopes — user/project/local) is then patched to the new `installPath`/`version`/`lastUpdated`, and only afterwards are sibling version dirs pruned — sparing any dir another registry entry still points at. A plugin absent from the registry is skipped (refresh never installs something new). `settings.json` is never opened, so `enabledPlugins` is left exactly as the user set it. This is the path `harness update` takes. The cache is populated by filesystem copy (not `claude plugin install`) precisely because `claude plugin install` is the command that would write `enabledPlugins`.
 - **Uninstall**: `claude plugin uninstall <name>@<marketplace>` per plugin, then `claude plugin marketplace remove <marketplace>`.
@@ -95,7 +95,7 @@ interface VendorCatalogEmitContext {
 - **Home**: `$CODEX_HOME` when set.
 - **Manifest path**: `.codex-plugin/plugin.json`
 - **Catalog path**: `.agents/plugins/marketplace.json`
-- **Install / Refresh**: local mode runs `codex plugin marketplace add .harness/codex`. Remote mode runs `codex plugin marketplace add <owner>/<repo> --ref codex`, then `codex plugin marketplace upgrade <marketplace>`. Each shipped plugin that Codex reports as enabled is then installed with `codex plugin add <name>@<marketplace>`. Disabled plugins are skipped and logged. Codex owns cache writes and enabled state, so `refresh` and `install` are identical.
+- **Install / Refresh**: local mode runs `codex plugin marketplace add .harness/codex`. Remote mode runs `codex plugin marketplace add <owner>/<repo> --ref <ref>`, then `codex plugin marketplace upgrade <marketplace>`. Each shipped plugin that Codex reports as enabled is then installed with `codex plugin add <name>@<marketplace>`. Disabled plugins are skipped and logged. Codex owns cache writes and enabled state, so `refresh` and `install` are identical.
 - **Uninstall**: `codex plugin remove <name>@<marketplace>` for each installed plugin, then `codex plugin marketplace remove <marketplace>`.
 
 ## Writing a custom vendor

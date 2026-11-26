@@ -1,3 +1,4 @@
+import { loadHarnessConfig } from "../config/harness.js";
 import { layoutAt } from "../layout/index.js";
 import { resolve } from "node:path";
 
@@ -22,6 +23,7 @@ export interface InstallOptions {
   readonly vendors: readonly Vendor[];
   readonly mode?: InstallMode;
   readonly repository?: Repository;
+  readonly refs?: Readonly<Record<string, string>>;
   readonly silent?: boolean;
   readonly dryRun?: boolean;
   readonly prune?: boolean;
@@ -82,7 +84,7 @@ export async function installWithRunner(
   });
   for (const vendor of ctx.vendors) {
     const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);
-    await vendor.install(buildVendorContext(ctx, plugins));
+    await vendor.install(buildVendorContext(ctx, vendor, plugins));
   }
 }
 
@@ -98,7 +100,7 @@ export async function uninstallWithRunner(
   }
   for (const vendor of ctx.vendors) {
     const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);
-    await vendor.uninstall(buildVendorContext(ctx, plugins));
+    await vendor.uninstall(buildVendorContext(ctx, vendor, plugins));
   }
 }
 
@@ -111,7 +113,7 @@ export async function updateWithRunner(
   const candidates = await Promise.all(
     ctx.vendors.map(async (vendor) => {
       const plugins = await discoverPluginsForVendor(ctx.distRoot, vendor);
-      const vendorCtx = buildVendorContext(ctx, plugins);
+      const vendorCtx = buildVendorContext(ctx, vendor, plugins);
       return { vendor, plugins, vendorCtx, installed: await vendor.isInstalled(vendorCtx) };
     }),
   );
@@ -197,10 +199,18 @@ interface ResolvedContext {
   readonly repoRoot: string;
   readonly vendors: readonly Vendor[];
   readonly marketplace: string;
-  readonly source: InstallSource;
+  readonly sources: ReadonlyMap<string, InstallSource>;
   readonly run: CommandRunner;
   readonly log: (msg: string) => void;
 }
+
+type InstallOrigin =
+  | { readonly kind: "local" }
+  | {
+      readonly kind: "remote";
+      readonly repository: Repository;
+      readonly refs: Readonly<Record<string, string>>;
+    };
 
 async function resolveContext(
   options: InstallOptions,
@@ -220,8 +230,9 @@ async function resolveContext(
       if (!silent) console.log(msg);
     });
   const marketplace = await resolveMarketplaceName(distRoot, options.vendors);
-  const source = await installSource(options, { repoRoot, defaultMode });
-  return { distRoot, repoRoot, vendors: options.vendors, marketplace, source, run: runner, log };
+  const origin = await installOrigin(options, { repoRoot, defaultMode });
+  const sources = new Map(options.vendors.map((v) => [v.name, vendorSource(origin, v)]));
+  return { distRoot, repoRoot, vendors: options.vendors, marketplace, sources, run: runner, log };
 }
 
 interface SourceDefaults {
@@ -229,13 +240,14 @@ interface SourceDefaults {
   readonly defaultMode: InstallMode;
 }
 
-async function installSource(
+async function installOrigin(
   options: InstallOptions,
   defaults: SourceDefaults,
-): Promise<InstallSource> {
+): Promise<InstallOrigin> {
   if ((options.mode ?? defaults.defaultMode) === "local") return { kind: "local" };
+  const refs = options.refs ?? (await declaredRefs(defaults.repoRoot));
   if (options.repository !== undefined) {
-    return { kind: "remote", repository: options.repository };
+    return { kind: "remote", repository: options.repository, refs };
   }
   const repository = await resolveRepository({ cwd: defaults.repoRoot, env: process.env });
   if (!repository.ok) {
@@ -243,7 +255,12 @@ async function installSource(
       `remote install needs the marketplace's GitHub repository: ${formatRepositoryError(repository.error)}`,
     );
   }
-  return { kind: "remote", repository: repository.value };
+  return { kind: "remote", repository: repository.value, refs };
+}
+
+async function declaredRefs(repoRoot: string): Promise<Readonly<Record<string, string>>> {
+  const config = await loadHarnessConfig(repoRoot);
+  return Object.fromEntries(config.vendors.map((v) => [v.name, v.ref]));
 }
 
 async function resolveMarketplaceName(
@@ -262,16 +279,34 @@ async function resolveMarketplaceName(
 
 function buildVendorContext(
   ctx: ResolvedContext,
+  vendor: Vendor,
   plugins: VendorInstallContext["plugins"],
 ): VendorInstallContext {
   return {
     distRoot: ctx.distRoot,
     marketplace: ctx.marketplace,
     plugins,
-    source: ctx.source,
+    source: sourceOf(ctx, vendor),
     run: ctx.run,
     log: ctx.log,
   };
+}
+
+function vendorSource(origin: InstallOrigin, vendor: Vendor): InstallSource {
+  if (origin.kind === "local") return origin;
+  const ref = origin.refs[vendor.name];
+  if (ref === undefined) {
+    throw new Error(
+      `remote install of ${vendor.name} found no ref for it; declare vendors.${vendor.name}.ref in harness.yaml`,
+    );
+  }
+  return { kind: "remote", repository: origin.repository, ref };
+}
+
+function sourceOf(ctx: ResolvedContext, vendor: Vendor): InstallSource {
+  const source = ctx.sources.get(vendor.name);
+  if (source === undefined) throw new Error(`install context has no source for ${vendor.name}`);
+  return source;
 }
 
 async function runUninstallDryRun(ctx: ResolvedContext): Promise<void> {
@@ -309,7 +344,7 @@ async function runDryRun(ctx: ResolvedContext): Promise<void> {
       for (const plugin of plugins) ctx.log(`  ${plugin.name}@${plugin.version}`);
       continue;
     }
-    const { enabled, disabled } = vendor.partitionPlugins(buildVendorContext(ctx, plugins));
+    const { enabled, disabled } = vendor.partitionPlugins(buildVendorContext(ctx, vendor, plugins));
     ctx.log(`[dry-run] ${vendor.name}: would install ${enabled.length} plugin(s):`);
     for (const p of enabled) ctx.log(`  ${p.name}@${p.version}`);
     for (const p of disabled) ctx.log(`  ${p.name}@${p.version} (skipped — disabled in settings)`);

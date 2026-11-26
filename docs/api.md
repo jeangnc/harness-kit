@@ -57,11 +57,14 @@ import {
 } from "@jean.gnc/harness-kit";
 
 const config = await loadHarnessConfig(".");
-const vendors = resolveVendors(config.vendors, builtinVendors());
+const vendors = resolveVendors(
+  config.vendors.map((vendor) => vendor.name),
+  builtinVendors(),
+);
 await install({ repoRoot: ".", vendors, mode: "local" });
 ```
 
-Applies config links from `.harness/configs.json` (replacing existing symlinks, backing up regular files) and calls each vendor's `install` hook. `mode` is `"local"` (default) or `"remote"`; remote mode resolves the GitHub repository from `GITHUB_REPOSITORY` or the `origin` remote unless `repository` is passed.
+Applies config links from `.harness/configs.json` (replacing existing symlinks, backing up regular files) and calls each vendor's `install` hook. `mode` is `"local"` (default) or `"remote"`; remote mode resolves the GitHub repository from `GITHUB_REPOSITORY` or the `origin` remote unless `repository` is passed, and reads each vendor's `ref` from `harness.yaml` in `repoRoot` unless `refs` is passed. It fails before touching any vendor when one has no ref.
 
 ### `uninstall(options: InstallOptions): Promise<void>`
 

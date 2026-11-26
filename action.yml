@@ -1,7 +1,7 @@
 name: harness-kit
 description: >-
   Build, check, and lint a harness repo's agent plugins. In release mode, also publish each
-  vendor build to a branch named after the vendor (claude, codex). Release mode requires the
+  vendor build to the ref declared in harness.yaml. Release mode requires the
   calling job to grant `permissions: contents: write` and to check out with
   `actions/checkout` using `fetch-depth: 0`.
 author: Jean Gonçalves

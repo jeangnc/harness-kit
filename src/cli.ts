@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { commaSeparated, parsePositiveInt, parseTier } from "./args/index.js";
 import { migrateRuntime, installDefaults } from "./install/runtime.js";
 import { build } from "./build.js";
+import { loadHarnessConfig, type VendorDeclaration } from "./config/harness.js";
 import { formatRepositoryError, resolveRepository } from "./repository/index.js";
 import { formatPublishError, formatPublishOutcome, publishVendors } from "./publish/index.js";
 import { layoutAt, legacyBuildDir } from "./layout/index.js";
@@ -153,7 +154,7 @@ const updateCmd = defineCommand({
 const publishCmd = defineCommand({
   meta: {
     name: "publish",
-    description: "Build, then publish each vendor build to the branch named after the vendor",
+    description: "Build, then publish each vendor build to its ref in harness.yaml",
   },
   args: {
     repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
@@ -166,12 +167,12 @@ const publishCmd = defineCommand({
     remote: { type: "string", default: "origin", description: "git remote to push to" },
   },
   run: async ({ args }) => {
-    const declared = await resolveVendorsForRepo(args.repo);
+    const declared = (await loadHarnessConfig(args.repo)).vendors;
     const requested = commaSeparated(args.vendors);
-    const vendors = requested.length === 0 ? declared : resolveVendors(requested, declared);
     const result = await publishVendors({
       layout: layoutAt(args.repo),
-      vendors: vendors.map((vendor) => vendor.name),
+      vendors:
+        requested.length === 0 ? declared : requested.map((name) => declaredVendor(declared, name)),
       remote: args.remote,
       build: async () => build({ repoRoot: args.repo, silent: true }),
     });
@@ -392,3 +393,12 @@ const main = defineCommand({
 });
 
 await runMain(main);
+
+function declaredVendor(declared: readonly VendorDeclaration[], name: string): VendorDeclaration {
+  const found = declared.find((vendor) => vendor.name === name);
+  if (found === undefined) {
+    const names = declared.map((vendor) => vendor.name).join(", ");
+    throw new Error(`cannot publish ${name}: harness.yaml declares only ${names}`);
+  }
+  return found;
+}

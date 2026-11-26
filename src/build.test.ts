@@ -11,7 +11,7 @@ async function withSandbox<T>(fn: (repoRoot: string, outRoot: string) => Promise
   const repoRoot = mkdtempSync(join(tmpdir(), "harness-kit-build-"));
   writeFileSync(
     join(repoRoot, "harness.yaml"),
-    "marketplace: build-test\nowner:\n  name: harness-kit-tests\nvendors:\n  - claude\n",
+    "marketplace: build-test\nowner:\n  name: harness-kit-tests\nvendors: { claude: { ref: harness/claude } }\n",
   );
   const pluginDir = join(repoRoot, "plugins/foo");
   mkdirSync(join(pluginDir, "skills/bar"), { recursive: true });

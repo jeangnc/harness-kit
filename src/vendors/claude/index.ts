@@ -340,7 +340,7 @@ async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
     "plugin",
     "marketplace",
     "add",
-    `${source.repository.slug}#${VENDOR_NAME}`,
+    `${source.repository.slug}#${source.ref}`,
   ]);
   await runIgnoreFailure(ctx.run, "claude", ["plugin", "marketplace", "update", ctx.marketplace]);
 }

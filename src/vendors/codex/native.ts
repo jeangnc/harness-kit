@@ -191,6 +191,16 @@ async function addMarketplace(context: Invocation, addition: MarketplaceAddition
   }
 }
 
+export async function listMarketplaceNames(options: Invocation): Promise<readonly string[]> {
+  const result = await readJson({
+    ...options,
+    args: ["plugin", "marketplace", "list", "--json"],
+    operation: "marketplace list",
+    schema: z.object({ marketplaces: z.array(z.object({ name: z.string() })) }),
+  });
+  return result.marketplaces.map((entry) => entry.name);
+}
+
 export async function upgradeMarketplace(
   options: Invocation & { readonly marketplace: string },
 ): Promise<void> {
