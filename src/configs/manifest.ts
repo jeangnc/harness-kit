@@ -3,6 +3,7 @@ import { relative } from "node:path";
 
 import { pathExists } from "../fs.js";
 import type { Vendor } from "../vendor/schema.js";
+import { vendorBuild } from "../layout/index.js";
 
 export type LinkKind = "file" | "dir";
 
@@ -27,7 +28,7 @@ export async function buildConfigsManifest(
 ): Promise<ConfigsManifest> {
   const links: ConfigLink[] = [];
   for (const vendor of options.vendors) {
-    const configsOut = vendor.configsOutDir(options.outRoot);
+    const configsOut = vendorBuild(options.outRoot, vendor.name).configsDir;
     if (!(await pathExists(configsOut))) continue;
     for (const entry of await listEntries(configsOut)) {
       const absPath = `${configsOut}/${entry}`;

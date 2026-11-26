@@ -352,7 +352,7 @@ test("localSources reads the marketplace name from the dist marketplace manifest
     const vendor = makeFakeVendor("claude");
     mkdirSync(join(distRoot, "claude/.claude-plugin"), { recursive: true });
     writeFileSync(
-      join(distRoot, vendor.marketplaceManifestPath),
+      join(distRoot, "claude", vendor.catalogPath),
       JSON.stringify({ name: "market-a" }),
     );
     const sources = await localSources(distRoot, [vendor]);

@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { join, parse, resolve } from "node:path";
 
+import { vendorBuild } from "../../layout/index.js";
 import { defaultPartition } from "../shared.js";
 import {
   CATALOG_REL,
@@ -19,8 +20,7 @@ import {
 } from "./native.js";
 import type { CodexNativeContext } from "./native.js";
 
-const VENDOR_DIR = "codex";
-const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/${CATALOG_REL}`;
+const VENDOR_NAME = "codex";
 
 export function makeCodexVendor(homePath: string): Vendor {
   const home = resolve(homePath);
@@ -30,17 +30,13 @@ export function makeCodexVendor(homePath: string): Vendor {
     run: ctx.run,
   });
   return {
-    name: "codex",
+    name: VENDOR_NAME,
     home,
     pluginManifestPath: PLUGIN_MANIFEST_REL,
-    marketplaceManifestPath: MARKETPLACE_MANIFEST_REL,
-    vendorOutDir: (outRoot) => join(outRoot, VENDOR_DIR),
-    pluginOutDir: (outRoot, pluginName) => join(outRoot, VENDOR_DIR, "plugins", pluginName),
-    configsOutDir: (outRoot) => join(outRoot, VENDOR_DIR, "configs"),
+    catalogPath: CATALOG_REL,
     configPlacement: () => null,
     emitPluginManifest: emitCodexPluginManifest,
-    emitMarketplaceManifest: async (ctx) =>
-      emitCodexCatalog(join(ctx.outRoot, VENDOR_DIR), ctx.catalog),
+    emitCatalog: async (ctx) => emitCodexCatalog(ctx.vendorDir, ctx.catalog),
     install: async (ctx) => refreshPlugins(ctx, inHome(ctx)),
     refresh: async (ctx) => refreshPlugins(ctx, inHome(ctx)),
     async uninstall(ctx) {
@@ -79,7 +75,7 @@ async function refreshPlugins(
   if (ctx.mode === "local") {
     await registerCodexMarketplace({
       ...native,
-      marketplace: { name: ctx.marketplace, path: join(ctx.distRoot, VENDOR_DIR) },
+      marketplace: { name: ctx.marketplace, path: vendorBuild(ctx.distRoot, VENDOR_NAME).root },
     });
   } else {
     await upgradeCodexMarketplace({ ...native, marketplace: ctx.marketplace });

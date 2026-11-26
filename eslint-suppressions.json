@@ -61,7 +61,7 @@
   },
   "src/compile/index.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 114
+      "count": 112
     }
   },
   "src/compile/index.ts": {
@@ -276,7 +276,7 @@
   },
   "src/vendors/claude/index.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 94
+      "count": 90
     }
   },
   "src/vendors/claude/index.ts": {

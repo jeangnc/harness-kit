@@ -4,6 +4,7 @@ import { cp, mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { runIgnoreFailure } from "../../install/runner.js";
+import { vendorBuild } from "../../layout/index.js";
 import { errnoCode, pathExists, readdirOrEmpty } from "../../fs.js";
 import {
   patchInstalledEntries,
@@ -24,12 +25,10 @@ import type {
   PluginPartition,
   Vendor,
   VendorInstallContext,
-  VendorMarketplaceEmitContext,
 } from "../../vendor/schema.js";
 
-const VENDOR_DIR = "claude";
+const VENDOR_NAME = "claude";
 const STAGING_ROOT_DIR = ".staging";
-const MARKETPLACE_MANIFEST_REL = `${VENDOR_DIR}/${CATALOG_REL}`;
 
 function pluginKey(name: string, marketplace: string): string {
   return `${name}@${marketplace}`;
@@ -72,7 +71,9 @@ function readSettings(settingsPath: string): Record<string, unknown> {
 }
 
 function declaredMarketplaceSource(ctx: VendorInstallContext): string | undefined {
-  const settings = readSettings(join(ctx.distRoot, VENDOR_DIR, "configs", "settings.json"));
+  const settings = readSettings(
+    join(vendorBuild(ctx.distRoot, VENDOR_NAME).configsDir, "settings.json"),
+  );
   const marketplaces = settings["extraKnownMarketplaces"];
   const entry = isRecord(marketplaces) ? marketplaces[ctx.marketplace] : undefined;
   const source = isRecord(entry) ? entry["source"] : undefined;
@@ -86,7 +87,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function partitionByEnabled(ctx: VendorInstallContext): PluginPartition {
-  const disabledKeys = readDisabledPluginKeys(join(ctx.distRoot, VENDOR_DIR, "configs"));
+  const disabledKeys = readDisabledPluginKeys(vendorBuild(ctx.distRoot, VENDOR_NAME).configsDir);
   const enabled: DiscoveredVendorPlugin[] = [];
   const disabled: DiscoveredVendorPlugin[] = [];
   for (const plugin of ctx.plugins) {
@@ -98,19 +99,10 @@ function partitionByEnabled(ctx: VendorInstallContext): PluginPartition {
 
 export function makeClaudeVendor(home: string): Vendor {
   return {
-    name: "claude",
+    name: VENDOR_NAME,
     home,
     pluginManifestPath: PLUGIN_MANIFEST_REL,
-    marketplaceManifestPath: MARKETPLACE_MANIFEST_REL,
-    vendorOutDir(outRoot) {
-      return join(outRoot, VENDOR_DIR);
-    },
-    pluginOutDir(outRoot, pluginName) {
-      return join(outRoot, VENDOR_DIR, "plugins", pluginName);
-    },
-    configsOutDir(outRoot) {
-      return join(outRoot, VENDOR_DIR, "configs");
-    },
+    catalogPath: CATALOG_REL,
     configPlacement(destRel) {
       if (destRel === "settings.json") return null;
       return { strategy: "link", destAbs: join(home, destRel) };
@@ -119,9 +111,7 @@ export function makeClaudeVendor(home: string): Vendor {
       return file.basename === "AGENTS.md" ? [join(home, "CLAUDE.md")] : [];
     },
     emitPluginManifest: emitClaudePluginManifest,
-    async emitMarketplaceManifest(ctx: VendorMarketplaceEmitContext): Promise<void> {
-      await emitClaudeCatalog(join(ctx.outRoot, VENDOR_DIR), ctx.catalog);
-    },
+    emitCatalog: async (ctx) => emitClaudeCatalog(ctx.vendorDir, ctx.catalog),
     async install(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;
       const { enabled, disabled } = partitionByEnabled(ctx);
@@ -348,7 +338,7 @@ async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
       "plugin",
       "marketplace",
       "add",
-      join(ctx.distRoot, VENDOR_DIR),
+      vendorBuild(ctx.distRoot, VENDOR_NAME).root,
       "--scope",
       "local",
     ]);

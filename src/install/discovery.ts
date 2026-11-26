@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { formatZodIssues } from "../errors/index.js";
 import { pathExists } from "../fs.js";
+import { pluginBuildDir, vendorBuild } from "../layout/index.js";
 import type { DiscoveredVendorPlugin, Vendor } from "../vendor/schema.js";
 
 export const PluginManifestSchema = z.object({
@@ -19,7 +20,7 @@ const MarketplaceManifestSchema = z.object({
 });
 
 export async function readMarketplaceName(distRoot: string, vendor: Vendor): Promise<string> {
-  const manifestPath = join(distRoot, vendor.marketplaceManifestPath);
+  const manifestPath = join(vendorBuild(distRoot, vendor.name).root, vendor.catalogPath);
   const raw = await readFile(manifestPath, "utf8");
   const parsed = MarketplaceManifestSchema.safeParse(JSON.parse(raw));
   if (!parsed.success) {
@@ -34,13 +35,14 @@ export async function discoverPluginsForVendor(
   distRoot: string,
   vendor: Vendor,
 ): Promise<readonly DiscoveredVendorPlugin[]> {
-  const pluginsDir = join(vendor.vendorOutDir(distRoot), "plugins");
+  const build = vendorBuild(distRoot, vendor.name);
+  const { pluginsDir } = build;
   if (!(await pathExists(pluginsDir))) return [];
   const entries = await readdir(pluginsDir, { withFileTypes: true });
   const result: DiscoveredVendorPlugin[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const path = vendor.pluginOutDir(distRoot, entry.name);
+    const path = pluginBuildDir(build, entry.name);
     const manifest = await tryReadManifest(join(path, vendor.pluginManifestPath));
     if (!manifest) continue;
     result.push({ name: entry.name, path, version: manifest.version });

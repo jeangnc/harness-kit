@@ -94,19 +94,11 @@ test("claudeVendor default home is ~/.claude", () => {
   assert.equal(claudeVendor.pluginManifestPath, ".claude-plugin/plugin.json");
 });
 
-test("claudeVendor.pluginOutDir places plugins under <outRoot>/claude/plugins/<plugin>", () => {
-  assert.equal(claudeVendor.pluginOutDir("/tmp/dist", "alpha"), "/tmp/dist/claude/plugins/alpha");
+test("claudeVendor.catalogPath is .claude-plugin/marketplace.json", () => {
+  assert.equal(claudeVendor.catalogPath, ".claude-plugin/marketplace.json");
 });
 
-test("claudeVendor.configsOutDir places configs under <outRoot>/claude/configs", () => {
-  assert.equal(claudeVendor.configsOutDir("/tmp/dist"), "/tmp/dist/claude/configs");
-});
-
-test("claudeVendor.marketplaceManifestPath is claude/.claude-plugin/marketplace.json", () => {
-  assert.equal(claudeVendor.marketplaceManifestPath, "claude/.claude-plugin/marketplace.json");
-});
-
-test("claudeVendor.emitMarketplaceManifest lists discovered plugins with relative sources and descriptions", async () => {
+test("claudeVendor.emitCatalog lists discovered plugins with relative sources and descriptions", async () => {
   const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-claude-emit-"));
   try {
     const plugin = (name: string): ResolvedPlugin => ({
@@ -128,9 +120,9 @@ test("claudeVendor.emitMarketplaceManifest lists discovered plugins with relativ
       extensions: { claude: { metadata: { version: "2" } } },
       plugins: [plugin("alpha"), plugin("beta")],
     };
-    await claudeVendor.emitMarketplaceManifest({ outRoot: sandbox, catalog });
+    await claudeVendor.emitCatalog({ vendorDir: sandbox, catalog });
     const parsed: unknown = JSON.parse(
-      readFileSync(join(sandbox, "claude/.claude-plugin/marketplace.json"), "utf8"),
+      readFileSync(join(sandbox, ".claude-plugin/marketplace.json"), "utf8"),
     );
     assert.deepEqual(parsed, {
       name: "shop",

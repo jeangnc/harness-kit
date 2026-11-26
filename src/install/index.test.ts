@@ -57,13 +57,10 @@ function makeRecordingVendor(
     name,
     home,
     pluginManifestPath: `.${name}-plugin/plugin.json`,
-    marketplaceManifestPath: `${name}/.${name}-plugin/marketplace.json`,
-    vendorOutDir: (outRoot) => join(outRoot, name),
-    pluginOutDir: (outRoot, pluginName) => join(outRoot, name, "plugins", pluginName),
-    configsOutDir: (outRoot) => join(outRoot, name, "configs"),
+    catalogPath: `.${name}-plugin/marketplace.json`,
     configPlacement: (destRel) => ({ strategy: "link", destAbs: join(home, destRel) }),
     emitPluginManifest: async () => undefined,
-    emitMarketplaceManifest: async () => undefined,
+    emitCatalog: async () => undefined,
     install: async (ctx) => {
       record.installs.push(ctx);
     },

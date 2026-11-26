@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { renderMarkdownFile, type WarningSink } from "../compile/render.js";
 import { vendorTree, vendorWorkspace, workspaceView } from "../compile/trees.js";
 import type { InstalledIndex } from "../installed.js";
-import type { Catalog, Layout } from "../layout/index.js";
+import { vendorBuild, type Catalog, type Layout } from "../layout/index.js";
 import { overlayVendorNames } from "../vendor/builtins.js";
 import type { Vendor } from "../vendor/schema.js";
 
@@ -45,7 +45,7 @@ export async function compileConfigs(options: CompileConfigsOptions): Promise<vo
       localIds: workspace.localIds,
       view: workspaceView(workspace, tree),
     };
-    const configsOut = vendor.configsOutDir(layout.buildDir);
+    const configsOut = vendorBuild(layout.buildDir, vendor.name).configsDir;
     for (const [rel, physical] of tree.files) {
       if (rel.split("/").some((segment) => segment.startsWith("."))) continue;
       const outPath = join(configsOut, rel);

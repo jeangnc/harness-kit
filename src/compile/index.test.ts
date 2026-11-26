@@ -542,7 +542,7 @@ test("compile strips dot-prefixed directories from a plugin's source tree", asyn
     },
     async (repoRoot, distRoot) => {
       await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
-      const pluginDist = claudeVendor.pluginOutDir(distRoot, "foo");
+      const pluginDist = join(distRoot, "claude/plugins/foo");
       const stray = join(pluginDist, ".fragments/snippet.md");
       assert.ok(!existsSync(stray), `did not expect ${stray} to exist`);
       const strayDir = join(pluginDist, ".fragments");
@@ -560,7 +560,7 @@ test("compile keeps non-dot companion directories in a plugin's source tree", as
     },
     async (repoRoot, distRoot) => {
       await compilePlugins({ layout: testLayout(repoRoot, distRoot), vendors });
-      const pluginDist = claudeVendor.pluginOutDir(distRoot, "foo");
+      const pluginDist = join(distRoot, "claude/plugins/foo");
       const kept = join(pluginDist, "companions/runtime.md");
       assert.ok(existsSync(kept), `expected ${kept} to exist`);
     },

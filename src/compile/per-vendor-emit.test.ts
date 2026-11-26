@@ -1,10 +1,10 @@
 import { test } from "node:test";
-import { deepEqual, doesNotMatch, doesNotReject, equal, match, rejects } from "node:assert/strict";
+import { deepEqual, doesNotMatch, equal, match, rejects } from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { compilePlugins, verifyEmittedMarketplaceSources } from "./index.js";
+import { compilePlugins } from "./index.js";
 import { claudeVendor } from "../vendors/claude/index.js";
 import { codexVendor } from "../vendors/codex/index.js";
 import { layoutAt, type Layout } from "../layout/index.js";
@@ -191,49 +191,6 @@ for (const { placeholder, directive, resolved } of plainMdPlaceholderCases) {
     });
   });
 }
-
-function emitMarketplaceForVerification(outRoot: string, names: readonly string[]): void {
-  const dir = join(outRoot, "claude/.claude-plugin");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, "marketplace.json"),
-    JSON.stringify({
-      name: "test-marketplace",
-      owner: { name: "test" },
-      plugins: names.map((name) => ({ name, source: `./plugins/${name}` })),
-    }),
-  );
-}
-
-function emitPluginManifestForVerification(outRoot: string, name: string): void {
-  const dir = join(outRoot, "claude/plugins", name, ".claude-plugin");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "plugin.json"), JSON.stringify({ name, version: "1.0.0" }));
-}
-
-test("verifyEmittedMarketplaceSources passes when every relative source has an emitted manifest", async () => {
-  await withSandbox(async (root) => {
-    const outRoot = join(root, "dist");
-    emitMarketplaceForVerification(outRoot, ["alpha", "beta"]);
-    emitPluginManifestForVerification(outRoot, "alpha");
-    emitPluginManifestForVerification(outRoot, "beta");
-
-    await doesNotReject(verifyEmittedMarketplaceSources(outRoot, claudeVendor));
-  });
-});
-
-test("verifyEmittedMarketplaceSources throws when an emitted source has no plugin manifest", async () => {
-  await withSandbox(async (root) => {
-    const outRoot = join(root, "dist");
-    emitMarketplaceForVerification(outRoot, ["alpha", "ghost"]);
-    emitPluginManifestForVerification(outRoot, "alpha");
-
-    await rejects(
-      verifyEmittedMarketplaceSources(outRoot, claudeVendor),
-      /ghost → \.\/plugins\/ghost/,
-    );
-  });
-});
 
 test("compilePlugins fails when a plain .md file has an unknown placeholder prefix", async () => {
   await withSandbox(async (root) => {

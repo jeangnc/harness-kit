@@ -39,8 +39,8 @@ export interface VendorEmitContext {
   readonly pluginOutDir: string;
 }
 
-export interface VendorMarketplaceEmitContext {
-  readonly outRoot: string;
+export interface VendorCatalogEmitContext {
+  readonly vendorDir: string;
   readonly catalog: Catalog;
 }
 
@@ -48,14 +48,11 @@ export interface Vendor {
   readonly name: string;
   readonly home: string;
   readonly pluginManifestPath: string;
-  readonly marketplaceManifestPath: string;
-  readonly vendorOutDir: (outRoot: string) => string;
-  readonly pluginOutDir: (outRoot: string, pluginName: string) => string;
-  readonly configsOutDir: (outRoot: string) => string;
+  readonly catalogPath: string;
   readonly configPlacement: (destRel: string) => ConfigPlacement | null;
   readonly aliases?: (linkedFile: LinkedFile) => readonly string[];
   readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;
-  readonly emitMarketplaceManifest: (ctx: VendorMarketplaceEmitContext) => Promise<void>;
+  readonly emitCatalog: (ctx: VendorCatalogEmitContext) => Promise<void>;
   readonly install: (ctx: VendorInstallContext) => Promise<void>;
   readonly refresh: (ctx: VendorInstallContext) => Promise<void>;
   readonly uninstall: (ctx: VendorInstallContext) => Promise<void>;

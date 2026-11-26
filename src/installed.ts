@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { builtinVendors } from "./vendor/builtins.js";
 import type { Vendor } from "./vendor/schema.js";
+import { vendorBuild } from "./layout/index.js";
 
 const PluginManifestSchema = z.object({ name: z.string().min(1) });
 
@@ -69,11 +70,12 @@ export async function localSources(
 ): Promise<readonly PluginSource[]> {
   const sources: PluginSource[] = [];
   for (const vendor of vendors) {
-    const marketplace = await readMarketplaceName(join(distRoot, vendor.marketplaceManifestPath));
+    const build = vendorBuild(distRoot, vendor.name);
+    const marketplace = await readMarketplaceName(join(build.root, vendor.catalogPath));
     if (marketplace === null) continue;
     sources.push({
       name: vendor.name,
-      root: join(vendor.vendorOutDir(distRoot), "plugins"),
+      root: build.pluginsDir,
       manifestRelativePath: vendor.pluginManifestPath,
       marketplace,
     });

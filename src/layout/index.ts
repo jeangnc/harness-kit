@@ -168,6 +168,21 @@ export interface LocalIds {
   readonly agents: ReadonlySet<string>;
 }
 
+export interface VendorBuild {
+  readonly root: string;
+  readonly pluginsDir: string;
+  readonly configsDir: string;
+}
+
+export function vendorBuild(buildDir: string, vendor: string): VendorBuild {
+  const root = join(buildDir, vendor);
+  return { root, pluginsDir: join(root, "plugins"), configsDir: join(root, "configs") };
+}
+
+export function pluginBuildDir(build: VendorBuild, pluginName: string): string {
+  return join(build.pluginsDir, pluginName);
+}
+
 export async function loadCatalogOrThrow(layout: Layout): Promise<Catalog> {
   const result = await loadCatalog(layout, await loadHarnessConfig(layout.repoRoot));
   if (result.ok) return result.value;

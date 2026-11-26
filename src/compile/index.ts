@@ -11,6 +11,9 @@ import { PluginManifestSchema } from "../install/discovery.js";
 import {
   PLUGIN_MANIFEST,
   loadCatalogOrThrow,
+  pluginBuildDir,
+  vendorBuild,
+  type VendorBuild,
   type Catalog,
   type Layout,
   type LocalIds,
@@ -64,7 +67,8 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
 
   const skipRelPaths: ReadonlySet<string> = new Set([PLUGIN_MANIFEST]);
   for (const { vendor, workspace } of workspaces) {
-    await vendor.emitMarketplaceManifest({ outRoot, catalog });
+    const build = vendorBuild(outRoot, vendor.name);
+    await vendor.emitCatalog({ vendorDir: build.root, catalog });
     const render = {
       localIds: workspace.localIds,
       installedIndex,
@@ -75,7 +79,7 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
     for (const plugin of catalog.plugins) {
       const tree = workspace.pluginTrees.get(plugin.name);
       if (tree === undefined) continue;
-      const pluginOutDir = vendor.pluginOutDir(outRoot, plugin.name);
+      const pluginOutDir = pluginBuildDir(build, plugin.name);
       await vendor.emitPluginManifest({ plugin, pluginOutDir });
       await compileTree({
         tree,
@@ -86,27 +90,31 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
     }
   }
   for (const vendor of vendors) {
-    await verifyEmittedMarketplaceSources(outRoot, vendor);
+    await verifyEmittedPluginManifests({
+      build: vendorBuild(outRoot, vendor.name),
+      vendor,
+      catalog,
+    });
   }
 }
 
-export async function verifyEmittedMarketplaceSources(
-  outRoot: string,
-  vendor: Vendor,
-): Promise<void> {
-  const manifestPath = join(outRoot, vendor.marketplaceManifestPath);
-  const marketplace = JSON.parse(await readFile(manifestPath, "utf8")) as {
-    plugins: ReadonlyArray<{ name: string; source: unknown }>;
-  };
-  const unresolved: string[] = [];
-  for (const { name, source } of marketplace.plugins) {
-    if (typeof source !== "string") continue;
-    const target = join(vendor.pluginOutDir(outRoot, name), vendor.pluginManifestPath);
-    if (!(await pluginManifestParses(target))) unresolved.push(`${name} → ${source}`);
-  }
+interface EmittedVendorBuild {
+  readonly build: VendorBuild;
+  readonly vendor: Vendor;
+  readonly catalog: Catalog;
+}
+
+async function verifyEmittedPluginManifests(emitted: EmittedVendorBuild): Promise<void> {
+  const { build, vendor, catalog } = emitted;
+  const parses = await Promise.all(
+    catalog.plugins.map(async (plugin) =>
+      pluginManifestParses(join(pluginBuildDir(build, plugin.name), vendor.pluginManifestPath)),
+    ),
+  );
+  const unresolved = catalog.plugins.filter((_, i) => !parses[i]).map((plugin) => plugin.name);
   if (unresolved.length > 0) {
-    throwInvariantViolations(manifestPath, [
-      `plugin sources with no emitted plugin manifest: ${unresolved.join("; ")}`,
+    throwInvariantViolations(join(build.root, vendor.catalogPath), [
+      `catalog plugins with no emitted plugin manifest: ${unresolved.join("; ")}`,
     ]);
   }
 }
