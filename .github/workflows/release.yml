@@ -11,6 +11,7 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6
+      - run: sudo apt-get install -y --no-install-recommends direnv
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
