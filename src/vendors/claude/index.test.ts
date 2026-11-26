@@ -881,7 +881,7 @@ test("claudeVendor.refresh skips a plugin absent from the install registry (neve
   });
 });
 
-test("claudeVendor.refresh never writes settings.json", async () => {
+test("claudeVendor.refresh in local mode never writes settings.json", async () => {
   await withHome(async (home, dist) => {
     const path = writeDistPlugin(dist, "alpha", "2.0.0", "alpha-v2");
     mkdirSync(home, { recursive: true });
@@ -906,6 +906,27 @@ test("claudeVendor.refresh never writes settings.json", async () => {
     );
     equal(readFileSync(settingsPath, "utf8"), before, "settings.json byte-unchanged");
     equal(calls.length, 0, "refresh runs no claude CLI command");
+  });
+});
+
+test("claudeVendor.refresh in remote mode re-registers the marketplace at the declared ref", async () => {
+  await withHome(async (home, dist) => {
+    const path = writeDistPlugin(dist, "alpha", "2.0.0", "alpha-v2");
+    writeInstalledRegistry(home, { version: 2, plugins: {} });
+    const { run, calls } = recordingRunner();
+    await makeVendor(home).refresh({
+      ...ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
+      source: {
+        kind: "remote",
+        repository: { owner: "foo", name: "bar", slug: "foo/bar" },
+        ref: "out/claude",
+      },
+    });
+    ok(
+      calls.some(
+        (c) => [c.cmd, ...c.args].join(" ") === "claude plugin marketplace add foo/bar#out/claude",
+      ),
+    );
   });
 });
 

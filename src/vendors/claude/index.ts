@@ -125,6 +125,10 @@ export function makeVendor(home: string): Vendor {
     },
     async refresh(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;
+      if (ctx.source.kind === "remote") {
+        await refreshMarketplace(ctx);
+        await pruneStagingDirs(home);
+      }
       await refreshPlugins(home, ctx, new Date().toISOString());
     },
     async uninstall(ctx: VendorInstallContext): Promise<void> {
