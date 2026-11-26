@@ -1,3 +1,5 @@
+export const ACTION_REF = "jeangnc/harness-kit@v1";
+
 const CONSUMER_WORKFLOW = `name: harness
 on:
   pull_request:
@@ -10,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: jeangnc/harness-kit@v1
+      - uses: ${ACTION_REF}
         with:
           mode: verify
 
@@ -26,7 +28,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: jeangnc/harness-kit@v1
+      - uses: ${ACTION_REF}
         with:
           mode: release
 `;

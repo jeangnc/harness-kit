@@ -189,14 +189,17 @@ function commitOf(outcome: PublishOutcome): string {
 
 test("publishVendors publishes each vendor build to the branch named after it", async () => {
   await withSandbox(async ({ request, writeBuild, remote }) => {
-    writeBuild("plugins/a/SKILL.md", "a\n");
-    const codexBuild = join(request.repoRoot, ".harness", "codex", "plugins/a/SKILL.md");
-    mkdirSync(dirname(codexBuild), { recursive: true });
-    writeFileSync(codexBuild, "codex\n");
+    const build = async (): Promise<void> => {
+      writeBuild("plugins/a/SKILL.md", "a\n");
+      const codexBuild = join(request.repoRoot, ".harness", "codex", "plugins/a/SKILL.md");
+      mkdirSync(dirname(codexBuild), { recursive: true });
+      writeFileSync(codexBuild, "codex\n");
+    };
     const result = await publishVendors({
       layout: layoutAt(request.repoRoot),
       vendors: ["claude", "codex"],
       remote: "origin",
+      build,
     });
     if (!result.ok) fail(formatPublishError(result.error));
     deepEqual(
@@ -207,5 +210,36 @@ test("publishVendors publishes each vendor build to the branch named after it", 
       ],
     );
     equal(remote("show", "codex:plugins/a/SKILL.md"), "codex");
+  });
+});
+
+test("publishVendors publishes a fresh build instead of a stale one", async () => {
+  await withSandbox(async ({ request, writeBuild, remote }) => {
+    writeBuild("plugins/a/SKILL.md", "stale\n");
+    const result = await publishVendors({
+      layout: layoutAt(request.repoRoot),
+      vendors: ["claude"],
+      remote: "origin",
+      build: async () => writeBuild("plugins/a/SKILL.md", "fresh\n"),
+    });
+    if (!result.ok) fail(formatPublishError(result.error));
+    equal(remote("show", "claude:plugins/a/SKILL.md"), "fresh");
+  });
+});
+
+test("publishVendors refuses a dirty source before building", async () => {
+  await withSandbox(async ({ request }) => {
+    writeFileSync(join(request.repoRoot, "harness.yaml"), "marketplace: changed\n");
+    let built = false;
+    const result = await publishVendors({
+      layout: layoutAt(request.repoRoot),
+      vendors: ["claude"],
+      remote: "origin",
+      build: async () => {
+        built = true;
+      },
+    });
+    equal(result.ok ? "ok" : result.error.kind, "dirty-source");
+    equal(built, false);
   });
 });

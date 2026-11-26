@@ -2,7 +2,7 @@ import { test } from "node:test";
 import { deepEqual, equal } from "node:assert/strict";
 import yaml from "js-yaml";
 
-import { consumerWorkflow } from "./workflow.js";
+import { ACTION_REF, consumerWorkflow } from "./workflow.js";
 
 interface Step {
   readonly uses?: string;
@@ -25,7 +25,7 @@ function jobs(): Readonly<Record<string, Job>> {
 }
 
 function actionStep(job: Job | undefined): Step | undefined {
-  return job?.steps.find((step) => step.uses === "jeangnc/harness-kit@v1");
+  return job?.steps.find((step) => step.uses === ACTION_REF);
 }
 
 test("consumerWorkflow verifies on pull requests", () => {

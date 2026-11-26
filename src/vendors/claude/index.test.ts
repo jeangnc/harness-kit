@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import assert from "node:assert/strict";
+import { deepEqual, equal, match, ok, rejects, throws } from "node:assert/strict";
 import {
   chmodSync,
   cpSync,
@@ -94,13 +94,13 @@ function ctx(over: Partial<VendorInstallContext> = {}): VendorInstallContext {
 }
 
 test("claudeVendor default home is ~/.claude", () => {
-  assert.equal(claudeVendor.name, "claude");
-  assert.match(claudeVendor.home, /\.claude$/);
-  assert.equal(claudeVendor.pluginManifestPath, ".claude-plugin/plugin.json");
+  equal(claudeVendor.name, "claude");
+  match(claudeVendor.home, /\.claude$/);
+  equal(claudeVendor.pluginManifestPath, ".claude-plugin/plugin.json");
 });
 
 test("claudeVendor.catalogPath is .claude-plugin/marketplace.json", () => {
-  assert.equal(claudeVendor.catalogPath, ".claude-plugin/marketplace.json");
+  equal(claudeVendor.catalogPath, ".claude-plugin/marketplace.json");
 });
 
 test("claudeVendor.emitCatalog lists discovered plugins with relative sources and descriptions", async () => {
@@ -129,7 +129,7 @@ test("claudeVendor.emitCatalog lists discovered plugins with relative sources an
     const parsed: unknown = JSON.parse(
       readFileSync(join(sandbox, ".claude-plugin/marketplace.json"), "utf8"),
     );
-    assert.deepEqual(parsed, {
+    deepEqual(parsed, {
       name: "shop",
       owner: { name: "Acme" },
       metadata: { version: "2" },
@@ -160,7 +160,7 @@ test("claudeVendor.install in remote mode installs each unregistered plugin with
       }),
     );
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.deepEqual(cmds, [
+    deepEqual(cmds, [
       "claude plugin marketplace remove test-market --scope local",
       "claude plugin marketplace add foo/bar#claude",
       "claude plugin marketplace update test-market",
@@ -186,7 +186,7 @@ test("claudeVendor.install in remote mode repoints the marketplace at the reposi
       }),
     );
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.deepEqual(cmds.slice(0, 3), [
+    deepEqual(cmds.slice(0, 3), [
       "claude plugin marketplace remove test-market --scope local",
       "claude plugin marketplace add foo/bar#claude",
       "claude plugin marketplace update test-market",
@@ -194,6 +194,26 @@ test("claudeVendor.install in remote mode repoints the marketplace at the reposi
   } finally {
     rmSync(sandbox, { recursive: true, force: true });
   }
+});
+
+test("claudeVendor.install in remote mode fails when the marketplace cannot be added", async () => {
+  await withHome(async (home, dist) => {
+    const path = writeDistPlugin(dist, "alpha", "1.0.0", "alpha-v1");
+    const run: CommandRunner = async (_cmd, args) => {
+      if (args[1] === "marketplace" && args[2] === "add") throw new Error("repository not found");
+    };
+    await rejects(
+      makeVendor(home).install(
+        ctx({
+          run,
+          source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+          distRoot: dist,
+          plugins: [{ name: "alpha", path, version: "1.0.0" }],
+        }),
+      ),
+      /repository not found/,
+    );
+  });
 });
 
 test("claudeVendor.install in local mode adds the dist marketplace instead of updating", async () => {
@@ -209,7 +229,7 @@ test("claudeVendor.install in local mode adds the dist marketplace instead of up
       }),
     );
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.deepEqual(cmds, [
+    deepEqual(cmds, [
       `claude plugin marketplace add ${join(dist, "claude")} --scope local`,
       "claude plugin install alpha@test-market",
     ]);
@@ -233,18 +253,18 @@ test("claudeVendor.install never uninstalls an already-registered plugin", async
       ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
     );
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.ok(
+    ok(
       !cmds.some((c) => c.startsWith("claude plugin uninstall")),
       "an installed plugin is refreshed in place, never uninstalled",
     );
-    assert.ok(
+    ok(
       !cmds.includes("claude plugin install alpha@test-market"),
       "no reinstall needed for an already-registered plugin",
     );
     const entry = readRegistry(home).plugins["alpha@test-market"]![0]!;
-    assert.equal(entry["version"], "2.0.0");
-    assert.equal(entry["installPath"], join(home, "plugins/cache/test-market/alpha/2.0.0"));
-    assert.equal(
+    equal(entry["version"], "2.0.0");
+    equal(entry["installPath"], join(home, "plugins/cache/test-market/alpha/2.0.0"));
+    equal(
       readFileSync(join(home, "plugins/cache/test-market/alpha/2.0.0/marker.txt"), "utf8"),
       "alpha-v2",
     );
@@ -255,15 +275,12 @@ test("claudeVendor.install fails loudly when the CLI install does not register t
   await withHome(async (home, dist) => {
     const path = writeDistPlugin(dist, "alpha", "2.0.0", "alpha-v2");
     writeInstalledRegistry(home, { version: 2, plugins: {} });
-    const run: CommandRunner = async (_cmd, args) => {
-      if (args[1] === "marketplace") throw new Error("network down");
-    };
-    await assert.rejects(
+    const run: CommandRunner = async () => undefined;
+    await rejects(
       makeVendor(home).install(
         ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
       ),
       /did not register the plugin/,
-      "a swallowed marketplace failure must not silently yield an unregistered plugin",
     );
   });
 });
@@ -285,7 +302,7 @@ test("claudeVendor.install populates the cache for a newly registered plugin", a
     await makeVendor(home).install(
       ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
     );
-    assert.equal(
+    equal(
       readFileSync(join(dest, "marker.txt"), "utf8"),
       "alpha-v2",
       "registry entry resolves to a populated cache dir, never a dangling path",
@@ -305,7 +322,7 @@ test("claudeVendor.install keeps the live plugin cache when staging the new copy
       },
     });
     const { run } = recordingRunner();
-    await assert.rejects(
+    await rejects(
       makeVendor(home).install(
         ctx({
           run,
@@ -316,7 +333,7 @@ test("claudeVendor.install keeps the live plugin cache when staging the new copy
         }),
       ),
     );
-    assert.equal(
+    equal(
       readFileSync(join(live, "marker.txt"), "utf8"),
       "alpha-v1",
       "the working install survives a failed refresh",
@@ -342,7 +359,7 @@ test("claudeVendor.install keeps the live plugin intact when the copy fails part
     });
     try {
       const { run } = recordingRunner(home);
-      await assert.rejects(
+      await rejects(
         makeVendor(home).install(
           ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "1.0.0" }] }),
         ),
@@ -351,12 +368,12 @@ test("claudeVendor.install keeps the live plugin intact when the copy fails part
     } finally {
       chmodSync(unreadable, 0o755);
     }
-    assert.equal(
+    equal(
       readFileSync(join(live, "marker.txt"), "utf8"),
       "alpha-v1",
       "a copy that dies mid-flight never touches the live plugin",
     );
-    assert.deepEqual(
+    deepEqual(
       readdirSync(join(home, "plugins/.staging")),
       [],
       "the half-copied payload is cleaned up",
@@ -373,16 +390,16 @@ test("stageIntoPlace leaves the live plugin untouched when it cannot be displace
     writeFileSync(join(live, "marker.txt"), "alpha-v1");
     chmodSync(parent, 0o500);
     try {
-      await assert.rejects(stageIntoPlace(home, source, live), /EACCES/);
+      await rejects(stageIntoPlace(home, source, live), /EACCES/);
     } finally {
       chmodSync(parent, 0o755);
     }
-    assert.equal(
+    equal(
       readFileSync(join(live, "marker.txt"), "utf8"),
       "alpha-v1",
       "a plugin that cannot be displaced is never removed",
     );
-    assert.deepEqual(
+    deepEqual(
       readdirSync(join(home, "plugins/.staging")),
       [],
       "a failure that displaces nothing leaves no staging debris to accumulate",
@@ -402,7 +419,7 @@ test("claudeVendor.install keeps the live plugin when the incoming copy cannot b
       },
     });
     const { run } = recordingRunner(home);
-    await assert.rejects(
+    await rejects(
       makeVendor(home).install(
         ctx({
           run,
@@ -411,12 +428,12 @@ test("claudeVendor.install keeps the live plugin when the incoming copy cannot b
         }),
       ),
     );
-    assert.equal(
+    equal(
       readFileSync(join(live, "marker.txt"), "utf8"),
       "alpha-v1",
       "a failed copy never displaces the working install",
     );
-    assert.deepEqual(
+    deepEqual(
       readdirSync(join(home, "plugins/.staging")),
       [],
       "failed staging leaves no debris behind",
@@ -441,12 +458,12 @@ test("claudeVendor.install spares a version dir another registry entry still poi
     await makeVendor(home).install(
       ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
     );
-    assert.equal(
+    equal(
       readFileSync(join(shared, "marker.txt"), "utf8"),
       "alpha-v1",
       "pruning never deletes a dir another plugin key still depends on",
     );
-    assert.equal(
+    equal(
       readRegistry(home).plugins["alpha-legacy@test-market"]![0]!["installPath"],
       shared,
       "the untouched key keeps pointing at a dir that still exists",
@@ -483,17 +500,17 @@ test("claudeVendor.install leaves no staging dirs inside the scanned cache tree"
         manifestRelativePath: vendor.pluginManifestPath,
       },
     ]);
-    assert.deepEqual(
+    deepEqual(
       found.skills.map((s) => s.plugin),
       ["alpha"],
       "a staging copy in flight is invisible to the scanner — no duplicate plugin",
     );
-    assert.deepEqual(
+    deepEqual(
       readdirSync(join(home, "plugins/cache/test-market/alpha")),
       ["2.0.0"],
       "only the real version dir remains — no staging sibling for the scanner to find",
     );
-    assert.deepEqual(
+    deepEqual(
       await vendor.installedVersions(ctx({ run, distRoot: dist })),
       new Map([["alpha", "2.0.0"]]),
       "installedVersions never reports a staging dir as a version",
@@ -505,7 +522,7 @@ test("claudeVendor.install prunes leaked temp_* staging dirs but spares real mar
   const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-prune-"));
   try {
     const marketplaces = join(home, "plugins/marketplaces");
-    for (const name of ["temp_111", "temp_222", "gq-marketplace", "claude-plugins-official"]) {
+    for (const name of ["temp_111", "temp_222", "acme-marketplace", "claude-plugins-official"]) {
       mkdirSync(join(marketplaces, name), { recursive: true });
     }
     const dist = join(home, "dist");
@@ -520,10 +537,7 @@ test("claudeVendor.install prunes leaked temp_* staging dirs but spares real mar
         plugins: [{ name: "alpha", path, version: "1.0.0" }],
       }),
     );
-    assert.deepEqual(readdirSync(marketplaces).sort(), [
-      "claude-plugins-official",
-      "gq-marketplace",
-    ]);
+    deepEqual(readdirSync(marketplaces).sort(), ["acme-marketplace", "claude-plugins-official"]);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -532,7 +546,7 @@ test("claudeVendor.install prunes leaked temp_* staging dirs but spares real mar
 test("claudeVendor.install is a no-op when no plugins", async () => {
   const { run, calls } = recordingRunner();
   await claudeVendor.install(ctx({ run, plugins: [] }));
-  assert.equal(calls.length, 0);
+  equal(calls.length, 0);
 });
 
 test("claudeVendor.uninstall uninstalls each plugin + removes marketplace", async () => {
@@ -544,7 +558,7 @@ test("claudeVendor.uninstall uninstalls each plugin + removes marketplace", asyn
     }),
   );
   const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-  assert.deepEqual(cmds, [
+  deepEqual(cmds, [
     "claude plugin uninstall alpha@test-market",
     "claude plugin marketplace remove test-market",
   ]);
@@ -552,7 +566,7 @@ test("claudeVendor.uninstall uninstalls each plugin + removes marketplace", asyn
 
 test("readDisabledPluginKeys returns empty set when settings.json is missing", () => {
   const keys = readDisabledPluginKeys(join(tmpdir(), "harness-kit-no-such-dir"));
-  assert.equal(keys.size, 0);
+  equal(keys.size, 0);
 });
 
 test("claudeVendor.isInstalled is true when a plugin cache exists for the marketplace", async () => {
@@ -560,7 +574,7 @@ test("claudeVendor.isInstalled is true when a plugin cache exists for the market
   try {
     mkdirSync(join(home, "plugins/cache/shop/alpha"), { recursive: true });
     const v = makeVendor(home);
-    assert.equal(await v.isInstalled(ctx({ marketplace: "shop" })), true);
+    equal(await v.isInstalled(ctx({ marketplace: "shop" })), true);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -570,7 +584,7 @@ test("claudeVendor.isInstalled is false when the plugin cache is empty", async (
   const home = mkdtempSync(join(tmpdir(), "harness-kit-claude-home-"));
   try {
     const v = makeVendor(home);
-    assert.equal(await v.isInstalled(ctx({ marketplace: "shop", distRoot: home })), false);
+    equal(await v.isInstalled(ctx({ marketplace: "shop", distRoot: home })), false);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -581,7 +595,7 @@ test("claudeVendor.isInstalled is false when only config links exist but no plug
   try {
     writeFileSync(join(home, "settings.json"), "{}");
     const v = makeVendor(home);
-    assert.equal(await v.isInstalled(ctx({ marketplace: "shop", distRoot: home })), false);
+    equal(await v.isInstalled(ctx({ marketplace: "shop", distRoot: home })), false);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -598,7 +612,7 @@ test("claudeVendor.installedVersions reads each cached plugin's manifest version
     );
     const v = makeVendor(home);
     const versions = await v.installedVersions(ctx({ marketplace: "shop" }));
-    assert.equal(versions.get("alpha"), "1.2.3");
+    equal(versions.get("alpha"), "1.2.3");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -610,7 +624,7 @@ test("claudeVendor.installedVersions omits a plugin whose manifest is unreadable
     mkdirSync(join(home, "plugins/cache/shop/broken"), { recursive: true });
     const v = makeVendor(home);
     const versions = await v.installedVersions(ctx({ marketplace: "shop" }));
-    assert.equal(versions.has("broken"), false);
+    equal(versions.has("broken"), false);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -626,7 +640,7 @@ test("claudeVendor.installedVersions deterministically picks the latest when sev
     }
     const v = makeVendor(home);
     const versions = await v.installedVersions(ctx({ marketplace: "shop" }));
-    assert.equal(versions.get("alpha"), "10.0.0");
+    equal(versions.get("alpha"), "10.0.0");
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
@@ -638,7 +652,7 @@ test("readDisabledPluginKeys throws on malformed JSON", () => {
     const configsDir = join(dist, "claude/configs");
     mkdirSync(configsDir, { recursive: true });
     writeFileSync(join(configsDir, "settings.json"), "{ not json");
-    assert.throws(() => readDisabledPluginKeys(configsDir), /settings\.json/);
+    throws(() => readDisabledPluginKeys(configsDir), /settings\.json/);
   } finally {
     rmSync(dist, { recursive: true, force: true });
   }
@@ -647,27 +661,27 @@ test("readDisabledPluginKeys throws on malformed JSON", () => {
 test("readDisabledPluginKeys collects only explicitly-false keys, omitting true and absent", async () => {
   await withSettings({ "on@m": true, "off@m": false }, (dist) => {
     const keys = readDisabledPluginKeys(join(dist, "claude/configs"));
-    assert.deepEqual([...keys], ["off@m"]);
+    deepEqual([...keys], ["off@m"]);
   });
 });
 
 test("readDisabledPluginKeys returns empty set when enabledPlugins is absent", async () => {
   await withSettings(undefined, (dist) => {
-    assert.equal(readDisabledPluginKeys(join(dist, "claude/configs")).size, 0);
+    equal(readDisabledPluginKeys(join(dist, "claude/configs")).size, 0);
   });
 });
 
 test("readDisabledPluginKeys throws when enabledPlugins is present but not an object", async () => {
   for (const value of ["nope", 42, null, []]) {
     await withSettings(value, (dist) => {
-      assert.throws(() => readDisabledPluginKeys(join(dist, "claude/configs")), /enabledPlugins/);
+      throws(() => readDisabledPluginKeys(join(dist, "claude/configs")), /enabledPlugins/);
     });
   }
 });
 
 test("readDisabledPluginKeys throws when an entry value is not a boolean (no silent typo)", async () => {
   await withSettings({ "off@m": "false" }, (dist) => {
-    assert.throws(() => readDisabledPluginKeys(join(dist, "claude/configs")), /must be a boolean/);
+    throws(() => readDisabledPluginKeys(join(dist, "claude/configs")), /must be a boolean/);
   });
 });
 
@@ -687,9 +701,9 @@ test("claudeVendor.install skips plugins explicitly disabled in settings", async
       }),
     );
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.ok(cmds.includes("claude plugin install alpha@test-market"));
-    assert.ok(!cmds.includes("claude plugin install beta@test-market"));
-    assert.ok(cmds.includes("claude plugin marketplace update test-market"));
+    ok(cmds.includes("claude plugin install alpha@test-market"));
+    ok(!cmds.includes("claude plugin install beta@test-market"));
+    ok(cmds.includes("claude plugin marketplace update test-market"));
   });
 });
 
@@ -706,7 +720,7 @@ test("claudeVendor.install enables plugins absent from settings (absent = enable
       }),
     );
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-    assert.ok(cmds.includes("claude plugin install alpha@test-market"));
+    ok(cmds.includes("claude plugin install alpha@test-market"));
   });
 });
 
@@ -727,10 +741,8 @@ test("claudeVendor.install installs none when all plugins are disabled, still re
         }),
       );
       const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
-      assert.ok(!cmds.some((c) => c.startsWith("claude plugin install ")));
-      assert.ok(
-        cmds.includes(`claude plugin marketplace add ${join(dist, "claude")} --scope local`),
-      );
+      ok(!cmds.some((c) => c.startsWith("claude plugin install ")));
+      ok(cmds.includes(`claude plugin marketplace add ${join(dist, "claude")} --scope local`));
     },
   );
 });
@@ -787,7 +799,7 @@ test("claudeVendor.refresh copies the shipped plugin into the versioned cache di
       ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
     );
     const cached = join(home, "plugins/cache/test-market/alpha/2.0.0/marker.txt");
-    assert.equal(readFileSync(cached, "utf8"), "alpha-v2");
+    equal(readFileSync(cached, "utf8"), "alpha-v2");
   });
 });
 
@@ -818,17 +830,17 @@ test("claudeVendor.refresh patches the registry version and installPath across a
     );
     const entries = readRegistry(home).plugins["alpha@test-market"]!;
     const expectedPath = join(home, "plugins/cache/test-market/alpha/2.0.0");
-    assert.equal(entries.length, 2);
+    equal(entries.length, 2);
     for (const entry of entries) {
-      assert.equal(entry["version"], "2.0.0");
-      assert.equal(entry["installPath"], expectedPath);
-      assert.match(
+      equal(entry["version"], "2.0.0");
+      equal(entry["installPath"], expectedPath);
+      match(
         String(entry["lastUpdated"]),
         /^\d{4}-\d{2}-\d{2}T/,
         "lastUpdated set to an ISO timestamp",
       );
     }
-    assert.equal(entries[1]!["projectPath"], "/repo", "scope metadata preserved");
+    equal(entries[1]!["projectPath"], "/repo", "scope metadata preserved");
   });
 });
 
@@ -840,8 +852,8 @@ test("claudeVendor.refresh skips a plugin absent from the install registry (neve
     await makeVendor(home).refresh(
       ctx({ run, distRoot: dist, plugins: [{ name: "ghost", path, version: "1.0.0" }] }),
     );
-    assert.deepEqual(readRegistry(home).plugins, {}, "unregistered plugin stays unregistered");
-    assert.equal(
+    deepEqual(readRegistry(home).plugins, {}, "unregistered plugin stays unregistered");
+    equal(
       existsSync(join(home, "plugins/cache/test-market/ghost")),
       false,
       "no cache is written for an unregistered plugin",
@@ -872,8 +884,8 @@ test("claudeVendor.refresh never writes settings.json", async () => {
     await makeVendor(home).refresh(
       ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
     );
-    assert.equal(readFileSync(settingsPath, "utf8"), before, "settings.json byte-unchanged");
-    assert.equal(calls.length, 0, "refresh runs no claude CLI command");
+    equal(readFileSync(settingsPath, "utf8"), before, "settings.json byte-unchanged");
+    equal(calls.length, 0, "refresh runs no claude CLI command");
   });
 });
 
@@ -893,8 +905,8 @@ test("claudeVendor.refresh removes the stale prior-version cache dir", async () 
     await makeVendor(home).refresh(
       ctx({ run, distRoot: dist, plugins: [{ name: "alpha", path, version: "2.0.0" }] }),
     );
-    assert.equal(existsSync(stale), false, "old version dir is pruned");
-    assert.equal(
+    equal(existsSync(stale), false, "old version dir is pruned");
+    equal(
       readFileSync(join(home, "plugins/cache/test-market/alpha/2.0.0/marker.txt"), "utf8"),
       "alpha-v2",
     );
@@ -921,8 +933,8 @@ test("claudeVendor.install reads disabled state before any command mutates setti
         ],
       }),
     );
-    assert.ok(calls.includes("claude plugin install alpha@test-market"));
-    assert.ok(
+    ok(calls.includes("claude plugin install alpha@test-market"));
+    ok(
       !calls.includes("claude plugin install beta@test-market"),
       "a mid-run settings rewrite must not resurrect a disabled plugin",
     );
@@ -940,11 +952,11 @@ test("claudeVendor.partitionPlugins splits discovered plugins by enabled state",
         ],
       }),
     );
-    assert.deepEqual(
+    deepEqual(
       result.enabled.map((p) => p.name),
       ["on"],
     );
-    assert.deepEqual(
+    deepEqual(
       result.disabled.map((p) => p.name),
       ["off"],
     );
@@ -960,11 +972,11 @@ test("claudeVendor.partitionPlugins treats a plugin disabled under a different m
         plugins: [{ name: "alpha", path: join(dist, "claude/alpha"), version: "1.0.0" }],
       }),
     );
-    assert.deepEqual(
+    deepEqual(
       result.enabled.map((p) => p.name),
       ["alpha"],
     );
-    assert.equal(result.disabled.length, 0);
+    equal(result.disabled.length, 0);
   });
 });
 
@@ -1011,7 +1023,7 @@ test("claudeVendor.pruneStale removes the cache dir and every registry scope ent
 
     await vendor.pruneStale(ctx({ run, marketplace: "test-market" }), ["legacy"]);
 
-    assert.equal(
+    equal(
       existsSync(join(home, "plugins/cache/test-market/legacy")),
       false,
       "the cache dir is gone",
@@ -1019,12 +1031,12 @@ test("claudeVendor.pruneStale removes the cache dir and every registry scope ent
     const registry = JSON.parse(
       readFileSync(join(home, "plugins/installed_plugins.json"), "utf8"),
     ) as { plugins: Record<string, unknown> };
-    assert.deepEqual(Object.keys(registry.plugins), [], "every scope entry is gone");
-    assert.deepEqual(calls[0], {
+    deepEqual(Object.keys(registry.plugins), [], "every scope entry is gone");
+    deepEqual(calls[0], {
       cmd: "claude",
       args: ["plugin", "uninstall", "legacy@test-market"],
     });
-    assert.deepEqual(
+    deepEqual(
       await vendor.installedVersions(ctx({ run, marketplace: "test-market" })),
       new Map(),
       "the pruned plugin can never be reported again",
@@ -1043,7 +1055,7 @@ test("claudeVendor.pruneStale spares a plugin it was not asked to remove", async
 
     await vendor.pruneStale(ctx({ run, marketplace: "test-market" }), []);
 
-    assert.deepEqual(
+    deepEqual(
       await vendor.installedVersions(ctx({ run, marketplace: "test-market" })),
       new Map([["keeper", "1.0.0"]]),
       "an empty stale set removes nothing",
@@ -1067,7 +1079,7 @@ test("claudeVendor.pruneStale leaves no plugin half-removed when a later removal
       }
     };
 
-    await assert.rejects(
+    await rejects(
       async () =>
         vendor.pruneStale(ctx({ run: corruptRegistryAfterFirst, marketplace: "test-market" }), [
           "first",
@@ -1076,7 +1088,7 @@ test("claudeVendor.pruneStale leaves no plugin half-removed when a later removal
       "the failure surfaces rather than passing silently",
     );
 
-    assert.deepEqual(
+    deepEqual(
       await vendor.installedVersions(ctx({ marketplace: "test-market" })),
       new Map([["second", "0.8.0"]]),
       "the failed plugin keeps its cache dir, so the next update still reports it",

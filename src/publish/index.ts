@@ -34,6 +34,7 @@ export interface VendorPublishRequest {
   readonly layout: Layout;
   readonly vendors: readonly string[];
   readonly remote: string;
+  readonly build: (this: void) => Promise<void>;
 }
 
 const LS_REMOTE_NO_MATCH = 2;
@@ -70,11 +71,15 @@ function short(sha: string): string {
 export async function publishVendors(
   request: VendorPublishRequest,
 ): Promise<Result<readonly PublishOutcome[], PublishError>> {
+  const { repoRoot } = request.layout;
+  const dirty = await dirtyPaths(repoRoot);
+  if (dirty.length > 0) return err({ kind: "dirty-source", repoRoot, paths: dirty });
+  await request.build();
   const outcomes: PublishOutcome[] = [];
   for (const vendor of request.vendors) {
     const build = vendorBuild(request.layout.buildDir, vendor);
     const published = await publishBranch({
-      repoRoot: request.layout.repoRoot,
+      repoRoot,
       buildDir: build.root,
       branch: vendor,
       remote: request.remote,

@@ -22,9 +22,14 @@ const haystacks: BypassHaystacks = {
 const NO_OWN_LEAF: BarewordContext = { ownLeaf: null };
 
 const barewordHaystacks: BypassHaystacks = {
-  skill: new Set(["gq-dev:ship-bugfix", "gq-support:triage", "gq-dev:rspec", "gq-dev:verify"]),
-  command: new Set(["gq-support:triage"]),
-  agent: new Set(["gq-dev:code-reviewer"]),
+  skill: new Set([
+    "acme-dev:ship-bugfix",
+    "acme-support:triage",
+    "acme-dev:rspec",
+    "acme-dev:verify",
+  ]),
+  command: new Set(["acme-support:triage"]),
+  agent: new Set(["acme-dev:code-reviewer"]),
 };
 
 const leafIndex = buildLeafIndex(barewordHaystacks);
@@ -94,7 +99,7 @@ test("buildLeafIndex splits plugin:name to leaf and groups multi-handle leaves",
   assert.equal(candidates.length, 2);
   assert.deepEqual([...candidates].map((c) => c.prefix).sort(), ["command", "skill"]);
   assert.equal(leafIndex.get("ship-bugfix")?.length, 1);
-  assert.equal(leafIndex.get("ship-bugfix")?.[0]?.handle, "gq-dev:ship-bugfix");
+  assert.equal(leafIndex.get("ship-bugfix")?.[0]?.handle, "acme-dev:ship-bugfix");
 });
 
 test("a backticked known leaf in prose is flagged as a bareword bypass", () => {
@@ -107,7 +112,7 @@ test("a backticked known leaf in prose is flagged as a bareword bypass", () => {
 
 test("a backticked leaf inside a placeholder is not flagged", () => {
   const found = detectBarewordBypasses(
-    "see {{skill:gq-dev:ship-bugfix}}\n",
+    "see {{skill:acme-dev:ship-bugfix}}\n",
     leafIndex,
     NO_OWN_LEAF,
   );
@@ -162,7 +167,7 @@ test("a backticked word matching no known leaf is left alone", () => {
 });
 
 test("a scoped backtick is left to detectBypasses, not matched as a bareword leaf", () => {
-  const found = detectBarewordBypasses("see `gq-dev:ship-bugfix`\n", leafIndex, NO_OWN_LEAF);
+  const found = detectBarewordBypasses("see `acme-dev:ship-bugfix`\n", leafIndex, NO_OWN_LEAF);
   assert.deepEqual(found, []);
 });
 

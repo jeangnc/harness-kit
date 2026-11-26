@@ -10,7 +10,7 @@ import { layoutAt, loadCatalog } from "./index.js";
 
 const config: HarnessConfig = {
   marketplace: "test-marketplace",
-  owner: { name: "Jean" },
+  owner: { name: "Acme" },
   vendors: ["claude"],
 };
 
@@ -57,7 +57,7 @@ test("loadCatalog takes marketplace name and owner from harness.yaml", async () 
     const result = await loadCatalog(layoutAt(repoRoot), config);
     if (!result.ok) assert.fail(JSON.stringify(result.error));
     assert.equal(result.value.name, "test-marketplace");
-    assert.deepEqual(result.value.owner, { name: "Jean" });
+    assert.deepEqual(result.value.owner, { name: "Acme" });
   });
 });
 

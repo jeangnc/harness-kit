@@ -318,7 +318,7 @@ async function pruneStagingDirs(home: string): Promise<void> {
 async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
   const { source } = ctx;
   if (source.kind === "local") {
-    await runIgnoreFailure(ctx.run, "claude", [
+    await ctx.run("claude", [
       "plugin",
       "marketplace",
       "add",
@@ -336,7 +336,7 @@ async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
     "--scope",
     "local",
   ]);
-  await runIgnoreFailure(ctx.run, "claude", [
+  await ctx.run("claude", [
     "plugin",
     "marketplace",
     "add",

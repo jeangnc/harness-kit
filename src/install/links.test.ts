@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import assert from "node:assert/strict";
+import { deepEqual, equal, match, ok, rejects, throws } from "node:assert/strict";
 import {
   mkdtempSync,
   rmSync,
@@ -28,7 +28,7 @@ async function withSandbox<T>(
   const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-links-"));
   try {
     const repoRoot = join(sandbox, "repo");
-    const distRoot = join(repoRoot, "dist");
+    const distRoot = join(repoRoot, ".harness");
     const claudeHome = join(sandbox, "claude");
     const codexHome = join(sandbox, "codex");
     mkdirSync(repoRoot, { recursive: true });
@@ -61,8 +61,8 @@ test("applyConfigs links each entry from distRoot into the vendor home at destRe
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
     const dest = join(claudeHome, "settings.json");
-    assert.ok(lstatSync(dest).isSymbolicLink());
-    assert.equal(readlinkSync(dest), join(compiledDir, "settings.json"));
+    ok(lstatSync(dest).isSymbolicLink());
+    equal(readlinkSync(dest), join(compiledDir, "settings.json"));
   });
 });
 
@@ -84,8 +84,8 @@ test("applyConfigs mirrors common entries into every targeted vendor", async () 
     const claude = makeFakeVendor("claude", { home: claudeHome });
     const codex = makeFakeVendor("codex", { home: codexHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude, codex], log: () => undefined });
-    assert.ok(lstatSync(join(claudeHome, "AGENTS.md")).isSymbolicLink());
-    assert.ok(lstatSync(join(codexHome, "AGENTS.md")).isSymbolicLink());
+    ok(lstatSync(join(claudeHome, "AGENTS.md")).isSymbolicLink());
+    ok(lstatSync(join(codexHome, "AGENTS.md")).isSymbolicLink());
   });
 });
 
@@ -108,8 +108,8 @@ test("applyConfigs backs up non-symlink destinations before linking", async () =
     });
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
-    assert.equal(readFileSync(join(claudeHome, "settings.json"), "utf8"), "new");
-    assert.equal(readFileSync(join(claudeHome, "settings.json.backup"), "utf8"), "user-data");
+    equal(readFileSync(join(claudeHome, "settings.json"), "utf8"), "new");
+    equal(readFileSync(join(claudeHome, "settings.json.backup"), "utf8"), "user-data");
   });
 });
 
@@ -131,13 +131,10 @@ test("applyConfigs merges an entry placed as merge into the existing destination
     });
     const logs: string[] = [];
     await applyConfigs({ repoRoot, distRoot, vendors: [codex], log: (line) => logs.push(line) });
-    assert.equal(lstatSync(join(codexHome, "foo.toml")).isSymbolicLink(), false);
-    assert.equal(
-      readFileSync(join(codexHome, "foo.toml"), "utf8"),
-      'foo = "owned"\nbar = "state"\n',
-    );
-    assert.equal(logs.length, 1);
-    assert.match(logs[0] ?? "", /foo reset to the value in/);
+    equal(lstatSync(join(codexHome, "foo.toml")).isSymbolicLink(), false);
+    equal(readFileSync(join(codexHome, "foo.toml"), "utf8"), 'foo = "owned"\nbar = "state"\n');
+    equal(logs.length, 1);
+    match(logs[0] ?? "", /foo reset to the value in/);
   });
 });
 
@@ -159,13 +156,10 @@ test("applyConfigs, when a merge destination is a symlink into dist, adopts its 
     });
     const options = { repoRoot, distRoot, vendors: [codex], log: () => undefined };
     await applyConfigs(options);
-    assert.equal(lstatSync(join(codexHome, "foo.toml")).isSymbolicLink(), false);
+    equal(lstatSync(join(codexHome, "foo.toml")).isSymbolicLink(), false);
     writeFileSync(join(compiledDir, "foo.toml"), 'foo = "owned"\n');
     await applyConfigs(options);
-    assert.equal(
-      readFileSync(join(codexHome, "foo.toml"), "utf8"),
-      'foo = "owned"\nbar = "state"\n',
-    );
+    equal(readFileSync(join(codexHome, "foo.toml"), "utf8"), 'foo = "owned"\nbar = "state"\n');
   });
 });
 
@@ -187,7 +181,7 @@ test("applyConfigs, when the repo stops owning a merged key, removes it from the
     await applyConfigs(options);
     writeFileSync(join(compiledDir, "foo.toml"), "foo = 1\n");
     await applyConfigs(options);
-    assert.equal(readFileSync(join(codexHome, "foo.toml"), "utf8"), "foo = 1\n");
+    equal(readFileSync(join(codexHome, "foo.toml"), "utf8"), "foo = 1\n");
   });
 });
 
@@ -207,11 +201,10 @@ test("applyConfigs, when the merge destination is malformed, names the file", as
       home: codexHome,
       configPlacement: (destRel) => ({ strategy: "merge", destAbs: join(codexHome, destRel) }),
     });
-    await assert.rejects(
-      applyConfigs({ repoRoot, distRoot, vendors: [codex], log: () => undefined }),
-      { message: new RegExp(`cannot merge configs into ${join(codexHome, "foo.toml")}`) },
-    );
-    assert.equal(readFileSync(join(codexHome, "foo.toml"), "utf8"), "foo = \n");
+    await rejects(applyConfigs({ repoRoot, distRoot, vendors: [codex], log: () => undefined }), {
+      message: new RegExp(`cannot merge configs into ${join(codexHome, "foo.toml")}`),
+    });
+    equal(readFileSync(join(codexHome, "foo.toml"), "utf8"), "foo = \n");
   });
 });
 
@@ -232,11 +225,23 @@ test("applyConfigs skips vendors not in the active set", async () => {
     });
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
-    assert.ok(!existsSync(join(codexHome, "config.toml")));
+    ok(!existsSync(join(codexHome, "config.toml")));
   });
 });
 
-test("applyConfigs removes orphan symlinks that point into the dist tree", async () => {
+test("applyConfigs removes links left in the vendor home by a 0.x dist build", async () => {
+  await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
+    mkdirSync(claudeHome, { recursive: true });
+    const legacyLink = join(claudeHome, "CLAUDE.md");
+    symlinkSync(join(repoRoot, "dist/claude/configs/AGENTS.md"), legacyLink);
+    writeManifest(distRoot, { links: [] });
+    const claude = makeFakeVendor("claude", { home: claudeHome });
+    await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
+    throws(() => lstatSync(legacyLink), /ENOENT/);
+  });
+});
+
+test("applyConfigs removes orphan symlinks that point into the build tree", async () => {
   await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
     const compiledDir = join(distRoot, "configs/claude");
     mkdirSync(compiledDir, { recursive: true });
@@ -256,12 +261,12 @@ test("applyConfigs removes orphan symlinks that point into the dist tree", async
     });
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
-    assert.throws(
+    throws(
       () => lstatSync(join(claudeHome, "removed-feature")),
       /ENOENT/,
       "orphan symlink should have been removed",
     );
-    assert.ok(lstatSync(join(claudeHome, "settings.json")).isSymbolicLink());
+    ok(lstatSync(join(claudeHome, "settings.json")).isSymbolicLink());
   });
 });
 
@@ -287,12 +292,12 @@ test("applyConfigs sweeps orphan symlinks living in a subdirectory alongside a p
     });
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
-    assert.throws(() => lstatSync(join(claudeHome, "hooks/removed-hook")), /ENOENT/);
-    assert.ok(lstatSync(join(claudeHome, "hooks/pre-push")).isSymbolicLink());
+    throws(() => lstatSync(join(claudeHome, "hooks/removed-hook")), /ENOENT/);
+    ok(lstatSync(join(claudeHome, "hooks/pre-push")).isSymbolicLink());
   });
 });
 
-test("applyConfigs removes orphan symlinks pointing anywhere into the dist tree (e.g. removed vendor subtree)", async () => {
+test("applyConfigs removes orphan symlinks pointing anywhere into the build tree (e.g. removed vendor subtree)", async () => {
   await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
     const compiledDir = join(distRoot, "configs/claude");
     mkdirSync(compiledDir, { recursive: true });
@@ -312,7 +317,7 @@ test("applyConfigs removes orphan symlinks pointing anywhere into the dist tree 
     });
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
-    assert.throws(
+    throws(
       () => lstatSync(join(claudeHome, "hooks")),
       /ENOENT/,
       "orphan symlink to a removed dist subtree should have been swept",
@@ -320,7 +325,7 @@ test("applyConfigs removes orphan symlinks pointing anywhere into the dist tree 
   });
 });
 
-test("applyConfigs leaves untouched symlinks pointing outside the dist tree", async () => {
+test("applyConfigs leaves untouched symlinks pointing outside the build tree", async () => {
   await withSandbox(async ({ repoRoot, distRoot, claudeHome }) => {
     mkdirSync(claudeHome, { recursive: true });
     const externalTarget = join(repoRoot, "..", "external", "file.json");
@@ -330,7 +335,7 @@ test("applyConfigs leaves untouched symlinks pointing outside the dist tree", as
     writeManifest(distRoot, { links: [] });
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
-    assert.ok(lstatSync(join(claudeHome, "external.json")).isSymbolicLink());
+    ok(lstatSync(join(claudeHome, "external.json")).isSymbolicLink());
   });
 });
 
@@ -344,7 +349,7 @@ test("applyConfigs leaves untouched user symlinks pointing into the repo but out
     writeManifest(distRoot, { links: [] });
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
-    assert.ok(lstatSync(join(claudeHome, "user-file.md")).isSymbolicLink());
+    ok(lstatSync(join(claudeHome, "user-file.md")).isSymbolicLink());
   });
 });
 
@@ -355,7 +360,7 @@ test("applyConfigs leaves untouched non-symlink files in the vendor home", async
     writeManifest(distRoot, { links: [] });
     const claude = makeFakeVendor("claude", { home: claudeHome });
     await applyConfigs({ repoRoot, distRoot, vendors: [claude], log: () => undefined });
-    assert.equal(readFileSync(join(claudeHome, "user-data.json"), "utf8"), "preserve me");
+    equal(readFileSync(join(claudeHome, "user-data.json"), "utf8"), "preserve me");
   });
 });
 
@@ -388,11 +393,11 @@ test("planConfigs returns the planned (src, dest) pairs without touching disk", 
     const codex = makeFakeVendor("codex", { home: codexHome });
     const plan = await planConfigs({ repoRoot, distRoot, vendors: [claude, codex] });
     const lines = plan.map((p) => `${p.srcAbs} -> ${p.destAbs}`);
-    assert.deepEqual(lines, [
+    deepEqual(lines, [
       `${join(distRoot, "configs/common/AGENTS.md")} -> ${join(claudeHome, "AGENTS.md")}`,
       `${join(distRoot, "configs/common/AGENTS.md")} -> ${join(codexHome, "AGENTS.md")}`,
       `${join(distRoot, "configs/claude/settings.json")} -> ${join(claudeHome, "settings.json")}`,
     ]);
-    assert.ok(!existsSync(join(claudeHome, "AGENTS.md")), "plan must not touch disk");
+    ok(!existsSync(join(claudeHome, "AGENTS.md")), "plan must not touch disk");
   });
 });

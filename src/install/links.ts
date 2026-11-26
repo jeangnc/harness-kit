@@ -7,6 +7,7 @@ import { formatZodIssues } from "../errors/index.js";
 import { errnoCode, pathExists, readdirOrEmpty } from "../fs.js";
 import { applyLink } from "../link/applier.js";
 import { applyMerge } from "../link/merger.js";
+import { legacyBuildDir } from "../layout/index.js";
 import { preservedRuntimeFiles } from "../vendor/runtime.js";
 import type { Vendor } from "../vendor/schema.js";
 
@@ -87,7 +88,9 @@ async function sweepOrphanLinks(
   plan: readonly PlannedConfig[],
   options: PlanConfigsOptions,
 ): Promise<void> {
-  const managedRoot = options.distRoot + "/";
+  const managedRoots = [options.distRoot, legacyBuildDir(options.repoRoot)].map(
+    (root) => root + "/",
+  );
   const planned = new Set(plan.map((p) => p.destAbs));
   const preservedPaths = new Set(options.vendors.flatMap(preservedRuntimeFiles));
   const scanDirs = new Set<string>([
@@ -104,7 +107,7 @@ async function sweepOrphanLinks(
       const target = await readlinkOrNull(path);
       if (target === null) continue;
       const absTarget = resolve(dir, target);
-      if (!absTarget.startsWith(managedRoot)) continue;
+      if (!managedRoots.some((root) => absTarget.startsWith(root))) continue;
       await rm(path);
     }
   }

@@ -33,8 +33,8 @@ export function layoutAt(repoRoot: string): Layout {
   };
 }
 
-export function vendorBuildDir(layout: Layout, vendorName: string): string {
-  return join(layout.buildDir, vendorName);
+export function legacyBuildDir(repoRoot: string): string {
+  return join(resolve(repoRoot), "dist");
 }
 
 export interface ResolvedPlugin {

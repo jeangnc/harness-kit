@@ -154,7 +154,7 @@ const updateCmd = defineCommand({
 const publishCmd = defineCommand({
   meta: {
     name: "publish",
-    description: "Publish each vendor build in .harness/ to the branch named after the vendor",
+    description: "Build, then publish each vendor build to the branch named after the vendor",
   },
   args: {
     repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
@@ -174,6 +174,7 @@ const publishCmd = defineCommand({
       layout: layoutAt(args.repo),
       vendors: vendors.map((vendor) => vendor.name),
       remote: args.remote,
+      build: async () => build({ repoRoot: args.repo, vendors, silent: true }),
     });
     if (!result.ok) {
       console.error(formatPublishError(result.error));
