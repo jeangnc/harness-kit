@@ -219,6 +219,24 @@ test("compilePlugins merges extensions.codex into the codex plugin manifest", as
   });
 });
 
+for (const vendor of [claudeVendor, codexVendor]) {
+  test(`compilePlugins keeps the neutral name and version in the ${vendor.name} plugin manifest`, async () => {
+    await withSandbox(async (root) => {
+      const repoRoot = join(root, "repo");
+      const outRoot = join(root, "dist");
+      seedMinimalPlugin(repoRoot, "theta", { [vendor.name]: { name: "other", version: "9.9.9" } });
+
+      await compilePlugins({ layout: testLayout(repoRoot, outRoot), vendors: [vendor] });
+
+      const manifestRel = vendor.name === "claude" ? ".claude-plugin" : ".codex-plugin";
+      const manifest = readJson(
+        join(outRoot, vendor.name, "plugins/theta", manifestRel, "plugin.json"),
+      );
+      deepEqual([manifest["name"], manifest["version"]], ["theta", "1.0.0"]);
+    });
+  });
+}
+
 test("compilePlugins omits extensions.codex policy and category from the codex plugin manifest", async () => {
   await withSandbox(async (root) => {
     const repoRoot = join(root, "repo");

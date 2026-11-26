@@ -30,7 +30,7 @@ test("migration preserves linked runtime bytes and permissions and is idempotent
   assert.deepEqual(await migrateRuntime(f), []);
 });
 
-test("compile preflight detects links through parent directories", async () => {
+test("build preflight detects links through parent directories", async () => {
   const f = await fixture();
   await symlink(join(f.distRoot, "codex/configs"), join(f.home, "profiles"));
   await assert.rejects(assertRuntimeDetached(f), /migrate-runtime/);
@@ -71,7 +71,7 @@ test("migration recovers a directory interrupted after displacing its link", asy
   assert.equal(await readFile(join(f.home, "profiles/config.toml"), "utf8"), "preserved");
 });
 
-test("compile refuses an interrupted directory migration", async () => {
+test("build refuses an interrupted directory migration", async () => {
   const f = await fixture();
   await migrateRuntime(f);
   const staging = join(f.home, ".harness-runtime-foo");
@@ -104,7 +104,7 @@ test("defaults preserve the previous machine file before replacement", async () 
   assert.equal(await readFile(backup, "utf8"), "previous");
 });
 
-test("compile refuses a dangling runtime link into generated output", async () => {
+test("build refuses a dangling runtime link into generated output", async () => {
   const f = await fixture();
   await migrateRuntime(f);
   await symlink(join(f.distRoot, "codex/configs/foo.toml"), join(f.home, "foo.config.toml"));

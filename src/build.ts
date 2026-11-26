@@ -7,6 +7,7 @@ import { emitConfigsManifest } from "./configs/emit.js";
 import { assertRuntimeDetached } from "./install/runtime.js";
 import { defaultSources, discoverInstalled, indexInstalled } from "./installed.js";
 import { layoutAt, loadCatalogOrThrow } from "./layout/index.js";
+import { builtinVendors } from "./vendor/builtins.js";
 import { resolveVendorsForRepo } from "./vendor/registry.js";
 import type { Vendor } from "./vendor/schema.js";
 
@@ -20,7 +21,7 @@ export async function build(options: BuildOptions = {}): Promise<void> {
   const layout = layoutAt(options.repoRoot ?? ".");
   const outRoot = layout.buildDir;
   const vendors = options.vendors ?? (await resolveVendorsForRepo(layout.repoRoot));
-  await assertRuntimeDetached({ distRoot: outRoot, vendors });
+  await assertRuntimeDetached({ distRoot: outRoot, vendors: builtinVendors() });
   const namedRoots = await resolveRootsForRepo(layout.repoRoot);
   const catalog = await loadCatalogOrThrow(layout);
   const installedIndex = indexInstalled(await discoverInstalled(defaultSources(vendors)));

@@ -188,3 +188,7 @@ export async function loadCatalogOrThrow(layout: Layout): Promise<Catalog> {
   if (result.ok) return result.value;
   throw new Error(formatLayoutError(result.error));
 }
+
+export function catalogIdentity(catalog: Catalog): Pick<Catalog, "name" | "owner"> {
+  return { name: catalog.name, owner: catalog.owner };
+}

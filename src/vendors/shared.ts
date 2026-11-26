@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+import type { Plugin } from "../plugin/index.js";
 import type { PluginPartition, VendorInstallContext } from "../vendor/schema.js";
 
 export function defaultPartition(ctx: VendorInstallContext): PluginPartition {
@@ -14,4 +15,8 @@ export async function writeJson(target: string, value: unknown): Promise<void> {
 
 export function pluginSourcePath(pluginName: string): string {
   return `./plugins/${pluginName}`;
+}
+
+export function pluginIdentity(manifest: Plugin): Pick<Plugin, "name" | "version"> {
+  return { name: manifest.name, version: manifest.version };
 }

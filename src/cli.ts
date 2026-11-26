@@ -13,7 +13,7 @@ import { migrateRuntime, installDefaults } from "./install/runtime.js";
 import { build } from "./build.js";
 import { formatRepositoryError, resolveRepository } from "./repository/index.js";
 import { formatPublishError, formatPublishOutcome, publishVendors } from "./publish/index.js";
-import { layoutAt } from "./layout/index.js";
+import { layoutAt, legacyBuildDir } from "./layout/index.js";
 import { check, type ReferenceViolation, type Warning } from "./check/index.js";
 import { formatConsole, runEval, toJson } from "./eval/index.js";
 import { TIERS } from "./eval/schema.js";
@@ -58,12 +58,11 @@ const migrateRuntimeCmd = defineCommand({
   args: { ...installArgs, vendor: { type: "string", required: true } },
   run: async ({ args }) => {
     const vendors = resolveVendors([args.vendor], builtinVendors());
-    const changes = await migrateRuntime({
-      distRoot: layoutAt(args.repo).buildDir,
-      vendors,
-      dryRun: args["dry-run"],
-    });
-    for (const change of changes) {
+    const roots = [layoutAt(args.repo).buildDir, legacyBuildDir(args.repo)];
+    const changes = await Promise.all(
+      roots.map(async (distRoot) => migrateRuntime({ distRoot, vendors, dryRun: args["dry-run"] })),
+    );
+    for (const change of changes.flat()) {
       console.log(`${change.path} → regular copy; backup: ${change.backup}`);
     }
   },
@@ -174,7 +173,7 @@ const publishCmd = defineCommand({
       layout: layoutAt(args.repo),
       vendors: vendors.map((vendor) => vendor.name),
       remote: args.remote,
-      build: async () => build({ repoRoot: args.repo, vendors, silent: true }),
+      build: async () => build({ repoRoot: args.repo, silent: true }),
     });
     if (!result.ok) {
       console.error(formatPublishError(result.error));

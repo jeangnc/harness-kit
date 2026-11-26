@@ -138,7 +138,7 @@ export async function assertRuntimeDetached(options: RuntimeOptions): Promise<vo
   const links = await managedRuntimeLinks(options);
   if (links.length > 0) {
     throw new Error(
-      `runtime files resolve into generated output; run harness migrate-runtime before compiling:\n${links.join("\n")}`,
+      `runtime files resolve into generated output; run harness migrate-runtime before building:\n${links.join("\n")}`,
     );
   }
 }

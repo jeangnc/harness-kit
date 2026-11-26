@@ -5,7 +5,7 @@ import { z } from "zod";
 import { formatZodIssues } from "../../errors/index.js";
 import type { Catalog, ResolvedPlugin } from "../../layout/index.js";
 import { extensionBlock, withoutExtensions } from "../../plugin/index.js";
-import { pluginSourcePath, writeJson } from "../shared.js";
+import { pluginIdentity, pluginSourcePath, writeJson } from "../shared.js";
 import type { VendorEmitContext } from "../../vendor/schema.js";
 
 export const EXTENSION_KEY = "codex";
@@ -33,14 +33,15 @@ export async function emitPluginManifest(ctx: VendorEmitContext): Promise<void> 
   await writeJson(join(ctx.pluginOutDir, PLUGIN_MANIFEST_REL), {
     ...withoutExtensions(ctx.plugin.manifest),
     ...manifestFields,
+    ...pluginIdentity(ctx.plugin.manifest),
   });
 }
 
 export async function emitCatalog(vendorDir: string, catalog: Catalog): Promise<void> {
   await writeJson(join(vendorDir, CATALOG_REL), {
-    name: catalog.name,
     interface: { displayName: catalog.name },
     ...(catalog.extensions[EXTENSION_KEY] ?? {}),
+    name: catalog.name,
     plugins: catalog.plugins.map(catalogEntry),
   });
 }
