@@ -35,16 +35,10 @@ export async function git(args: readonly string[], invocation: GitInvocation): P
       `git ${args.join(" ")} in ${invocation.cwd} exited ${exit.code}, expected 0: ${exit.stderr.trim()}`,
     );
   }
-  return exit.stdout.trim();
+  return exit.stdout.trimEnd();
 }
 
-interface ExitFailure {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function isExitFailure(e: unknown): e is ExitFailure {
+function isExitFailure(e: unknown): e is Error & GitExit {
   return (
     e instanceof Error &&
     "code" in e &&
