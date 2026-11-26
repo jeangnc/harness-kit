@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import type { HarnessConfig } from "../config/harness.js";
 import { AGENT_PLUGINS_SCHEMA } from "../plugin/index.js";
-import { collectLocalIds, layoutAt, loadCatalog } from "./index.js";
+import { layoutAt, loadCatalog } from "./index.js";
 
 const config: HarnessConfig = {
   marketplace: "test-marketplace",
@@ -69,9 +69,6 @@ test("loadCatalog resolves conventional content dirs inside the plugin folder", 
     const [plugin] = result.value.plugins;
     assert.ok(plugin);
     assert.equal(plugin.manifestPath, join(repoRoot, "plugins/foo/plugin.json"));
-    assert.equal(plugin.skillsDir, join(repoRoot, "plugins/foo/skills"));
-    assert.equal(plugin.commandsDir, join(repoRoot, "plugins/foo/commands"));
-    assert.equal(plugin.agentsDir, join(repoRoot, "plugins/foo/agents"));
     assert.equal(plugin.hooksDir, join(repoRoot, "plugins/foo/hooks"));
   });
 });
@@ -147,25 +144,5 @@ test("loadCatalog fails when extensions.harness has an unknown key", async () =>
     const result = await loadCatalog(layoutAt(repoRoot), config);
     if (result.ok) assert.fail("expected error");
     assert.equal(result.error.kind, "manifest-invalid");
-  });
-});
-
-test("collectLocalIds indexes skills with SKILL.md, commands, and agents per plugin", async () => {
-  await withRepo(async (repoRoot) => {
-    writePlugin(repoRoot, "foo", manifestFor("foo"));
-    const pluginDir = join(repoRoot, "plugins/foo");
-    mkdirSync(join(pluginDir, "skills/bar"), { recursive: true });
-    writeFileSync(join(pluginDir, "skills/bar/SKILL.md"), "---\nname: bar\n---\n");
-    mkdirSync(join(pluginDir, "skills/empty"), { recursive: true });
-    mkdirSync(join(pluginDir, "commands"), { recursive: true });
-    writeFileSync(join(pluginDir, "commands/go.md"), "");
-    mkdirSync(join(pluginDir, "agents"), { recursive: true });
-    writeFileSync(join(pluginDir, "agents/helper.md"), "");
-    const catalog = await loadCatalog(layoutAt(repoRoot), config);
-    if (!catalog.ok) assert.fail(JSON.stringify(catalog.error));
-    const ids = await collectLocalIds(catalog.value);
-    assert.deepEqual([...ids.skills], ["foo:bar"]);
-    assert.deepEqual([...ids.commands], ["foo:go"]);
-    assert.deepEqual([...ids.agents], ["foo:helper"]);
   });
 });

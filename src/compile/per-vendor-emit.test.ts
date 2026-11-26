@@ -2,7 +2,7 @@ import { test } from "node:test";
 import { deepEqual, doesNotMatch, doesNotReject, equal, match, rejects } from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { compilePlugins, verifyEmittedMarketplaceSources } from "./index.js";
 import { claudeVendor } from "../vendors/claude/index.js";
@@ -354,5 +354,127 @@ test("compilePlugins does not copy the source plugin.json verbatim into either v
 
     equal(existsSync(join(outRoot, "claude/plugins/kappa/plugin.json")), false);
     equal(existsSync(join(outRoot, "codex/plugins/kappa/plugin.json")), false);
+  });
+});
+
+function writeSource(path: string, body: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, body);
+}
+
+function skillSource(name: string, body: string): string {
+  return `---\nname: ${name}\ndescription: test skill\n---\n\n${body}`;
+}
+
+test("compilePlugins emits a vendor overlay SKILL.md in place of the neutral one for that vendor", async () => {
+  await withSandbox(async (root) => {
+    const repoRoot = join(root, "repo");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(repoRoot, "alpha");
+    const pluginDir = join(repoRoot, "plugins/alpha");
+    writeSource(join(pluginDir, "skills/tdd/SKILL.md"), skillSource("tdd", "neutral\n"));
+    writeSource(join(pluginDir, "claude/skills/tdd/SKILL.md"), skillSource("tdd", "claude only\n"));
+
+    await compilePlugins({
+      layout: testLayout(repoRoot, outRoot),
+      vendors: [claudeVendor, codexVendor],
+    });
+
+    match(
+      readFileSync(join(outRoot, "claude/plugins/alpha/skills/tdd/SKILL.md"), "utf8"),
+      /claude only/,
+    );
+    match(
+      readFileSync(join(outRoot, "codex/plugins/alpha/skills/tdd/SKILL.md"), "utf8"),
+      /neutral/,
+    );
+  });
+});
+
+test("compilePlugins adds an overlay-only file to its vendor tree alone", async () => {
+  await withSandbox(async (root) => {
+    const repoRoot = join(root, "repo");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(repoRoot, "alpha");
+    writeSource(join(repoRoot, "plugins/alpha/codex/hooks/notify.sh"), "echo codex\n");
+
+    await compilePlugins({
+      layout: testLayout(repoRoot, outRoot),
+      vendors: [claudeVendor, codexVendor],
+    });
+
+    equal(existsSync(join(outRoot, "codex/plugins/alpha/hooks/notify.sh")), true);
+    equal(existsSync(join(outRoot, "claude/plugins/alpha/hooks/notify.sh")), false);
+  });
+});
+
+test("compilePlugins keeps another vendor's overlay out of a single-vendor build", async () => {
+  await withSandbox(async (root) => {
+    const repoRoot = join(root, "repo");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(repoRoot, "alpha");
+    writeSource(join(repoRoot, "plugins/alpha/codex/hooks/notify.sh"), "echo codex\n");
+
+    await compilePlugins({ layout: testLayout(repoRoot, outRoot), vendors: [claudeVendor] });
+
+    equal(existsSync(join(outRoot, "claude/plugins/alpha/codex")), false);
+  });
+});
+
+test("compilePlugins resolves a neutral skill's relative include through the vendor overlay", async () => {
+  await withSandbox(async (root) => {
+    const repoRoot = join(root, "repo");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(repoRoot, "alpha");
+    const pluginDir = join(repoRoot, "plugins/alpha");
+    writeSource(
+      join(pluginDir, "skills/tdd/SKILL.md"),
+      skillSource("tdd", "{{include:../.models.md}}\n"),
+    );
+    writeSource(join(pluginDir, "skills/.models.md"), "neutral models\n");
+    writeSource(join(pluginDir, "claude/skills/.models.md"), "claude models\n");
+
+    await compilePlugins({
+      layout: testLayout(repoRoot, outRoot),
+      vendors: [claudeVendor, codexVendor],
+    });
+
+    match(
+      readFileSync(join(outRoot, "claude/plugins/alpha/skills/tdd/SKILL.md"), "utf8"),
+      /claude models/,
+    );
+    match(
+      readFileSync(join(outRoot, "codex/plugins/alpha/skills/tdd/SKILL.md"), "utf8"),
+      /neutral models/,
+    );
+  });
+});
+
+test("compilePlugins fails when a plugin overlay file is identical to the neutral file", async () => {
+  await withSandbox(async (root) => {
+    const repoRoot = join(root, "repo");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(repoRoot, "alpha");
+    writeSource(join(repoRoot, "plugins/alpha/hooks/run.sh"), "echo\n");
+    writeSource(join(repoRoot, "plugins/alpha/claude/hooks/run.sh"), "echo\n");
+
+    await rejects(
+      compilePlugins({ layout: testLayout(repoRoot, outRoot), vendors: [claudeVendor] }),
+      /identical/,
+    );
+  });
+});
+
+test("compilePlugins fails when a vendor-named dir sits below the plugin root", async () => {
+  await withSandbox(async (root) => {
+    const repoRoot = join(root, "repo");
+    const outRoot = join(root, "dist");
+    seedMinimalPlugin(repoRoot, "alpha");
+    writeSource(join(repoRoot, "plugins/alpha/skills/claude/notes.md"), "misplaced\n");
+
+    await rejects(
+      compilePlugins({ layout: testLayout(repoRoot, outRoot), vendors: [claudeVendor] }),
+      /vendor directory "claude"/,
+    );
   });
 });

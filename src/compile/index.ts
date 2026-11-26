@@ -4,16 +4,16 @@ import { join } from "node:path";
 import { compileTree, type WarningSink } from "./emit.js";
 import { checkHookRootReads, checkHookSkillMirror } from "./hooks.js";
 import { throwInvariantViolations } from "./discovery.js";
+import { vendorWorkspace, workspaceView } from "./trees.js";
+import { overlayVendorNames } from "../vendor/builtins.js";
 import { pathExists } from "../fs.js";
 import { PluginManifestSchema } from "../install/discovery.js";
 import {
   PLUGIN_MANIFEST,
-  collectLocalIds,
   loadCatalogOrThrow,
   type Catalog,
   type Layout,
   type LocalIds,
-  type ResolvedPlugin,
 } from "../layout/index.js";
 import {
   defaultSources,
@@ -33,7 +33,6 @@ export interface CompilePluginsOptions {
   readonly onWarnings?: WarningSink;
   readonly sources?: readonly PluginSource[];
   readonly catalog?: Catalog;
-  readonly localIds?: LocalIds;
   readonly installedIndex?: InstalledIndex;
   readonly namedRoots?: Readonly<Record<string, string>>;
 }
@@ -45,30 +44,44 @@ export async function compilePlugins(options: CompilePluginsOptions): Promise<vo
     throw new Error("compilePlugins requires at least one vendor");
   }
   const catalog = options.catalog ?? (await loadCatalogOrThrow(layout));
-  const localIds = options.localIds ?? (await collectLocalIds(catalog));
   const installedIndex =
     options.installedIndex ??
     (await loadInstalledIndex(options.sources ?? defaultSources(vendors)));
-  checkHookRequires(catalog, localIds);
+  const namedRoots = options.namedRoots ?? {};
+  const registeredVendors = overlayVendorNames(vendors);
+  const workspaces = await Promise.all(
+    vendors.map(async (vendor) => ({
+      vendor,
+      workspace: await vendorWorkspace(
+        { plugins: catalog.plugins, namedRoots },
+        { vendor: vendor.name, registeredVendors },
+      ),
+    })),
+  );
+  for (const { workspace } of workspaces) checkHookRequires(catalog, workspace.localIds);
   await checkHookRootReads(catalog);
   await checkHookSkillMirror(catalog);
 
   const skipRelPaths: ReadonlySet<string> = new Set([PLUGIN_MANIFEST]);
-  for (const vendor of vendors) {
+  for (const { vendor, workspace } of workspaces) {
     await vendor.emitMarketplaceManifest({ outRoot, catalog });
-  }
-  const repoRoot = layout.repoRoot;
-  const namedRoots = options.namedRoots ?? {};
-  for (const plugin of catalog.plugins) {
-    for (const vendor of vendors) {
-      await emitPluginForVendor(plugin, vendor, {
-        outRoot,
-        localIds,
-        installedIndex,
+    const render = {
+      localIds: workspace.localIds,
+      installedIndex,
+      repoRoot: layout.repoRoot,
+      namedRoots,
+      ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
+    };
+    for (const plugin of catalog.plugins) {
+      const tree = workspace.pluginTrees.get(plugin.name);
+      if (tree === undefined) continue;
+      const pluginOutDir = vendor.pluginOutDir(outRoot, plugin.name);
+      await vendor.emitPluginManifest({ plugin, pluginOutDir });
+      await compileTree({
+        tree,
+        outRoot: pluginOutDir,
         skipRelPaths,
-        repoRoot,
-        namedRoots,
-        ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
+        render: { ...render, view: workspaceView(workspace, tree) },
       });
     }
   }
@@ -110,35 +123,6 @@ async function pluginManifestParses(manifestPath: string): Promise<boolean> {
 async function loadInstalledIndex(sources: readonly PluginSource[]): Promise<InstalledIndex> {
   const artifacts = await discoverInstalled(sources);
   return indexInstalled(artifacts);
-}
-
-interface EmitPluginOptions {
-  readonly outRoot: string;
-  readonly localIds: LocalIds;
-  readonly installedIndex: InstalledIndex;
-  readonly skipRelPaths: ReadonlySet<string>;
-  readonly repoRoot: string;
-  readonly namedRoots: Readonly<Record<string, string>>;
-  readonly onWarnings?: WarningSink;
-}
-
-async function emitPluginForVendor(
-  plugin: ResolvedPlugin,
-  vendor: Vendor,
-  options: EmitPluginOptions,
-): Promise<void> {
-  const pluginOutDir = vendor.pluginOutDir(options.outRoot, plugin.name);
-  await vendor.emitPluginManifest({ plugin, pluginOutDir });
-  await compileTree({
-    srcRoot: plugin.pluginDir,
-    outRoot: pluginOutDir,
-    localIds: options.localIds,
-    installedIndex: options.installedIndex,
-    skipRelPaths: options.skipRelPaths,
-    repoRoot: options.repoRoot,
-    namedRoots: options.namedRoots,
-    ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
-  });
 }
 
 function checkHookRequires(catalog: Catalog, localIds: LocalIds): void {

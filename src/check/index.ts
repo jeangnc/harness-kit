@@ -7,12 +7,17 @@ import { FQ_ID } from "../ids.js";
 import { offsetToLineCol, parsePlaceholders } from "../placeholders/index.js";
 import {
   checkCompanionFiles,
-  findSkillFile,
   formatLoadSkillError,
-  loadSkill,
+  readSkillFile,
+  type SourceView,
 } from "../skill/index.js";
+import { vendorWorkspace, type VendorWorkspace } from "../compile/trees.js";
+import type { SourceFile } from "../compile/render.js";
+import { resolveRootsForRepo } from "../config/harness.js";
+import { sourceView, type EffectiveTree } from "../overlay/index.js";
+import { overlayVendorNames } from "../vendor/builtins.js";
+import { resolveVendorsForRepo } from "../vendor/registry.js";
 import {
-  collectLocalIds,
   layoutAt,
   loadCatalogOrThrow,
   type Catalog,
@@ -101,6 +106,7 @@ interface BodySource {
   readonly bodyOffset: number;
   readonly fileText: string;
   readonly filePath: string;
+  readonly logicalPath: string;
   readonly refBoundary: RefBoundary;
   readonly origin: BodyOrigin;
   readonly frontmatter: boolean;
@@ -117,14 +123,47 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
 
   const layout = layoutAt(options.repoRoot);
   const catalog = await loadCatalogOrThrow(layout);
-  const localIds = await collectLocalIds(catalog);
+  const vendors = await resolveVendorsForRepo(layout.repoRoot);
+  const namedRoots = await resolveRootsForRepo(layout.repoRoot);
+  const registeredVendors = overlayVendorNames(vendors);
   const localPlugins = new Set(catalog.plugins.map((p) => p.name));
 
-  const kinds = unifiedKindConfigs(localIds, installedIndex, localPlugins);
+  const scans = await Promise.all(
+    vendors.map(async (vendor) => {
+      const workspace = await vendorWorkspace(
+        { plugins: catalog.plugins, namedRoots },
+        { vendor: vendor.name, registeredVendors },
+      );
+      const kinds = unifiedKindConfigs(workspace.localIds, installedIndex, localPlugins);
+      const bodies = await collectBodySources({
+        catalog,
+        workspace,
+        docRoots: options.docRoots ?? [],
+      });
+      return { bodies, ...(await checkBodies(bodies, kinds, layout.repoRoot)) };
+    }),
+  );
+
+  return {
+    violations: uniqueFindings(scans.flatMap((scan) => scan.violations)),
+    warnings: uniqueFindings(scans.flatMap((scan) => scan.warnings)),
+    checkedFiles: new Set(scans.flatMap((scan) => scan.bodies.map((b) => b.filePath))).size,
+    indexedSources,
+  };
+}
+
+interface BodyFindings {
+  readonly violations: readonly ReferenceViolation[];
+  readonly warnings: readonly Warning[];
+}
+
+async function checkBodies(
+  bodies: readonly BodySource[],
+  kinds: ReadonlyMap<string, KindConfig>,
+  repoRoot: string,
+): Promise<BodyFindings> {
   const haystacks = bypassHaystacks(kinds);
   const leafIndex = buildLeafIndex(haystacks);
-
-  const bodies = await collectBodySources(catalog, options.docRoots ?? []);
   const violations: ReferenceViolation[] = [];
   const warnings: Warning[] = [];
   for (const source of bodies) {
@@ -132,22 +171,24 @@ export async function check(options: CheckOptions): Promise<CheckResult> {
     const { violations: refViolations, warnings: refWarnings } = validateBody(source, kinds);
     violations.push(...refViolations);
     warnings.push(...refWarnings);
-    for (const violation of findBarewordBypasses(source, leafIndex, skip)) {
-      violations.push(violation);
-    }
-    for (const violation of await findRefBypasses(source, layout.repoRoot, skip)) {
-      violations.push(violation);
-    }
-    for (const violation of findEscapingRefs(source)) {
-      violations.push(violation);
-    }
-    for (const warning of findBypasses(source, haystacks)) {
-      warnings.push(warning);
-    }
+    violations.push(...findBarewordBypasses(source, leafIndex, skip));
+    violations.push(...(await findRefBypasses(source, repoRoot, skip)));
+    violations.push(...findEscapingRefs(source));
+    warnings.push(...findBypasses(source, haystacks));
   }
+  return { violations, warnings };
+}
 
-  const checkedFiles = new Set(bodies.map((b) => b.filePath)).size;
-  return { violations, warnings, checkedFiles, indexedSources };
+interface Finding {
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  readonly message: string;
+}
+
+function uniqueFindings<T extends Finding>(findings: readonly T[]): readonly T[] {
+  const byKey = new Map(findings.map((f) => [`${f.file}:${f.line}:${f.column}:${f.message}`, f]));
+  return [...byKey.values()];
 }
 
 function bypassHaystacks(kinds: ReadonlyMap<string, KindConfig>): BypassHaystacks {
@@ -205,7 +246,7 @@ async function findRefBypasses(
   rootDir: string,
   skip: readonly Span[],
 ): Promise<readonly ReferenceViolation[]> {
-  const sourceDir = dirname(source.filePath);
+  const sourceDir = dirname(source.logicalPath);
   const scope = source.frontmatter ? "frontmatter" : "prose";
   const bypasses = await detectRefBypasses(source.body, sourceDir, rootDir, skip, scope);
   return bypasses.map((bypass) => {
@@ -225,7 +266,7 @@ function findEscapingRefs(source: BodySource): readonly ReferenceViolation[] {
   const boundary = source.refBoundary;
   if (boundary === null) return [];
   const violations: ReferenceViolation[] = [];
-  const sourceDir = dirname(source.filePath);
+  const sourceDir = dirname(source.logicalPath);
   for (const token of parsePlaceholders(source.body)) {
     if (token.prefix !== "ref" || token.value === null) continue;
     if (!escapesPlugin(resolve(sourceDir, token.value), boundary)) continue;
@@ -247,38 +288,34 @@ function escapesPlugin(target: string, boundary: string): boolean {
   return rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 }
 
-async function collectBodySources(
-  catalog: Catalog,
-  docRoots: readonly string[],
-): Promise<readonly BodySource[]> {
-  const seen = new Set<string>();
-  const out: BodySource[] = [];
-  const push = async (file: CollectedBody): Promise<void> => {
-    const key = `${file.filePath}:${file.bodyOffset}:${file.body.length}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    out.push({
-      body: file.body,
-      bodyOffset: file.bodyOffset,
-      fileText: await readFile(file.filePath, "utf8"),
-      filePath: file.filePath,
-      refBoundary: file.refBoundary,
-      origin: file.origin,
-      frontmatter: file.frontmatter ?? false,
-    });
-  };
+interface BodyScope {
+  readonly catalog: Catalog;
+  readonly workspace: VendorWorkspace;
+  readonly docRoots: readonly string[];
+}
 
-  for (const plugin of catalog.plugins) {
-    for (const file of await collectPluginBodies(plugin)) {
-      await push(file);
-    }
+async function collectBodySources(scope: BodyScope): Promise<readonly BodySource[]> {
+  const collected: CollectedBody[] = [];
+  for (const plugin of scope.catalog.plugins) {
+    const tree = scope.workspace.pluginTrees.get(plugin.name);
+    if (tree === undefined) continue;
+    collected.push(...(await collectPluginBodies(plugin, tree)));
   }
-
-  for (const file of await collectDocBodies(docRoots, catalog)) {
-    await push(file);
-  }
-
-  return out;
+  collected.push(...(await collectDocBodies(scope.docRoots, scope.catalog)));
+  return Promise.all(
+    collected.map(
+      async (file): Promise<BodySource> => ({
+        body: file.body,
+        bodyOffset: file.bodyOffset,
+        fileText: await readFile(file.filePath, "utf8"),
+        filePath: file.filePath,
+        logicalPath: file.logicalPath,
+        refBoundary: file.refBoundary,
+        origin: file.origin,
+        frontmatter: file.frontmatter ?? false,
+      }),
+    ),
+  );
 }
 
 async function collectDocBodies(
@@ -292,6 +329,7 @@ async function collectDocBodies(
       if (ownedByPlugin(filePath)) continue;
       out.push({
         filePath,
+        logicalPath: filePath,
         body: await readFile(filePath, "utf8"),
         bodyOffset: 0,
         refBoundary: null,
@@ -324,6 +362,7 @@ async function statOrNull(target: string): Promise<Stats | null> {
 
 interface CollectedBody {
   readonly filePath: string;
+  readonly logicalPath: string;
   readonly body: string;
   readonly bodyOffset: number;
   readonly refBoundary: RefBoundary;
@@ -331,29 +370,36 @@ interface CollectedBody {
   readonly frontmatter?: boolean;
 }
 
-async function collectPluginBodies(plugin: ResolvedPlugin): Promise<readonly CollectedBody[]> {
-  const out: CollectedBody[] = [];
-  if (await pathExists(plugin.skillsDir)) {
-    for (const entry of await readdir(plugin.skillsDir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const skillDir = join(plugin.skillsDir, entry.name);
-      if ((await findSkillFile(skillDir)) === null) continue;
-      out.push(...(await loadSkillBodies(skillDir, plugin.pluginDir)));
-    }
-  }
-  for await (const filePath of walkMarkdown(plugin.pluginDir)) {
-    if (filePath.startsWith(plugin.skillsDir)) continue;
-    const body = await readFile(filePath, "utf8");
-    const role = filePath.startsWith(plugin.commandsDir) ? "command" : "doc";
-    out.push({
-      filePath,
-      body,
-      bodyOffset: 0,
-      refBoundary: plugin.pluginDir,
-      origin: { role },
-    });
-  }
-  return out;
+const SKILL_ENTRY = /^skills\/[^/]+\/SKILL\.md$/;
+
+async function collectPluginBodies(
+  plugin: ResolvedPlugin,
+  tree: EffectiveTree,
+): Promise<readonly CollectedBody[]> {
+  const view = sourceView([tree]);
+  const markdown = [...tree.files].filter(([rel]) => rel.endsWith(".md"));
+  const skills = await Promise.all(
+    markdown
+      .filter(([rel]) => SKILL_ENTRY.test(rel))
+      .map(async ([rel, physical]) =>
+        loadSkillBodies({ logical: join(plugin.pluginDir, rel), physical }, plugin.pluginDir, view),
+      ),
+  );
+  const others = await Promise.all(
+    markdown
+      .filter(([rel]) => !rel.startsWith("skills/"))
+      .map(
+        async ([rel, physical]): Promise<CollectedBody> => ({
+          filePath: physical,
+          logicalPath: join(plugin.pluginDir, rel),
+          body: await readFile(physical, "utf8"),
+          bodyOffset: 0,
+          refBoundary: plugin.pluginDir,
+          origin: { role: rel.startsWith("commands/") ? "command" : "doc" },
+        }),
+      ),
+  );
+  return [...skills.flat(), ...others];
 }
 
 async function* walkMarkdown(dir: string): AsyncGenerator<string> {
@@ -366,20 +412,35 @@ async function* walkMarkdown(dir: string): AsyncGenerator<string> {
 }
 
 async function loadSkillBodies(
-  skillDir: string,
+  skillFile: SourceFile,
   refBoundary: string,
+  view: SourceView,
 ): Promise<readonly CollectedBody[]> {
-  const loaded = await loadSkill(skillDir);
+  const dir = dirname(skillFile.logical);
+  const loaded = await readSkillFile({ skillFilePath: skillFile.physical, skillDir: dir });
   if (!loaded.ok) {
     throw new Error(
-      `failed to load skill at ${skillDir}:\n  - ${formatLoadSkillError(loaded.error).join("\n  - ")}`,
+      `failed to load skill at ${dir}:\n  - ${formatLoadSkillError(loaded.error).join("\n  - ")}`,
     );
   }
-  const { skill, body, skillFilePath, bodyOffset, skillDir: dir } = loaded.value;
+  const { skill, body, bodyOffset } = loaded.value;
   const origin = { role: "skill", ownLeaf: basename(dir) } as const;
-  const primary: CollectedBody = { filePath: skillFilePath, body, bodyOffset, refBoundary, origin };
+  const primary: CollectedBody = {
+    filePath: skillFile.physical,
+    logicalPath: skillFile.logical,
+    body,
+    bodyOffset,
+    refBoundary,
+    origin,
+  };
   const declared = skill.companions ?? [];
-  const present = await Promise.all(declared.map(async (c) => pathExists(join(dir, c.file))));
+  const companionFile = (file: string): SourceFile => {
+    const logical = join(dir, file);
+    return { logical, physical: view.physical(logical) };
+  };
+  const present = await Promise.all(
+    declared.map(async (c) => pathExists(companionFile(c.file).physical)),
+  );
   const missing = checkCompanionFiles(
     declared,
     declared.filter((_, i) => present[i]).map((c) => c.file),
@@ -389,20 +450,20 @@ async function loadSkillBodies(
   }
   const companions = await Promise.all(
     declared.map(async (companion): Promise<CollectedBody> => {
-      const filePath = join(dir, companion.file);
+      const file = companionFile(companion.file);
       return {
-        filePath,
-        body: await readFile(filePath, "utf8"),
+        filePath: file.physical,
+        logicalPath: file.logical,
+        body: await readFile(file.physical, "utf8"),
         bodyOffset: 0,
         refBoundary,
         origin,
       };
     }),
   );
-  const skillText = await readFile(loaded.value.skillFilePath, "utf8");
   const frontmatter = frontmatterBodies(
-    skillText,
-    loaded.value.skillFilePath,
+    await readFile(skillFile.physical, "utf8"),
+    skillFile,
     [skill.description, ...declared.map((c) => c.summary)],
     origin,
     refBoundary,
@@ -412,7 +473,7 @@ async function loadSkillBodies(
 
 function frontmatterBodies(
   skillText: string,
-  skillFilePath: string,
+  skillFile: SourceFile,
   values: readonly string[],
   origin: BodyOrigin,
   refBoundary: string,
@@ -424,7 +485,8 @@ function frontmatterBodies(
     if (at === -1) continue;
     cursor = at + value.length;
     bodies.push({
-      filePath: skillFilePath,
+      filePath: skillFile.physical,
+      logicalPath: skillFile.logical,
       body: value,
       bodyOffset: at,
       refBoundary,

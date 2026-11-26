@@ -39,6 +39,18 @@ export async function findSkillFile(skillDir: string): Promise<string | null> {
 export async function loadSkill(skillDir: string): Promise<Result<LoadedSkill, LoadSkillError>> {
   const skillFilePath = await findSkillFile(skillDir);
   if (skillFilePath === null) return err({ tag: "no-source", skillDir });
+  return readSkillFile({ skillFilePath, skillDir });
+}
+
+export interface SkillLocation {
+  readonly skillFilePath: string;
+  readonly skillDir: string;
+}
+
+export async function readSkillFile(
+  location: SkillLocation,
+): Promise<Result<LoadedSkill, LoadSkillError>> {
+  const { skillFilePath, skillDir } = location;
   const raw = await readFile(skillFilePath, "utf8");
   const fm = parseFrontmatter(raw);
   if (!fm.ok) {

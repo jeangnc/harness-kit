@@ -1,8 +1,5 @@
-import { resolve } from "node:path";
-
 import { dump } from "js-yaml";
 
-import { pathExists } from "../fs.js";
 import { parsePlaceholders } from "../placeholders/index.js";
 import type { Companion, Skill } from "../skill/index.js";
 
@@ -35,24 +32,4 @@ export function checkCompanionsTokenParity(
     return [`companions declared but body is missing the {{${COMPANIONS_PREFIX}}} placeholder`];
   }
   return [];
-}
-
-export async function precomputeExistingRefs(
-  body: string,
-  skillDir: string,
-): Promise<ReadonlySet<string>> {
-  const refs = new Set<string>();
-  const checks: Array<Promise<void>> = [];
-  for (const token of parsePlaceholders(body)) {
-    if (token.prefix === "ref" && token.value !== null) {
-      const value = token.value;
-      checks.push(
-        pathExists(resolve(skillDir, value)).then((exists) => {
-          if (exists) refs.add(value);
-        }),
-      );
-    }
-  }
-  await Promise.all(checks);
-  return refs;
 }

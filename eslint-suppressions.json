@@ -14,11 +14,6 @@
       "count": 46
     }
   },
-  "src/check/index.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 140
-    }
-  },
   "src/check/index.ts": {
     "tenets/feature-envy": {
       "count": 1
@@ -216,7 +211,7 @@
   },
   "src/layout/index.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 33
+      "count": 26
     }
   },
   "src/link/applier.test.ts": {

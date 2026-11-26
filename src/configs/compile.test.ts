@@ -1,10 +1,11 @@
 import { test } from "node:test";
-import { equal, rejects } from "node:assert/strict";
+import { equal, match, rejects } from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-import { layoutAt, type Layout } from "../layout/index.js";
+import { layoutAt, loadCatalogOrThrow, type Layout } from "../layout/index.js";
+import { AGENT_PLUGINS_SCHEMA } from "../plugin/index.js";
 import { compileConfigs } from "./compile.js";
 import { makeFakeVendor as fakeVendor } from "../vendor/fakeVendor.testutil.js";
 
@@ -209,22 +210,57 @@ test("compileConfigs fails when an overlay file is identical to the neutral file
   });
 });
 
-test("compileConfigs resolves {{skill:plugin:name}} via the provided localIds", async () => {
+function seedPluginSkill(repoRoot: string, skillRel: string): void {
+  writeFileSync(
+    join(repoRoot, "harness.yaml"),
+    "marketplace: test-marketplace\nowner:\n  name: test\nvendors: [claude, codex]\n",
+  );
+  mkdirSync(join(repoRoot, "plugins/foo", dirname(skillRel)), { recursive: true });
+  writeFileSync(
+    join(repoRoot, "plugins/foo/plugin.json"),
+    JSON.stringify({
+      $schema: AGENT_PLUGINS_SCHEMA,
+      name: "foo",
+      version: "1.0.0",
+      description: "t",
+    }),
+  );
+  writeFileSync(
+    join(repoRoot, "plugins/foo", skillRel),
+    "---\nname: bar\ndescription: test skill\n---\n\nbody\n",
+  );
+}
+
+test("compileConfigs resolves {{skill:plugin:name}} against the catalog's skills", async () => {
   await withSandbox(async ({ repoRoot, layout, outRoot }) => {
+    seedPluginSkill(repoRoot, "skills/bar/SKILL.md");
     mkdirSync(join(repoRoot, "configs"), { recursive: true });
     writeFileSync(join(repoRoot, "configs/AGENTS.md"), "use {{skill:foo:bar}}\n");
     await compileConfigs({
       layout,
       vendors: [claude],
-      localIds: {
-        skills: new Set(["foo:bar"]),
-        commands: new Set(),
-        agents: new Set(),
-      },
+      catalog: await loadCatalogOrThrow(layout),
       installedIndex: { skills: new Map(), commands: new Map(), agents: new Map() },
     });
     const out = readFileSync(join(outRoot, "claude/configs/AGENTS.md"), "utf8");
     equal(out, "use `foo:bar`\n");
+  });
+});
+
+test("compileConfigs warns on a skill that exists only in another vendor's overlay", async () => {
+  await withSandbox(async ({ repoRoot, layout }) => {
+    seedPluginSkill(repoRoot, "codex/skills/bar/SKILL.md");
+    mkdirSync(join(repoRoot, "configs"), { recursive: true });
+    writeFileSync(join(repoRoot, "configs/AGENTS.md"), "use {{skill:foo:bar}}\n");
+    const warnings: string[] = [];
+    await compileConfigs({
+      layout,
+      vendors: [claude],
+      catalog: await loadCatalogOrThrow(layout),
+      installedIndex: { skills: new Map(), commands: new Map(), agents: new Map() },
+      onWarnings: (_, found) => warnings.push(...found),
+    });
+    match(warnings.join("\n"), /skill id "foo:bar" — not a local skill/);
   });
 });
 

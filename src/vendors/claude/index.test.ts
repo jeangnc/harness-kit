@@ -120,9 +120,6 @@ test("claudeVendor.emitMarketplaceManifest lists discovered plugins with relativ
         description: `${name} plugin`,
       },
       hookRequires: [],
-      skillsDir: `/repo/plugins/${name}/skills`,
-      commandsDir: `/repo/plugins/${name}/commands`,
-      agentsDir: `/repo/plugins/${name}/agents`,
       hooksDir: `/repo/plugins/${name}/hooks`,
     });
     const catalog: Catalog = {

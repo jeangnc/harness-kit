@@ -1,87 +1,74 @@
-import { mkdir, readdir, copyFile, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 
+import type { EffectiveTree } from "../overlay/index.js";
 import {
   checkCompanionFiles,
-  expandIncludes,
-  formatIncludeError,
   formatLoadSkillError,
   isReservedCompanionFilename,
-  loadSkill,
+  readSkillFile,
   SKILL_FILE,
 } from "../skill/index.js";
-import { substitute } from "../placeholders/index.js";
 
 import { throwInvariantViolations } from "./discovery.js";
+import { checkCompanionsTokenParity, renderFrontmatter } from "./frontmatter.js";
+import { unemittedSegment } from "./emit-paths.js";
 import {
-  checkCompanionsTokenParity,
-  precomputeExistingRefs,
-  renderFrontmatter,
-} from "./frontmatter.js";
-import { buildRegistry } from "./validators.js";
-import { emitsEntry } from "./emit-paths.js";
-import type { LocalIds } from "../layout/index.js";
-import type { InstalledIndex } from "../installed.js";
+  expandOrThrow,
+  placeholderRegistry,
+  renderMarkdownFile,
+  reportWarnings,
+  substituteOrThrow,
+  writeOutput,
+  type RenderContext,
+  type SourceFile,
+} from "./render.js";
 
 export type { LocalIds } from "../layout/index.js";
 
-export type WarningSink = (filePath: string, warnings: readonly string[]) => void;
+export type { WarningSink } from "./render.js";
 
 export interface CompileTreeOptions {
-  readonly srcRoot: string;
+  readonly tree: EffectiveTree;
   readonly outRoot: string;
-  readonly localIds: LocalIds;
-  readonly installedIndex: InstalledIndex;
   readonly skipRelPaths?: ReadonlySet<string>;
-  readonly repoRoot: string;
-  readonly namedRoots?: Readonly<Record<string, string>>;
-  readonly onWarnings?: WarningSink;
+  readonly render: RenderContext;
 }
 
-interface CompileContext {
-  readonly localIds: LocalIds;
-  readonly installedIndex: InstalledIndex;
-  readonly repoRoot: string;
-  readonly namedRoots: Readonly<Record<string, string>>;
-  readonly onWarnings?: WarningSink;
+interface TreeEntry {
+  readonly rel: string;
+  readonly file: SourceFile;
 }
 
 export async function compileTree(options: CompileTreeOptions): Promise<void> {
-  const { srcRoot, outRoot } = options;
-  const ctx: CompileContext = {
-    localIds: options.localIds,
-    installedIndex: options.installedIndex,
-    repoRoot: options.repoRoot,
-    namedRoots: options.namedRoots ?? {},
-    ...(options.onWarnings ? { onWarnings: options.onWarnings } : {}),
-  };
+  const { tree, outRoot, render: ctx } = options;
   const skipRelPaths = options.skipRelPaths ?? new Set<string>();
-  const skillFolders = await collectSkillFolders(srcRoot);
-  const handledAbsPaths = new Set<string>();
+  const entries = [...tree.files]
+    .filter(([rel]) => unemittedSegment(rel) === undefined)
+    .map(
+      ([rel, physical]): TreeEntry => ({ rel, file: { logical: join(tree.root, rel), physical } }),
+    );
+  const skillFolders = collectSkillFolders(entries);
+  const handled = new Set<string>();
 
-  for await (const absPath of walk(srcRoot)) {
-    if (basename(absPath) !== SKILL_FILE) continue;
-    const target = join(outRoot, relative(srcRoot, absPath));
-    const companions = skillFolders.get(dirname(absPath)) ?? [];
-    const result = await emitSkill(absPath, target, companions, ctx);
-    for (const p of result.resolvedIncludes) handledAbsPaths.add(p);
-    for (const p of result.emittedCompanions) handledAbsPaths.add(p);
+  for (const { rel, file } of entries.filter((entry) => basename(entry.rel) === SKILL_FILE)) {
+    const siblings = skillFolders.get(dirname(file.logical)) ?? [];
+    const emitted = await emitSkill(file, join(outRoot, rel), siblings, ctx);
+    for (const logical of emitted) handled.add(logical);
   }
 
-  for await (const absPath of walk(srcRoot)) {
-    const file = basename(absPath);
-    const rel = relative(srcRoot, absPath);
-    if (file === SKILL_FILE) continue;
-    if (handledAbsPaths.has(absPath)) continue;
+  for (const { rel, file } of entries) {
+    if (basename(rel) === SKILL_FILE) continue;
+    if (handled.has(file.logical)) continue;
     if (skipRelPaths.has(rel)) continue;
     if (isUnderAnySkipDir(rel, skipRelPaths)) continue;
 
-    const target = join(outRoot, relative(srcRoot, absPath));
-    if (file.endsWith(".md")) {
-      await emitSubstitutedFile(absPath, target, dirname(absPath), ctx);
+    const target = join(outRoot, rel);
+    if (rel.endsWith(".md")) {
+      await renderMarkdownFile(file, target, ctx);
     } else {
       await mkdir(dirname(target), { recursive: true });
-      await copyFile(absPath, target);
+      await copyFile(file.physical, target);
     }
   }
 }
@@ -95,53 +82,38 @@ function isUnderAnySkipDir(rel: string, skipRelPaths: ReadonlySet<string>): bool
   return false;
 }
 
-async function collectSkillFolders(srcRoot: string): Promise<Map<string, string[]>> {
+function collectSkillFolders(entries: readonly TreeEntry[]): Map<string, string[]> {
   const result = new Map<string, string[]>();
-  for await (const absPath of walk(srcRoot)) {
-    const dir = dirname(absPath);
-    const file = basename(absPath);
-    if (file === SKILL_FILE) {
+  for (const { file } of entries) {
+    const dir = dirname(file.logical);
+    const name = basename(file.logical);
+    if (name === SKILL_FILE) {
       result.set(dir, result.get(dir) ?? []);
-    } else if (file.endsWith(".md") && !isReservedCompanionFilename(file)) {
-      const list = result.get(dir) ?? [];
-      list.push(file);
-      result.set(dir, list);
+    } else if (name.endsWith(".md") && !isReservedCompanionFilename(name)) {
+      result.set(dir, [...(result.get(dir) ?? []), name]);
     }
   }
   return result;
 }
 
-interface EmitResult {
-  readonly resolvedIncludes: ReadonlySet<string>;
-  readonly emittedCompanions: ReadonlySet<string>;
-}
-
 async function emitSkill(
-  srcPath: string,
+  file: SourceFile,
   outPath: string,
   siblings: readonly string[],
-  ctx: CompileContext,
-): Promise<EmitResult> {
-  const skillDir = dirname(srcPath);
-  const loaded = await loadSkill(skillDir);
+  ctx: RenderContext,
+): Promise<ReadonlySet<string>> {
+  const skillDir = dirname(file.logical);
+  const loaded = await readSkillFile({ skillFilePath: file.physical, skillDir });
   if (!loaded.ok) {
-    throwInvariantViolations(srcPath, formatLoadSkillError(loaded.error));
+    throwInvariantViolations(file.physical, formatLoadSkillError(loaded.error));
   }
   const { skill, body } = loaded.value;
   const expectedName = basename(skillDir);
 
-  const expanded = await expandIncludes(body, loaded.value.skillFilePath, {
-    repoRoot: ctx.repoRoot,
-    named: ctx.namedRoots,
-  });
-  if (!expanded.ok) {
-    throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
-  }
-  const expandedBody = expanded.value.body;
+  const expanded = await expandOrThrow(body, file, ctx);
+  const includedLogical = [...expanded.resolvedIncludes].map((p) => ctx.view.logical(p));
   const includedSiblings = new Set(
-    [...expanded.value.resolvedIncludes]
-      .map((p) => relative(skillDir, p))
-      .filter((rel) => !rel.startsWith("..")),
+    includedLogical.map((p) => relative(skillDir, p)).filter((rel) => !rel.startsWith("..")),
   );
   const filteredSiblings = siblings.filter((s) => !includedSiblings.has(s));
 
@@ -150,89 +122,27 @@ async function emitSkill(
     errors.push(`name "${skill.name}" does not match folder "${expectedName}"`);
   }
   errors.push(...checkCompanionFiles(skill.companions, filteredSiblings));
-  errors.push(...checkCompanionsTokenParity(expandedBody, skill.companions));
-
+  errors.push(...checkCompanionsTokenParity(expanded.body, skill.companions));
   if (errors.length > 0) {
-    throwInvariantViolations(srcPath, errors);
+    throwInvariantViolations(file.physical, errors);
   }
 
-  const existingRefs = await precomputeExistingRefs(expandedBody, skillDir);
-  const registry = buildRegistry(
-    skill.companions,
-    ctx.localIds,
-    ctx.installedIndex,
-    existingRefs,
-    skillDir,
+  const registry = await placeholderRegistry(
+    { body: expanded.body, file, companions: skill.companions },
+    ctx,
   );
-  const result = substitute(expandedBody, registry);
-  if (!result.ok) {
-    throwInvariantViolations(srcPath, result.errors);
-  }
+  const result = substituteOrThrow(expanded.body, registry, file);
+  const description = substituteOrThrow(skill.description, registry, file);
+  reportWarnings(ctx, file, [...result.warnings, ...description.warnings]);
+  await writeOutput(outPath, renderFrontmatter(skill, description.rendered) + result.rendered);
 
-  const descriptionResult = substitute(skill.description, registry);
-  if (!descriptionResult.ok) {
-    throwInvariantViolations(srcPath, descriptionResult.errors);
-  }
-
-  reportWarnings(ctx, srcPath, [...result.warnings, ...descriptionResult.warnings]);
-
-  await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, renderFrontmatter(skill, descriptionResult.rendered) + result.rendered);
-
-  const emittedCompanions = new Set<string>();
+  const handled = new Set(includedLogical);
   for (const companion of skill.companions ?? []) {
-    const companionSrc = join(skillDir, companion.file);
-    if (expanded.value.resolvedIncludes.has(companionSrc)) continue;
-    const companionOut = join(dirname(outPath), companion.file);
-    await emitSubstitutedFile(companionSrc, companionOut, skillDir, ctx);
-    emittedCompanions.add(companionSrc);
+    const logical = join(skillDir, companion.file);
+    if (handled.has(logical)) continue;
+    const companionFile = { logical, physical: ctx.view.physical(logical) };
+    await renderMarkdownFile(companionFile, join(dirname(outPath), companion.file), ctx);
+    handled.add(logical);
   }
-
-  return { resolvedIncludes: expanded.value.resolvedIncludes, emittedCompanions };
-}
-
-async function emitSubstitutedFile(
-  srcPath: string,
-  outPath: string,
-  baseDir: string,
-  ctx: CompileContext,
-): Promise<void> {
-  const raw = await readFile(srcPath, "utf8");
-  const expanded = await expandIncludes(raw, srcPath, {
-    repoRoot: ctx.repoRoot,
-    named: ctx.namedRoots,
-  });
-  if (!expanded.ok) {
-    throwInvariantViolations(srcPath, expanded.error.map(formatIncludeError));
-  }
-  const body = expanded.value.body;
-  const existingRefs = await precomputeExistingRefs(body, baseDir);
-  const registry = buildRegistry(
-    undefined,
-    ctx.localIds,
-    ctx.installedIndex,
-    existingRefs,
-    baseDir,
-  );
-  const result = substitute(body, registry);
-  if (!result.ok) {
-    throwInvariantViolations(srcPath, result.errors);
-  }
-  reportWarnings(ctx, srcPath, result.warnings);
-  await mkdir(dirname(outPath), { recursive: true });
-  await writeFile(outPath, result.rendered);
-}
-
-function reportWarnings(ctx: CompileContext, filePath: string, warnings: readonly string[]): void {
-  if (warnings.length > 0) ctx.onWarnings?.(filePath, warnings);
-}
-
-async function* walk(dir: string): AsyncGenerator<string> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!emitsEntry(entry.name)) continue;
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) yield* walk(full);
-    else if (entry.isFile()) yield full;
-  }
+  return handled;
 }

@@ -6,7 +6,7 @@ import { compileConfigs } from "./configs/compile.js";
 import { emitConfigsManifest } from "./configs/emit.js";
 import { assertRuntimeDetached } from "./install/runtime.js";
 import { defaultSources, discoverInstalled, indexInstalled } from "./installed.js";
-import { collectLocalIds, layoutAt, loadCatalogOrThrow } from "./layout/index.js";
+import { layoutAt, loadCatalogOrThrow } from "./layout/index.js";
 import { resolveVendorsForRepo } from "./vendor/registry.js";
 import type { Vendor } from "./vendor/schema.js";
 
@@ -23,7 +23,6 @@ export async function compile(options: CompileOptions = {}): Promise<void> {
   await assertRuntimeDetached({ distRoot: outRoot, vendors });
   const namedRoots = await resolveRootsForRepo(layout.repoRoot);
   const catalog = await loadCatalogOrThrow(layout);
-  const localIds = await collectLocalIds(catalog);
   const installedIndex = indexInstalled(await discoverInstalled(defaultSources(vendors)));
   const onWarnings = options.silent ? {} : { onWarnings: reportWarningsToStderr };
 
@@ -32,12 +31,11 @@ export async function compile(options: CompileOptions = {}): Promise<void> {
     layout,
     vendors,
     catalog,
-    localIds,
     installedIndex,
     namedRoots,
     ...onWarnings,
   });
-  await compileConfigs({ layout, vendors, localIds, installedIndex, namedRoots, ...onWarnings });
+  await compileConfigs({ layout, vendors, catalog, installedIndex, namedRoots, ...onWarnings });
   await emitConfigsManifest({ outRoot, vendors });
   if (!options.silent) {
     console.log(`built → ${outRoot}`);

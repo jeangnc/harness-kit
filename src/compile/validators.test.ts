@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { buildRegistry } from "./validators.js";
-import { precomputeExistingRefs } from "./frontmatter.js";
+import { existingRefs } from "./render.js";
 import { substitute } from "../placeholders/index.js";
 import type { InstalledIndex } from "../installed.js";
 import type { LocalIds } from "../layout/index.js";
@@ -24,14 +24,8 @@ const emptyInstalledIndex: InstalledIndex = {
 
 async function substituteRef(skillDir: string, value: string) {
   const body = `see {{ref:${value}}}`;
-  const existingRefs = await precomputeExistingRefs(body, skillDir);
-  const registry = buildRegistry(
-    undefined,
-    emptyLocalIds,
-    emptyInstalledIndex,
-    existingRefs,
-    skillDir,
-  );
+  const refs = await existingRefs(body, skillDir);
+  const registry = buildRegistry(undefined, emptyLocalIds, emptyInstalledIndex, refs, skillDir);
   return substitute(body, registry);
 }
 

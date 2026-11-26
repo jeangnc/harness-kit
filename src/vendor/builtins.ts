@@ -5,3 +5,7 @@ import type { Vendor } from "./schema.js";
 export function builtinVendors(): readonly Vendor[] {
   return [claudeVendor, codexVendor];
 }
+
+export function overlayVendorNames(selected: readonly Vendor[]): readonly string[] {
+  return [...new Set([...builtinVendors(), ...selected].map((vendor) => vendor.name))];
+}

@@ -43,9 +43,6 @@ export interface ResolvedPlugin {
   readonly manifestPath: string;
   readonly manifest: Plugin;
   readonly hookRequires: readonly HookRequirement[];
-  readonly skillsDir: string;
-  readonly commandsDir: string;
-  readonly agentsDir: string;
   readonly hooksDir: string;
 }
 
@@ -143,9 +140,6 @@ async function resolvePlugin(
     manifestPath,
     manifest: manifest.value,
     hookRequires: harness.data.hookRequires ?? [],
-    skillsDir: join(pluginDir, "skills"),
-    commandsDir: join(pluginDir, "commands"),
-    agentsDir: join(pluginDir, "agents"),
     hooksDir: join(pluginDir, "hooks"),
   });
 }
@@ -172,43 +166,6 @@ export interface LocalIds {
   readonly skills: ReadonlySet<string>;
   readonly commands: ReadonlySet<string>;
   readonly agents: ReadonlySet<string>;
-}
-
-export async function collectLocalIds(catalog: Catalog): Promise<LocalIds> {
-  const skills = new Set<string>();
-  const commands = new Set<string>();
-  const agents = new Set<string>();
-  for (const plugin of catalog.plugins) {
-    for (const name of await listSkillNames(plugin.skillsDir)) {
-      skills.add(`${plugin.name}:${name}`);
-    }
-    for (const name of await listMarkdownNames(plugin.commandsDir)) {
-      commands.add(`${plugin.name}:${name}`);
-    }
-    for (const name of await listMarkdownNames(plugin.agentsDir)) {
-      agents.add(`${plugin.name}:${name}`);
-    }
-  }
-  return { skills, commands, agents };
-}
-
-async function listSkillNames(dir: string): Promise<readonly string[]> {
-  if (!(await pathExists(dir))) return [];
-  const entries = await readdir(dir, { withFileTypes: true });
-  const out: string[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (await pathExists(join(dir, entry.name, "SKILL.md"))) out.push(entry.name);
-  }
-  return out;
-}
-
-export async function listMarkdownNames(dir: string): Promise<readonly string[]> {
-  if (!(await pathExists(dir))) return [];
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => entry.name.slice(0, -3));
 }
 
 export async function loadCatalogOrThrow(layout: Layout): Promise<Catalog> {
