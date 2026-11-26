@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import assert from "node:assert/strict";
+import { deepEqual, equal, ok, rejects } from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -19,7 +19,7 @@ function fixture(
   const ctx: VendorInstallContext = {
     distRoot: "/tmp/foo/dist",
     marketplace: "foo-market",
-    mode: "local",
+    source: { kind: "local" },
     plugins: [{ name: "foo", version: "2.0.0", path: "/tmp/foo/dist/codex/plugins/foo" }],
     run: async (cmd, args) => {
       calls.push([cmd, ...args]);
@@ -46,12 +46,12 @@ function fixture(
 
 test("Codex leaves every runtime config user-owned", () => {
   for (const name of ["config.toml", "AGENTS.md", "hooks.json", "foo.config.toml"]) {
-    assert.equal(codexVendor.configPlacement(name), null);
+    equal(codexVendor.configPlacement(name), null);
   }
 });
 
 test("Codex emits its catalog at the native .agents marketplace path", () => {
-  assert.equal(codexVendor.catalogPath, ".agents/plugins/marketplace.json");
+  equal(codexVendor.catalogPath, ".agents/plugins/marketplace.json");
 });
 
 test("local installation registers the vendor catalog before installing enabled plugins", async () => {
@@ -59,15 +59,8 @@ test("local installation registers the vendor catalog before installing enabled 
     { name: "foo", enabled: true, installed: false, version: "2.0.0" },
   ]);
   await vendor.install(ctx);
-  assert.deepEqual(calls[0], [
-    "codex",
-    "plugin",
-    "marketplace",
-    "add",
-    "/tmp/foo/dist/codex",
-    "--json",
-  ]);
-  assert.ok(calls.some((call) => call.join(" ") === "codex plugin add foo@foo-market --json"));
+  deepEqual(calls[0], ["codex", "plugin", "marketplace", "add", "/tmp/foo/dist/codex", "--json"]);
+  ok(calls.some((call) => call.join(" ") === "codex plugin add foo@foo-market --json"));
 });
 
 test("installation leaves disabled plugins unchanged", async () => {
@@ -75,7 +68,7 @@ test("installation leaves disabled plugins unchanged", async () => {
     { name: "foo", enabled: false, installed: false, version: "2.0.0" },
   ]);
   await vendor.install(ctx);
-  assert.equal(
+  equal(
     calls.some((call) => call[2] === "add"),
     false,
   );
@@ -87,11 +80,11 @@ test("refresh skips a stale disabled plugin without enabling it", async () => {
   ]);
   const logs: string[] = [];
   await vendor.refresh({ ...ctx, log: (line) => logs.push(line) });
-  assert.equal(
+  equal(
     calls.some((call) => call[2] === "add"),
     false,
   );
-  assert.ok(logs.some((line) => line.includes("skipped disabled foo@1.0.0")));
+  ok(logs.some((line) => line.includes("skipped disabled foo@1.0.0")));
 });
 
 test("refresh leaves a current disabled plugin unchanged", async () => {
@@ -99,10 +92,18 @@ test("refresh leaves a current disabled plugin unchanged", async () => {
     { name: "foo", enabled: false, installed: true, version: "2.0.0" },
   ]);
   await vendor.refresh(ctx);
-  assert.equal(
+  equal(
     calls.some((call) => call[2] === "add"),
     false,
   );
+});
+
+test("local installation re-adds an enabled plugin already at the shipped version", async () => {
+  const { ctx, calls, vendor } = fixture([
+    { name: "foo", enabled: true, installed: true, version: "2.0.0" },
+  ]);
+  await vendor.install(ctx);
+  ok(calls.some((call) => call.join(" ") === "codex plugin add foo@foo-market --json"));
 });
 
 test("refresh installs the new version of an enabled plugin through Codex", async () => {
@@ -110,14 +111,20 @@ test("refresh installs the new version of an enabled plugin through Codex", asyn
     { name: "foo", enabled: true, installed: true, version: "1.0.0" },
   ]);
   await vendor.refresh(ctx);
-  assert.ok(calls.some((call) => call.join(" ") === "codex plugin add foo@foo-market --json"));
+  ok(calls.some((call) => call.join(" ") === "codex plugin add foo@foo-market --json"));
 });
 
-test("remote installation refreshes its configured Git marketplace", async () => {
+test("remote installation registers the codex ref of the repository before upgrading it", async () => {
   const { ctx, calls, vendor } = fixture([]);
-  await vendor.install({ ...ctx, mode: "remote" });
-  assert.deepEqual(calls[0], ["codex", "plugin", "marketplace", "upgrade", "foo-market", "--json"]);
-  assert.equal(
+  await vendor.install({
+    ...ctx,
+    source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+  });
+  deepEqual(calls.slice(0, 2), [
+    ["codex", "plugin", "marketplace", "add", "foo/bar", "--ref", "codex", "--json"],
+    ["codex", "plugin", "marketplace", "upgrade", "foo-market", "--json"],
+  ]);
+  equal(
     calls.some((call) => call.includes(ctx.distRoot)),
     false,
   );
@@ -125,7 +132,7 @@ test("remote installation refreshes its configured Git marketplace", async () =>
 
 test("native command failures stop installation", async () => {
   const { ctx, vendor } = fixture();
-  await assert.rejects(
+  await rejects(
     vendor.install({
       ...ctx,
       run: async () => {
@@ -139,7 +146,7 @@ test("native command failures stop installation", async () => {
 test("invalid native output is rejected before plugin mutation", async () => {
   const { ctx, vendor } = fixture();
   const run = ctx.run;
-  await assert.rejects(
+  await rejects(
     vendor.install({
       ...ctx,
       run: async (cmd, args) => (args[1] === "list" ? "invalid" : run(cmd, args)),
@@ -152,8 +159,8 @@ test("installed versions come from the native registry", async () => {
   const { ctx, vendor } = fixture([
     { name: "foo", enabled: false, installed: true, version: "1.0.0" },
   ]);
-  assert.deepEqual(await vendor.installedVersions(ctx), new Map([["foo", "1.0.0"]]));
-  assert.equal(await vendor.isInstalled(ctx), true);
+  deepEqual(await vendor.installedVersions(ctx), new Map([["foo", "1.0.0"]]));
+  equal(await vendor.isInstalled(ctx), true);
 });
 
 test("uninstall delegates plugin and marketplace removal", async () => {
@@ -161,21 +168,14 @@ test("uninstall delegates plugin and marketplace removal", async () => {
     { name: "foo", enabled: false, installed: true, version: "1.0.0" },
   ]);
   await vendor.uninstall(ctx);
-  assert.ok(calls.some((call) => call.join(" ") === "codex plugin remove foo@foo-market --json"));
-  assert.deepEqual(calls.at(-1), [
-    "codex",
-    "plugin",
-    "marketplace",
-    "remove",
-    "foo-market",
-    "--json",
-  ]);
+  ok(calls.some((call) => call.join(" ") === "codex plugin remove foo@foo-market --json"));
+  deepEqual(calls.at(-1), ["codex", "plugin", "marketplace", "remove", "foo-market", "--json"]);
 });
 
 test("pruning delegates only the named plugin removal", async () => {
   const { ctx, calls, vendor } = fixture();
   await vendor.pruneStale(ctx, ["bar"]);
-  assert.deepEqual(calls, [["codex", "plugin", "remove", "bar@foo-market", "--json"]]);
+  deepEqual(calls, [["codex", "plugin", "remove", "bar@foo-market", "--json"]]);
 });
 
 test("installation does not write user files or delete cached content itself", async () => {
@@ -187,8 +187,8 @@ test("installation does not write user files or delete cached content itself", a
     await writeFile(join(home, "config.toml"), "foo = true\n");
     const { ctx } = fixture([{ name: "foo", enabled: true, installed: true, version: "1.0.0" }]);
     await makeCodexVendor(home).install(ctx);
-    assert.equal(await readFile(join(cache, "foo"), "utf8"), "foo");
-    assert.equal(await readFile(join(home, "config.toml"), "utf8"), "foo = true\n");
+    equal(await readFile(join(cache, "foo"), "utf8"), "foo");
+    equal(await readFile(join(home, "config.toml"), "utf8"), "foo = true\n");
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -196,11 +196,12 @@ test("installation does not write user files or delete cached content itself", a
 
 test("remote marketplace errors stop plugin installation", async () => {
   const { ctx, vendor } = fixture();
-  await assert.rejects(
+  await rejects(
     vendor.install({
       ...ctx,
-      mode: "remote",
-      run: async () => JSON.stringify({ errors: ["foo"] }),
+      source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
+      run: async (_cmd, args) =>
+        JSON.stringify(args[2] === "add" ? { marketplaceName: "foo-market" } : { errors: ["foo"] }),
     }),
     /marketplace upgrade/,
   );
@@ -211,7 +212,7 @@ test("native installation rejects an unexpected installed version", async () => 
     { name: "foo", enabled: true, installed: false, version: "2.0.0" },
   ]);
   const run = ctx.run;
-  await assert.rejects(
+  await rejects(
     vendor.install({
       ...ctx,
       run: async (cmd, args) =>
@@ -227,13 +228,13 @@ test("native commands target the vendor's configured home", async () => {
   await vendor.install({
     ...ctx,
     run: async (cmd, args, options) => {
-      assert.equal(options?.env["CODEX_HOME"], vendor.home);
-      assert.equal(options?.cwd, "/");
+      equal(options?.env["CODEX_HOME"], vendor.home);
+      equal(options?.cwd, "/");
       return run(cmd, args);
     },
   });
 });
 
 test("relative Codex homes are resolved before changing command directories", () => {
-  assert.equal(makeCodexVendor("foo").home, resolve("foo"));
+  equal(makeCodexVendor("foo").home, resolve("foo"));
 });

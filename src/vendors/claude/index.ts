@@ -69,18 +69,6 @@ function readSettings(settingsPath: string): Record<string, unknown> {
   return isRecord(parsed) ? parsed : {};
 }
 
-function declaredMarketplaceSource(ctx: VendorInstallContext): string | undefined {
-  const settings = readSettings(
-    join(vendorBuild(ctx.distRoot, VENDOR_NAME).configsDir, "settings.json"),
-  );
-  const marketplaces = settings["extraKnownMarketplaces"];
-  const entry = isRecord(marketplaces) ? marketplaces[ctx.marketplace] : undefined;
-  const source = isRecord(entry) ? entry["source"] : undefined;
-  if (!isRecord(source)) return undefined;
-  const location = source["url"] ?? source["repo"] ?? source["path"];
-  return typeof location === "string" ? location : undefined;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -116,7 +104,7 @@ export function makeClaudeVendor(home: string): Vendor {
       if (ctx.plugins.length === 0) return;
       const { enabled, disabled } = partitionByEnabled(ctx);
       ctx.log(
-        `[claude] installing ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace} (${ctx.mode})`,
+        `[claude] installing ${ctx.plugins.length} plugin(s) on marketplace ${ctx.marketplace} (${ctx.source.kind})`,
       );
       await refreshMarketplace(ctx);
       await pruneStagingDirs(home);
@@ -333,7 +321,8 @@ async function pruneStagingDirs(home: string): Promise<void> {
 }
 
 async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
-  if (ctx.mode === "local") {
+  const { source } = ctx;
+  if (source.kind === "local") {
     await runIgnoreFailure(ctx.run, "claude", [
       "plugin",
       "marketplace",
@@ -352,10 +341,12 @@ async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
     "--scope",
     "local",
   ]);
-  const source = declaredMarketplaceSource(ctx);
-  if (source !== undefined) {
-    await runIgnoreFailure(ctx.run, "claude", ["plugin", "marketplace", "add", source]);
-  }
+  await runIgnoreFailure(ctx.run, "claude", [
+    "plugin",
+    "marketplace",
+    "add",
+    `${source.repository.slug}#${VENDOR_NAME}`,
+  ]);
   await runIgnoreFailure(ctx.run, "claude", ["plugin", "marketplace", "update", ctx.marketplace]);
 }
 

@@ -1,6 +1,6 @@
-import type { InstallMode } from "../install/mode.js";
 import type { CommandRunner } from "../install/runner.js";
 import type { Catalog, ResolvedPlugin } from "../layout/index.js";
+import type { Repository } from "../repository/index.js";
 
 export interface ConfigPlacement {
   readonly strategy: "link" | "merge";
@@ -18,11 +18,15 @@ export interface PluginPartition {
   readonly disabled: readonly DiscoveredVendorPlugin[];
 }
 
+export type InstallSource =
+  | { readonly kind: "local" }
+  | { readonly kind: "remote"; readonly repository: Repository };
+
 export interface VendorInstallContext {
   readonly distRoot: string;
   readonly marketplace: string;
   readonly plugins: readonly DiscoveredVendorPlugin[];
-  readonly mode: InstallMode;
+  readonly source: InstallSource;
   readonly run: CommandRunner;
   readonly log: (msg: string) => void;
 }

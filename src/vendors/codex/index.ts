@@ -13,6 +13,7 @@ import type { Vendor, VendorInstallContext } from "../../vendor/schema.js";
 import {
   installCodexPlugin,
   listMarketplacePlugins,
+  registerCodexGitMarketplace,
   registerCodexMarketplace,
   removeCodexMarketplace,
   removeCodexPlugin,
@@ -74,18 +75,22 @@ async function refreshPlugins(
   ctx: VendorInstallContext,
   native: CodexNativeContext,
 ): Promise<void> {
-  if (ctx.mode === "local") {
+  const { source } = ctx;
+  if (source.kind === "local") {
     await registerCodexMarketplace({
       ...native,
       marketplace: { name: ctx.marketplace, path: vendorBuild(ctx.distRoot, VENDOR_NAME).root },
     });
   } else {
+    await registerCodexGitMarketplace({
+      ...native,
+      marketplace: { name: ctx.marketplace, repository: source.repository.slug, ref: VENDOR_NAME },
+    });
     await upgradeCodexMarketplace({ ...native, marketplace: ctx.marketplace });
   }
   const entries = await listMarketplacePlugins({ ...native, marketplace: ctx.marketplace });
   for (const plugin of ctx.plugins) {
     const entry = entries.find((candidate) => candidate.name === plugin.name);
-    if (entry?.installed && entry.version === plugin.version) continue;
     if (!entry?.enabled) {
       if (entry?.installed) {
         ctx.log(

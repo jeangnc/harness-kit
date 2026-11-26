@@ -261,7 +261,7 @@
   },
   "src/vendors/claude/index.ts": {
     "tenets/feature-envy": {
-      "count": 5
+      "count": 4
     }
   },
   "src/vendors/claude/installedPlugins.test.ts": {
@@ -271,7 +271,7 @@
   },
   "src/vendors/codex/index.test.ts": {
     "tenets/destructure-dot-access": {
-      "count": 27
+      "count": 2
     }
   },
   "src/vendors/codex/index.ts": {

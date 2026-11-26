@@ -81,7 +81,7 @@ function ctx(over: Partial<VendorInstallContext> = {}): VendorInstallContext {
     distRoot: "/tmp/dist",
     marketplace: "test-market",
     plugins: [],
-    mode: "local",
+    source: { kind: "local" },
     run,
     log: () => undefined,
     ...over,
@@ -146,7 +146,7 @@ test("claudeVendor.install in remote mode installs each unregistered plugin with
     await makeClaudeVendor(home).install(
       ctx({
         run,
-        mode: "remote",
+        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
         distRoot: dist,
         plugins: [
           { name: "alpha", path: alpha, version: "1.0.0" },
@@ -157,6 +157,7 @@ test("claudeVendor.install in remote mode installs each unregistered plugin with
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
     assert.deepEqual(cmds, [
       "claude plugin marketplace remove test-market --scope local",
+      "claude plugin marketplace add foo/bar#claude",
       "claude plugin marketplace update test-market",
       "claude plugin install alpha@test-market",
       "claude plugin install beta@test-market",
@@ -164,26 +165,17 @@ test("claudeVendor.install in remote mode installs each unregistered plugin with
   });
 });
 
-test("claudeVendor.install in remote mode repoints the marketplace at its declared source", async () => {
+test("claudeVendor.install in remote mode repoints the marketplace at the repository claude ref", async () => {
   const sandbox = mkdtempSync(join(tmpdir(), "harness-kit-claude-remote-"));
   try {
     const dist = join(sandbox, "dist");
     const home = join(sandbox, "home");
-    mkdirSync(join(dist, "claude/configs"), { recursive: true });
-    writeFileSync(
-      join(dist, "claude/configs/settings.json"),
-      JSON.stringify({
-        extraKnownMarketplaces: {
-          "test-market": { source: { source: "git", url: "git@example.com:foo/bar.git" } },
-        },
-      }),
-    );
     const path = writeDistPlugin(dist, "alpha", "1.0.0", "alpha-v1");
     const { run, calls } = recordingRunner(home);
     await makeClaudeVendor(home).install(
       ctx({
         run,
-        mode: "remote",
+        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
         distRoot: dist,
         plugins: [{ name: "alpha", path, version: "1.0.0" }],
       }),
@@ -191,7 +183,7 @@ test("claudeVendor.install in remote mode repoints the marketplace at its declar
     const cmds = calls.map((c) => [c.cmd, ...c.args].join(" "));
     assert.deepEqual(cmds.slice(0, 3), [
       "claude plugin marketplace remove test-market --scope local",
-      "claude plugin marketplace add git@example.com:foo/bar.git",
+      "claude plugin marketplace add foo/bar#claude",
       "claude plugin marketplace update test-market",
     ]);
   } finally {
@@ -206,7 +198,7 @@ test("claudeVendor.install in local mode adds the dist marketplace instead of up
     await makeClaudeVendor(home).install(
       ctx({
         run,
-        mode: "local",
+        source: { kind: "local" },
         distRoot: dist,
         plugins: [{ name: "alpha", path, version: "1.0.0" }],
       }),
@@ -518,7 +510,7 @@ test("claudeVendor.install prunes leaked temp_* staging dirs but spares real mar
     await v.install(
       ctx({
         run,
-        mode: "local",
+        source: { kind: "local" },
         distRoot: dist,
         plugins: [{ name: "alpha", path, version: "1.0.0" }],
       }),
@@ -681,7 +673,7 @@ test("claudeVendor.install skips plugins explicitly disabled in settings", async
     await makeClaudeVendor(home).install(
       ctx({
         run,
-        mode: "remote",
+        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
         distRoot: dist,
         plugins: [
           { name: "alpha", path: alpha, version: "1.0.0" },
@@ -703,7 +695,7 @@ test("claudeVendor.install enables plugins absent from settings (absent = enable
     await makeClaudeVendor(home).install(
       ctx({
         run,
-        mode: "remote",
+        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
         distRoot: dist,
         plugins: [{ name: "alpha", path: alpha, version: "1.0.0" }],
       }),
@@ -721,7 +713,7 @@ test("claudeVendor.install installs none when all plugins are disabled, still re
       await makeClaudeVendor(home).install(
         ctx({
           run,
-          mode: "local",
+          source: { kind: "local" },
           distRoot: dist,
           plugins: [
             { name: "dev-tools", path: join(dist, "claude/dev-tools"), version: "2.4.0" },
@@ -916,7 +908,7 @@ test("claudeVendor.install reads disabled state before any command mutates setti
           writeFileSync(settingsPath, JSON.stringify({ enabledPlugins: {} }));
           if (args[1] === "install") registerPlugin(home, args[2]!);
         },
-        mode: "remote",
+        source: { kind: "remote", repository: { owner: "foo", name: "bar", slug: "foo/bar" } },
         distRoot: dist,
         plugins: [
           { name: "alpha", path: alpha, version: "1.0.0" },

@@ -154,19 +154,45 @@ export async function listMarketplacePlugins(
   );
 }
 
+export interface CodexGitMarketplace {
+  readonly name: string;
+  readonly repository: string;
+  readonly ref: string;
+}
+
 export async function registerCodexMarketplace(
   options: CodexNativeContext & { readonly marketplace: CodexMarketplace },
 ): Promise<void> {
+  await addCodexMarketplace(options, {
+    name: options.marketplace.name,
+    args: [resolve(options.marketplace.path)],
+  });
+}
+
+export async function registerCodexGitMarketplace(
+  options: CodexNativeContext & { readonly marketplace: CodexGitMarketplace },
+): Promise<void> {
+  const { name, repository, ref } = options.marketplace;
+  await addCodexMarketplace(options, { name, args: [repository, "--ref", ref] });
+}
+
+interface MarketplaceAddition {
+  readonly name: string;
+  readonly args: readonly string[];
+}
+
+async function addCodexMarketplace(
+  context: CodexNativeContext,
+  addition: MarketplaceAddition,
+): Promise<void> {
   const result = await readNativeJson({
-    ...options,
-    args: ["plugin", "marketplace", "add", resolve(options.marketplace.path), "--json"],
+    ...context,
+    args: ["plugin", "marketplace", "add", ...addition.args, "--json"],
     operation: "marketplace add",
     schema: z.object({ marketplaceName: z.string() }),
   });
-  if (result.marketplaceName !== options.marketplace.name) {
-    throw new Error(
-      `Codex registered an unexpected marketplace; expected ${options.marketplace.name}`,
-    );
+  if (result.marketplaceName !== addition.name) {
+    throw new Error(`Codex registered an unexpected marketplace; expected ${addition.name}`);
   }
 }
 

@@ -8,13 +8,20 @@ import { discoverPluginsForVendor, readMarketplaceName } from "./discovery.js";
 import { type InstallMode } from "./mode.js";
 import { defaultRunner, type CommandRunner } from "./runner.js";
 import { err, ok, type Result } from "../result.js";
-import type { DiscoveredVendorPlugin, Vendor, VendorInstallContext } from "../vendor/schema.js";
+import { formatRepositoryError, resolveRepository, type Repository } from "../repository/index.js";
+import type {
+  DiscoveredVendorPlugin,
+  InstallSource,
+  Vendor,
+  VendorInstallContext,
+} from "../vendor/schema.js";
 
 export interface InstallOptions {
   readonly distRoot?: string;
   readonly repoRoot?: string;
   readonly vendors: readonly Vendor[];
   readonly mode?: InstallMode;
+  readonly repository?: Repository;
   readonly silent?: boolean;
   readonly dryRun?: boolean;
   readonly prune?: boolean;
@@ -190,7 +197,7 @@ interface ResolvedContext {
   readonly repoRoot: string;
   readonly vendors: readonly Vendor[];
   readonly marketplace: string;
-  readonly mode: InstallMode;
+  readonly source: InstallSource;
   readonly run: CommandRunner;
   readonly log: (msg: string) => void;
 }
@@ -213,8 +220,30 @@ async function resolveContext(
       if (!silent) console.log(msg);
     });
   const marketplace = await resolveMarketplaceName(distRoot, options.vendors);
-  const mode = options.mode ?? defaultMode;
-  return { distRoot, repoRoot, vendors: options.vendors, marketplace, mode, run: runner, log };
+  const source = await installSource(options, { repoRoot, defaultMode });
+  return { distRoot, repoRoot, vendors: options.vendors, marketplace, source, run: runner, log };
+}
+
+interface SourceDefaults {
+  readonly repoRoot: string;
+  readonly defaultMode: InstallMode;
+}
+
+async function installSource(
+  options: InstallOptions,
+  defaults: SourceDefaults,
+): Promise<InstallSource> {
+  if ((options.mode ?? defaults.defaultMode) === "local") return { kind: "local" };
+  if (options.repository !== undefined) {
+    return { kind: "remote", repository: options.repository };
+  }
+  const repository = await resolveRepository({ cwd: defaults.repoRoot, env: process.env });
+  if (!repository.ok) {
+    throw new Error(
+      `remote install needs the marketplace's GitHub repository: ${formatRepositoryError(repository.error)}`,
+    );
+  }
+  return { kind: "remote", repository: repository.value };
 }
 
 async function resolveMarketplaceName(
@@ -239,7 +268,7 @@ function buildVendorContext(
     distRoot: ctx.distRoot,
     marketplace: ctx.marketplace,
     plugins,
-    mode: ctx.mode,
+    source: ctx.source,
     run: ctx.run,
     log: ctx.log,
   };
