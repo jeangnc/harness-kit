@@ -271,9 +271,9 @@ async function runDryRun(ctx: ResolvedContext): Promise<void> {
       ctx.log(`[dry-run] ${vendor.name}: no plugins`);
       continue;
     }
-    if (vendor.name === "codex") {
+    if (vendor.pluginSelection === "native") {
       ctx.log(
-        `[dry-run] codex: ${plugins.length} plugin candidates; native selection is resolved at execution:`,
+        `[dry-run] ${vendor.name}: ${plugins.length} plugin candidates; native selection is resolved at execution:`,
       );
       for (const plugin of plugins) ctx.log(`  ${plugin.name}@${plugin.version}`);
       continue;

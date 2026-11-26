@@ -9,6 +9,8 @@ export function makeFakeVendor(name: string, overrides: Partial<Vendor> = {}): V
     home,
     pluginManifestPath: `.${name}-plugin/plugin.json`,
     catalogPath: `.${name}-plugin/marketplace.json`,
+    runtimeLayout: { kind: "home", preservedFiles: [] },
+    pluginSelection: "declared",
     configPlacement: (destRel) => ({ strategy: "link", destAbs: join(home, destRel) }),
     emitPluginManifest: async () => undefined,
     emitCatalog: async () => undefined,

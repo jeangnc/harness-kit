@@ -14,6 +14,7 @@ import {
 import { basename, dirname, join, relative, resolve } from "node:path";
 import type { Vendor } from "../vendor/schema.js";
 import { errnoCode } from "../fs.js";
+import { vendorBuild } from "../layout/index.js";
 
 interface RuntimeOptions {
   readonly distRoot: string;
@@ -62,8 +63,9 @@ export async function migrateRuntime(options: RuntimeOptions): Promise<readonly 
 async function recoverRuntime(options: RuntimeOptions): Promise<void> {
   for (const vendor of options.vendors) {
     for (const directory of ancestors(vendor.home)) await recoverInterrupted(directory, options);
-    if (vendor.name !== "codex") continue;
-    for (const name of ["profiles", "hooks", "configs"]) {
+    const layout = vendor.runtimeLayout;
+    if (layout.kind !== "nested") continue;
+    for (const name of layout.directories) {
       await recoverNested(join(vendor.home, name), options);
     }
   }
@@ -150,10 +152,13 @@ async function managedRuntimeLinks(options: RuntimeOptions): Promise<readonly st
       if (!links.includes(ancestor)) links.push(ancestor);
       continue;
     }
-    if (vendor.name === "codex") {
-      await findLinks(vendor.home, root, links);
-    } else if (vendor.name === "claude") {
-      await inspectLink(join(vendor.home, "settings.json"), root, links);
+    const layout = vendor.runtimeLayout;
+    if (layout.kind === "nested") {
+      await findLinks({ root, directories: layout.directories, links }, vendor.home);
+      continue;
+    }
+    for (const file of layout.preservedFiles) {
+      await inspectLink(join(vendor.home, file), root, links);
     }
   }
   return links;
@@ -173,11 +178,17 @@ async function managedAncestor(path: string, root: string): Promise<string | nul
     : null;
 }
 
-async function findLinks(path: string, root: string, links: string[], depth = 0): Promise<void> {
+interface LinkSearch {
+  readonly root: string;
+  readonly directories: readonly string[];
+  readonly links: string[];
+}
+
+async function findLinks(search: LinkSearch, path: string, depth = 0): Promise<void> {
   const info = await lstatOrNull(path);
   if (!info) return;
   if (info.isSymbolicLink()) {
-    await inspectLink(path, root, links);
+    await inspectLink(path, search.root, search.links);
     return;
   }
   if (!info.isDirectory()) return;
@@ -185,14 +196,10 @@ async function findLinks(path: string, root: string, links: string[], depth = 0)
     if (name === "plugins" || name.startsWith(".harness-runtime-")) continue;
     const child = join(path, name);
     const childInfo = await lstatOrNull(child);
-    if (
-      depth === 0 &&
-      childInfo?.isDirectory() &&
-      !["profiles", "hooks", "configs"].includes(name)
-    ) {
+    if (depth === 0 && childInfo?.isDirectory() && !search.directories.includes(name)) {
       continue;
     }
-    await findLinks(child, root, links, depth + 1);
+    await findLinks(search, child, depth + 1);
   }
 }
 
@@ -240,7 +247,7 @@ export async function installDefaults(options: {
   const staging = await mkdtemp(join(dirname(target), ".harness-defaults-"));
   try {
     const incoming = join(staging, "config.toml");
-    await cp(join(options.distRoot, "codex/configs/config.toml"), incoming);
+    await cp(join(vendorBuild(options.distRoot, "codex").configsDir, "config.toml"), incoming);
     const exists = await lstatOrNull(target);
     const backup = exists ? join(staging, "backup") : undefined;
     if (backup) await cp(target, backup, { dereference: true, preserveTimestamps: true });

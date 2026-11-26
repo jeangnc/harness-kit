@@ -97,14 +97,18 @@ function partitionByEnabled(ctx: VendorInstallContext): PluginPartition {
   return { enabled, disabled };
 }
 
+const SETTINGS_FILE = "settings.json";
+
 export function makeClaudeVendor(home: string): Vendor {
   return {
     name: VENDOR_NAME,
     home,
     pluginManifestPath: PLUGIN_MANIFEST_REL,
     catalogPath: CATALOG_REL,
+    runtimeLayout: { kind: "home", preservedFiles: [SETTINGS_FILE] },
+    pluginSelection: "declared",
     configPlacement(destRel) {
-      if (destRel === "settings.json") return null;
+      if (destRel === SETTINGS_FILE) return null;
       return { strategy: "link", destAbs: join(home, destRel) };
     },
     aliases(file: LinkedFile): readonly string[] {

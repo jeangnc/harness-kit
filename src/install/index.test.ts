@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 import { installWithRunner, uninstallWithRunner, updateWithRunner } from "./index.js";
 import type { CommandRunner } from "./runner.js";
+import { makeFakeVendor } from "../vendor/fakeVendor.testutil.js";
 import type { Vendor, VendorInstallContext } from "../vendor/schema.js";
 
 interface CommandCall {
@@ -43,6 +44,11 @@ interface VendorRecord {
   readonly prunes: PruneCall[];
 }
 
+const codexTraits: Partial<Vendor> = {
+  runtimeLayout: { kind: "nested", directories: ["profiles", "hooks", "configs"] },
+  pluginSelection: "native",
+};
+
 function emptyRecord(): VendorRecord {
   return { installs: [], refreshes: [], uninstalls: [], prunes: [] };
 }
@@ -53,14 +59,8 @@ function makeRecordingVendor(
   record: VendorRecord,
   extra: Partial<Vendor> = {},
 ): Vendor {
-  return {
-    name,
+  return makeFakeVendor(name, {
     home,
-    pluginManifestPath: `.${name}-plugin/plugin.json`,
-    catalogPath: `.${name}-plugin/marketplace.json`,
-    configPlacement: (destRel) => ({ strategy: "link", destAbs: join(home, destRel) }),
-    emitPluginManifest: async () => undefined,
-    emitCatalog: async () => undefined,
     install: async (ctx) => {
       record.installs.push(ctx);
     },
@@ -70,14 +70,11 @@ function makeRecordingVendor(
     uninstall: async (ctx) => {
       record.uninstalls.push(ctx);
     },
-    partitionPlugins: (ctx) => ({ enabled: ctx.plugins, disabled: [] }),
-    isInstalled: async () => true,
-    installedVersions: async () => new Map(),
     pruneStale: async (ctx, names) => {
       record.prunes.push({ ctx, names });
     },
     ...extra,
-  };
+  });
 }
 
 interface FixtureOptions {
@@ -837,7 +834,12 @@ test("Codex install dry run leaves plugin selection to the native runtime", asyn
     { marketplaceName: "foo", plugins: [{ name: "foo", vendor: "codex", version: "1.0.0" }] },
     async ({ distRoot, sandbox }) => {
       const logs: string[] = [];
-      const vendor = makeRecordingVendor("codex", join(sandbox, "codex"), emptyRecord());
+      const vendor = makeRecordingVendor(
+        "codex",
+        join(sandbox, "codex"),
+        emptyRecord(),
+        codexTraits,
+      );
       await installWithRunner(
         { distRoot, vendors: [vendor], dryRun: true, log: (message) => logs.push(message) },
         recordingRunner().run,
@@ -859,7 +861,7 @@ for (const operation of [installWithRunner, updateWithRunner, uninstallWithRunne
         writeFileSync(source, "preserved");
         symlinkSync(source, join(home, "config.toml"));
         const record = emptyRecord();
-        const vendor = makeRecordingVendor("codex", home, record);
+        const vendor = makeRecordingVendor("codex", home, record, codexTraits);
         await assert.rejects(
           operation({ distRoot, vendors: [vendor], silent: true }, recordingRunner().run),
           /migrate-runtime/,

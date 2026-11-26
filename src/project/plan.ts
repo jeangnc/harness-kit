@@ -5,6 +5,7 @@ import { parse, type TomlTable, type TomlValue } from "smol-toml";
 import { z } from "zod";
 
 import { defaultRunner, type CommandRunner } from "../install/runner.js";
+import { CATALOG_REL, PLUGIN_MANIFEST_REL } from "../vendors/codex/emit.js";
 import { assertRegular, command, readJson } from "./io.js";
 import { contains, type ProjectLocation } from "./location.js";
 import { readMetadata } from "./state.js";
@@ -48,7 +49,12 @@ export interface ProjectPlan extends ProjectLocation {
 
 const ManifestSchema = z.object({
   name: z.string(),
-  plugins: z.array(z.object({ name: z.string(), source: z.string() })),
+  plugins: z.array(
+    z.object({
+      name: z.string(),
+      source: z.object({ source: z.literal("local"), path: z.string() }),
+    }),
+  ),
 });
 const PluginSchema = z.object({ name: z.string(), version: z.string().min(1) });
 
@@ -124,19 +130,17 @@ function readCatalog(
   for (const marketplace of marketplaces) {
     if (names.has(marketplace.name)) throw new Error(`Duplicate marketplace ${marketplace.name}`);
     names.add(marketplace.name);
-    const manifestPath = join(marketplace.path, ".claude-plugin/marketplace.json");
+    const manifestPath = join(marketplace.path, CATALOG_REL);
     if (!existsSync(manifestPath)) {
-      throw new Error(
-        `Compile ${marketplace.name} with the current compiler; missing ${manifestPath}`,
-      );
+      throw new Error(`Build ${marketplace.name} with harness build; missing ${manifestPath}`);
     }
     const manifest = ManifestSchema.safeParse(readJson(manifestPath));
     if (!manifest.success || manifest.data.name !== marketplace.name) {
       throw new Error(`Marketplace identity differs at ${manifestPath}`);
     }
     for (const plugin of manifest.data.plugins) {
-      const path = resolve(marketplace.path, plugin.source);
-      const details = PluginSchema.safeParse(readJson(join(path, ".codex-plugin/plugin.json")));
+      const path = resolve(marketplace.path, plugin.source.path);
+      const details = PluginSchema.safeParse(readJson(join(path, PLUGIN_MANIFEST_REL)));
       const key = `${plugin.name}@${marketplace.name}`;
       if (!details.success || details.data.name !== plugin.name || catalog.has(key)) {
         throw new Error(`Plugin identity differs at ${path}`);

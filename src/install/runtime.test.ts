@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, symlink, readFile, lstat, stat, rm } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { migrateRuntime, assertRuntimeDetached, installDefaults } from "./runtime.js";
+import { makeClaudeVendor } from "../vendors/claude/index.js";
 import { makeCodexVendor } from "../vendors/codex/index.js";
 
 async function fixture() {
@@ -87,7 +88,7 @@ test("migration detaches a linked runtime parent without changing generated file
   await mkdir(join(f.distRoot, "foo/home"));
   await writeFile(join(f.distRoot, "foo/home/settings.json"), "preserved");
   await symlink(join(f.distRoot, "foo"), parent);
-  const vendor = { ...makeCodexVendor(join(parent, "home")), name: "claude" };
+  const vendor = makeClaudeVendor(join(parent, "home"));
   await migrateRuntime({ distRoot: f.distRoot, vendors: [vendor] });
   assert.equal((await lstat(parent)).isSymbolicLink(), false);
   await writeFile(join(parent, "home/settings.json"), "changed");

@@ -44,11 +44,19 @@ export interface VendorCatalogEmitContext {
   readonly catalog: Catalog;
 }
 
+export type RuntimeLayout =
+  | { readonly kind: "home"; readonly preservedFiles: readonly string[] }
+  | { readonly kind: "nested"; readonly directories: readonly string[] };
+
+export type PluginSelection = "declared" | "native";
+
 export interface Vendor {
   readonly name: string;
   readonly home: string;
   readonly pluginManifestPath: string;
   readonly catalogPath: string;
+  readonly runtimeLayout: RuntimeLayout;
+  readonly pluginSelection: PluginSelection;
   readonly configPlacement: (destRel: string) => ConfigPlacement | null;
   readonly aliases?: (linkedFile: LinkedFile) => readonly string[];
   readonly emitPluginManifest: (ctx: VendorEmitContext) => Promise<void>;

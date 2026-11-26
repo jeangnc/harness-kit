@@ -34,6 +34,8 @@ export function makeCodexVendor(homePath: string): Vendor {
     home,
     pluginManifestPath: PLUGIN_MANIFEST_REL,
     catalogPath: CATALOG_REL,
+    runtimeLayout: { kind: "nested", directories: ["profiles", "hooks", "configs"] },
+    pluginSelection: "native",
     configPlacement: () => null,
     emitPluginManifest: emitCodexPluginManifest,
     emitCatalog: async (ctx) => emitCodexCatalog(ctx.vendorDir, ctx.catalog),

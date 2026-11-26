@@ -7,6 +7,7 @@ import { formatZodIssues } from "../errors/index.js";
 import { errnoCode, pathExists, readdirOrEmpty } from "../fs.js";
 import { applyLink } from "../link/applier.js";
 import { applyMerge } from "../link/merger.js";
+import { preservedRuntimeFiles } from "../vendor/runtime.js";
 import type { Vendor } from "../vendor/schema.js";
 
 const ConfigsManifestSchema = z.object({
@@ -98,8 +99,9 @@ async function sweepOrphanLinks(
 ): Promise<void> {
   const managedRoot = options.distRoot + "/";
   const planned = new Set(plan.map((p) => p.destAbs));
+  const preservedPaths = new Set(options.vendors.flatMap(preservedRuntimeFiles));
   const scanDirs = new Set<string>([
-    ...options.vendors.filter((v) => v.name !== "codex").map((v) => v.home),
+    ...options.vendors.filter((v) => v.runtimeLayout.kind === "home").map((v) => v.home),
     ...plan.map((p) => dirname(p.destAbs)),
   ]);
 
@@ -108,11 +110,7 @@ async function sweepOrphanLinks(
     for (const name of entries) {
       const path = join(dir, name);
       if (planned.has(path)) continue;
-      if (
-        options.vendors.some((v) => v.name === "claude" && path === join(v.home, "settings.json"))
-      ) {
-        continue;
-      }
+      if (preservedPaths.has(path)) continue;
       const target = await readlinkOrNull(path);
       if (target === null) continue;
       const absTarget = resolve(dir, target);

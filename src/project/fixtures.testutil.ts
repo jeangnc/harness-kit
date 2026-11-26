@@ -48,7 +48,10 @@ interface CommandCall {
 
 interface MarketplaceManifest {
   readonly name: string;
-  readonly plugins: ReadonlyArray<{ readonly name: string; readonly source: string }>;
+  readonly plugins: ReadonlyArray<{
+    readonly name: string;
+    readonly source: { readonly path: string };
+  }>;
 }
 
 export interface Inventory {
@@ -122,12 +125,15 @@ export async function execute(
 function createMarketplace(root: string, name: string): string {
   const marketplace = join(root, "marketplaces", name);
   const names = ["foo", "bar"];
-  mkdirSync(join(marketplace, ".claude-plugin"), { recursive: true });
+  mkdirSync(join(marketplace, ".agents/plugins"), { recursive: true });
   writeFileSync(
-    join(marketplace, ".claude-plugin/marketplace.json"),
+    join(marketplace, ".agents/plugins/marketplace.json"),
     JSON.stringify({
       name,
-      plugins: names.map((plugin) => ({ name: plugin, source: `./plugins/${plugin}` })),
+      plugins: names.map((plugin) => ({
+        name: plugin,
+        source: { source: "local", path: `./plugins/${plugin}` },
+      })),
     }),
   );
   for (const plugin of names) {
@@ -155,11 +161,11 @@ export function createNativeRuntime(
     if (args[0] === "plugin" && args[1] === "marketplace" && args[2] === "add") {
       const path = args[3]!;
       const marketplace = JSON.parse(
-        readFileSync(join(path, ".claude-plugin/marketplace.json"), "utf8"),
+        readFileSync(join(path, ".agents/plugins/marketplace.json"), "utf8"),
       ) as MarketplaceManifest;
       for (const plugin of marketplace.plugins) {
         const manifest = JSON.parse(
-          readFileSync(join(path, plugin.source, ".codex-plugin/plugin.json"), "utf8"),
+          readFileSync(join(path, plugin.source.path, ".codex-plugin/plugin.json"), "utf8"),
         ) as { readonly version: string };
         catalog.set(`${plugin.name}@${marketplace.name}`, manifest.version);
       }
