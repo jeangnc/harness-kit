@@ -1,5 +1,4 @@
-import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parse, type TomlTable, type TomlValue } from "smol-toml";
 import { z } from "zod";
@@ -180,17 +179,8 @@ export function table(value: TomlValue | undefined): TomlTable {
 }
 
 async function projectConfigs(project: string, run: CommandRunner): Promise<readonly ConfigFile[]> {
-  const result = spawnSync(
-    "rg",
-    ["--files", "--hidden", "--no-ignore", "-g", "**/.codex/config.toml", "-g", "!**/.git/**", "."],
-    { cwd: project, encoding: "utf8" },
-  );
-  if (result.error || (result.status !== 0 && result.status !== 1)) {
-    throw new Error(`Unable to discover project configs in ${project}`);
-  }
   const configs: ConfigFile[] = [];
-  for (const relativePath of result.stdout.trim().split("\n").filter(Boolean)) {
-    const path = resolve(project, relativePath);
+  for (const path of codexConfigPaths(project)) {
     const cwd = dirname(dirname(path));
     if (hasNestedGitBoundary(project, cwd)) continue;
     const root = realpathSync(
@@ -199,6 +189,19 @@ async function projectConfigs(project: string, run: CommandRunner): Promise<read
     if (root === project) configs.push({ cwd, path, config: readToml(path) });
   }
   return configs.sort((a, b) => a.cwd.length - b.cwd.length);
+}
+
+function codexConfigPaths(directory: string): readonly string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    if (!entry.isDirectory() || entry.name === ".git") return [];
+    const path = join(directory, entry.name);
+    const config = join(path, "config.toml");
+    const own =
+      entry.name === ".codex" && lstatSync(config, { throwIfNoEntry: false })?.isFile()
+        ? [config]
+        : [];
+    return [...own, ...codexConfigPaths(path)];
+  });
 }
 
 function hasNestedGitBoundary(project: string, cwd: string): boolean {
