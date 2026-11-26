@@ -1,4 +1,4 @@
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 
 import { pathExists } from "../fs.js";
 import { unemittedSegment } from "../compile/emit-paths.js";
@@ -208,12 +208,16 @@ function ancestorDirs(sourceDir: string, rootDir: string): readonly string[] {
   const dirs: string[] = [];
   let dir = dirname(sourceDir);
   let prev = sourceDir;
-  while (dir !== prev && dir.startsWith(rootDir)) {
+  while (dir !== prev && isWithin(dir, rootDir)) {
     dirs.push(dir);
     prev = dir;
     dir = dirname(dir);
   }
   return dirs;
+}
+
+function isWithin(dir: string, rootDir: string): boolean {
+  return dir === rootDir || dir.startsWith(rootDir + sep);
 }
 
 const FENCE = /^[ \t]*(`{3,}|~{3,})/;

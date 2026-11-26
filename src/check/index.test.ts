@@ -778,6 +778,20 @@ test("check flags a bare companion .md path referenced in prose", async () => {
   );
 });
 
+test("check does not flag a prose filename that only resolves outside the plugin", async () => {
+  await withLocalSrcFixture(
+    { skills: [{ plugin: "foo", skill: "bar", body: "read the project's AGENTS.md first\n" }] },
+    async (repoRoot) => {
+      writeFileSync(join(repoRoot, "AGENTS.md"), "harness repo instructions\n");
+      const result = await check({ repoRoot, sources: NO_INSTALLED });
+      deepEqual(
+        result.violations.filter((v) => v.kind === "ref-bareword"),
+        [],
+      );
+    },
+  );
+});
+
 test("check does not flag a companion .md path used as a markdown link target", async () => {
   await withLocalSrcFixture(
     {

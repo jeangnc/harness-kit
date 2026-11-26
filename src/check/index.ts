@@ -172,7 +172,7 @@ async function checkBodies(
     violations.push(...refViolations);
     warnings.push(...refWarnings);
     violations.push(...findBarewordBypasses(source, leafIndex, skip));
-    violations.push(...(await findRefBypasses(source, repoRoot, skip)));
+    violations.push(...(await findRefBypasses(source, source.refBoundary ?? repoRoot, skip)));
     violations.push(...findEscapingRefs(source));
     warnings.push(...findBypasses(source, haystacks));
   }
