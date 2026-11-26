@@ -19,11 +19,6 @@
       "count": 1
     }
   },
-  "src/cli.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 22
-    }
-  },
   "src/cli.ts": {
     "tenets/feature-envy": {
       "count": 2
@@ -32,11 +27,6 @@
   "src/command/schema.test.ts": {
     "tenets/destructure-dot-access": {
       "count": 16
-    }
-  },
-  "src/compile.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 5
     }
   },
   "src/compile/emit-paths.test.ts": {
@@ -222,11 +212,6 @@
   "src/link/tomlMerge.test.ts": {
     "tenets/destructure-dot-access": {
       "count": 12
-    }
-  },
-  "src/lint.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 6
     }
   },
   "src/parsing/frontmatter.test.ts": {

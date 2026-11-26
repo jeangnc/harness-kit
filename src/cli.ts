@@ -10,7 +10,7 @@ import { dirname } from "node:path";
 
 import { commaSeparated, parsePositiveInt, parseTier } from "./args/index.js";
 import { migrateRuntime, installDefaults } from "./install/runtime.js";
-import { compile } from "./compile.js";
+import { build } from "./build.js";
 import { check, type ReferenceViolation, type Warning } from "./check/index.js";
 import { formatConsole, runEval, toJson } from "./eval/index.js";
 import { TIERS } from "./eval/schema.js";
@@ -27,14 +27,14 @@ const PackageJsonSchema = z.object({ version: z.string().min(1) });
 const pkgPath = fileURLToPath(new URL("../package.json", import.meta.url));
 const pkg = PackageJsonSchema.parse(JSON.parse(readFileSync(pkgPath, "utf8")));
 
-const compileCmd = defineCommand({
-  meta: { name: "compile", description: "Build per-vendor marketplaces into .harness/" },
+const buildCmd = defineCommand({
+  meta: { name: "build", description: "Build per-vendor marketplaces into .harness/" },
   args: {
     repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
     silent: { type: "boolean", default: false, description: "suppress success log" },
   },
   run: async ({ args }) => {
-    await compile({
+    await build({
       repoRoot: args.repo,
       silent: args.silent,
     });
@@ -232,14 +232,14 @@ function formatWarning(w: Warning): string {
 const lintCmd = defineCommand({
   meta: {
     name: "lint",
-    description: "Lint compiled markdown under dist/ with harness-kit's default rules",
+    description: "Lint built markdown under .harness/ with harness-kit's default rules",
   },
   args: {
-    out: { type: "string", default: "./dist", description: "output root" },
+    repo: { type: "string", default: ".", description: "repo root (where harness.yaml lives)" },
     silent: { type: "boolean", default: false, description: "suppress non-error output" },
   },
   run: async ({ args }) => {
-    const result = await lint({ outRoot: args.out, silent: args.silent });
+    const result = await lint({ repoRoot: args.repo, silent: args.silent });
     if (result.errorCount > 0) process.exit(1);
   },
 });
@@ -325,7 +325,7 @@ const main = defineCommand({
   },
   subCommands: {
     check: checkCmd,
-    compile: compileCmd,
+    build: buildCmd,
     eval: evalCmd,
     init: initCmd,
     install: installCmd,

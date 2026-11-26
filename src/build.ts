@@ -10,13 +10,13 @@ import { layoutAt, loadCatalogOrThrow } from "./layout/index.js";
 import { resolveVendorsForRepo } from "./vendor/registry.js";
 import type { Vendor } from "./vendor/schema.js";
 
-export interface CompileOptions {
+export interface BuildOptions {
   readonly repoRoot?: string;
   readonly silent?: boolean;
   readonly vendors?: readonly Vendor[];
 }
 
-export async function compile(options: CompileOptions = {}): Promise<void> {
+export async function build(options: BuildOptions = {}): Promise<void> {
   const layout = layoutAt(options.repoRoot ?? ".");
   const outRoot = layout.buildDir;
   const vendors = options.vendors ?? (await resolveVendorsForRepo(layout.repoRoot));

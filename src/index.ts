@@ -30,8 +30,8 @@ export type {
 export { compilePlugins } from "./compile/index.js";
 export type { CompilePluginsOptions, WarningSink } from "./compile/index.js";
 
-export { compile } from "./compile.js";
-export type { CompileOptions } from "./compile.js";
+export { build } from "./build.js";
+export type { BuildOptions } from "./build.js";
 
 export { lint } from "./lint.js";
 export type { LintOptions, LintResult } from "./lint.js";

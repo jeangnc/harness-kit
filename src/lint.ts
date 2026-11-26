@@ -1,12 +1,10 @@
-import { resolve } from "node:path";
-
 import { main as markdownlintCli2Main } from "markdownlint-cli2";
 
+import { layoutAt } from "./layout/index.js";
 import { resolveVendorsForRepo } from "./vendor/registry.js";
 import type { Vendor } from "./vendor/schema.js";
 
 export interface LintOptions {
-  readonly outRoot?: string;
   readonly repoRoot?: string;
   readonly vendors?: readonly Vendor[];
   readonly silent?: boolean;
@@ -27,13 +25,12 @@ const DEFAULT_CONFIG = {
 } as const;
 
 export async function lint(options: LintOptions = {}): Promise<LintResult> {
-  const outRoot = resolve(options.outRoot ?? "./dist");
-  const repoRoot = resolve(options.repoRoot ?? ".");
-  const vendors = options.vendors ?? (await resolveVendorsForRepo(repoRoot));
+  const layout = layoutAt(options.repoRoot ?? ".");
+  const vendors = options.vendors ?? (await resolveVendorsForRepo(layout.repoRoot));
   const globs = vendorGlobs(vendors);
   const log = options.silent ? (): void => undefined : (line: string): void => console.log(line);
   const exitCode = await markdownlintCli2Main({
-    directory: outRoot,
+    directory: layout.buildDir,
     argv: globs,
     optionsDefault: { config: { ...DEFAULT_CONFIG } },
     logMessage: log,

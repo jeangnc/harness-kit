@@ -1,5 +1,5 @@
 import { test } from "node:test";
-import { strict as assert } from "node:assert";
+import { equal, match, notEqual, ok } from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,58 +17,58 @@ function runCli(args: readonly string[]): {
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-test("cli compile --help exits 0 and mentions --repo", () => {
-  const { status, stdout } = runCli(["compile", "--help"]);
-  assert.equal(status, 0);
-  assert.match(stdout, /--repo/);
+test("cli build --help exits 0 and mentions --repo", () => {
+  const { status, stdout } = runCli(["build", "--help"]);
+  equal(status, 0);
+  match(stdout, /--repo/);
 });
 
 test("cli install --help exits 0 and mentions --dry-run", () => {
   const { status, stdout } = runCli(["install", "--help"]);
-  assert.equal(status, 0);
-  assert.match(stdout, /--dry-run/);
+  equal(status, 0);
+  match(stdout, /--dry-run/);
 });
 
 test("cli install --help mentions --mode", () => {
   const { status, stdout } = runCli(["install", "--help"]);
-  assert.equal(status, 0);
-  assert.match(stdout, /--mode/);
+  equal(status, 0);
+  match(stdout, /--mode/);
 });
 
 test("cli update defaults to the remote source", () => {
   const { status, stdout } = runCli(["update", "--help"]);
-  assert.equal(status, 0);
-  assert.match(stdout, /--mode=<mode>.*Default: remote/);
+  equal(status, 0);
+  match(stdout, /--mode=<mode>.*Default: remote/);
 });
 
 test("cli install --mode with an unknown value exits non-zero", () => {
   const { status, stderr } = runCli(["install", "--mode=bogus"]);
-  assert.notEqual(status, 0);
-  assert.match(stderr, /Unknown install mode "bogus"/);
+  notEqual(status, 0);
+  match(stderr, /Unknown install mode "bogus"/);
 });
 
 test("cli init --help exits 0 and mentions --marketplace and --vendors", () => {
   const { status, stdout } = runCli(["init", "--help"]);
-  assert.equal(status, 0);
-  assert.match(stdout, /--marketplace/);
-  assert.match(stdout, /--vendors/);
+  equal(status, 0);
+  match(stdout, /--marketplace/);
+  match(stdout, /--vendors/);
 });
 
 test("cli uninstall --help exits 0 and mentions --dist", () => {
   const { status, stdout } = runCli(["uninstall", "--help"]);
-  assert.equal(status, 0);
-  assert.match(stdout, /--dist/);
+  equal(status, 0);
+  match(stdout, /--dist/);
 });
 
 test("cli with unknown subcommand exits non-zero", () => {
   const { status } = runCli(["nonsense-subcommand"]);
-  assert.notEqual(status, 0);
+  notEqual(status, 0);
 });
 
 test("cli --version prints the package version", () => {
   const { status, stdout } = runCli(["--version"]);
-  assert.equal(status, 0);
-  assert.ok(
+  equal(status, 0);
+  ok(
     stdout.includes(pkg.version),
     `expected --version stdout to include ${pkg.version}, got: ${stdout}`,
   );
@@ -76,12 +76,12 @@ test("cli --version prints the package version", () => {
 
 test("cli check --help exits 0 and mentions --repo", () => {
   const { status, stdout } = runCli(["check", "--help"]);
-  assert.equal(status, 0);
-  assert.match(stdout, /--repo/);
+  equal(status, 0);
+  match(stdout, /--repo/);
 });
 
-test("cli lint --help exits 0 and mentions --out", () => {
+test("cli lint --help exits 0 and mentions --repo", () => {
   const { status, stdout } = runCli(["lint", "--help"]);
-  assert.equal(status, 0);
-  assert.match(stdout, /--out/);
+  equal(status, 0);
+  match(stdout, /--repo/);
 });
