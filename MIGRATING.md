@@ -71,6 +71,7 @@ Every command takes `--repo` (default `.`). `--src`, `--out`, and `--dist` are g
 6. Delete `dist/`.
 7. Add the release workflow. Copy it from [docs/action.md](./docs/action.md); `harness init` refuses to run over an existing `harness.yaml`.
 8. Push to `main`. The workflow publishes the `claude` and `codex` branches.
+9. If `configs/claude/settings.json` lists your marketplace under `extraKnownMarketplaces`, point that entry at the vendor branch: `{ "source": "github", "repo": "<owner>/<repo>", "ref": "claude" }`. Claude refuses to add a marketplace whose source differs from that entry. A user `settings.json` copied by an earlier install needs the same edit.
 
 ## End users
 
