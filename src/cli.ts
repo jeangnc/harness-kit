@@ -11,6 +11,7 @@ import { dirname } from "node:path";
 import { commaSeparated, parsePositiveInt, parseTier } from "./args/index.js";
 import { migrateRuntime, installDefaults } from "./install/runtime.js";
 import { build } from "./build.js";
+import { formatRepositoryError, resolveRepository } from "./repository/index.js";
 import { formatPublishError, formatPublishOutcome, publishVendors } from "./publish/index.js";
 import { layoutAt } from "./layout/index.js";
 import { check, type ReferenceViolation, type Warning } from "./check/index.js";
@@ -185,11 +186,16 @@ const publishCmd = defineCommand({
 const initCmd = defineCommand({
   meta: {
     name: "init",
-    description: "Scaffold a harness repo (harness.yaml, src/<vendor>/configs, src/plugins)",
+    description: "Scaffold a harness repo (harness.yaml, plugins/, configs/, release workflow)",
   },
   args: {
     repo: { type: "string", default: ".", description: "repo root to scaffold into" },
     marketplace: { type: "string", required: true, description: "marketplace name" },
+    owner: {
+      type: "string",
+      default: "",
+      description: "marketplace owner name; empty uses the GitHub owner of the origin remote",
+    },
     vendors: {
       type: "string",
       required: true,
@@ -206,11 +212,20 @@ const initCmd = defineCommand({
     await initHarness({
       repoRoot: args.repo,
       marketplace: args.marketplace,
+      owner: { name: args.owner === "" ? await repositoryOwner(args.repo) : args.owner },
       vendors,
       silent: args.silent,
     });
   },
 });
+
+async function repositoryOwner(repoRoot: string): Promise<string> {
+  const repository = await resolveRepository({ cwd: repoRoot, env: process.env });
+  if (!repository.ok) {
+    throw new Error(`${formatRepositoryError(repository.error)}; or pass --owner`);
+  }
+  return repository.value.owner;
+}
 
 const checkCmd = defineCommand({
   meta: {

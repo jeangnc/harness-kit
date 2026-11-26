@@ -1,12 +1,13 @@
 import { test } from "node:test";
-import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { deepEqual, equal, match, ok, rejects } from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import yaml from "js-yaml";
 
-import { initHarness } from "./index.js";
+import { initHarness, type InitOptions } from "./index.js";
+import { consumerWorkflow } from "../publish/workflow.js";
 
 async function withSandbox<T>(fn: (root: string) => Promise<T>): Promise<T> {
   const root = mkdtempSync(join(tmpdir(), "harness-kit-init-"));
@@ -17,63 +18,75 @@ async function withSandbox<T>(fn: (root: string) => Promise<T>): Promise<T> {
   }
 }
 
-test("init writes harness.yaml with marketplace and vendors", async () => {
+function options(root: string, overrides: Partial<InitOptions> = {}): InitOptions {
+  return {
+    repoRoot: root,
+    marketplace: "shop",
+    owner: { name: "acme" },
+    vendors: ["claude"],
+    silent: true,
+    ...overrides,
+  };
+}
+
+test("init writes harness.yaml with marketplace, owner and vendors", async () => {
   await withSandbox(async (root) => {
-    await initHarness({ repoRoot: root, marketplace: "shop", vendors: ["claude"], silent: true });
-    const doc = yaml.load(readFileSync(join(root, "harness.yaml"), "utf8")) as {
-      marketplace: string;
-      vendors: string[];
-    };
-    assert.equal(doc.marketplace, "shop");
-    assert.deepEqual(doc.vendors, ["claude"]);
+    await initHarness(options(root, { vendors: ["claude", "codex"] }));
+    const doc = yaml.load(readFileSync(join(root, "harness.yaml"), "utf8"));
+    deepEqual(doc, { marketplace: "shop", owner: { name: "acme" }, vendors: ["claude", "codex"] });
   });
 });
 
-test("init scaffolds src/<vendor>/configs/.gitkeep for every vendor (no common)", async () => {
+test("init scaffolds the plugins and configs directories", async () => {
   await withSandbox(async (root) => {
-    await initHarness({
-      repoRoot: root,
-      marketplace: "shop",
-      vendors: ["claude", "codex"],
-      silent: true,
-    });
-    assert.ok(existsSync(join(root, "src/claude/configs/.gitkeep")));
-    assert.ok(existsSync(join(root, "src/codex/configs/.gitkeep")));
-    assert.ok(!existsSync(join(root, "src/configs")));
+    await initHarness(options(root));
+    ok(existsSync(join(root, "plugins/.gitkeep")));
+    ok(existsSync(join(root, "configs/.gitkeep")));
   });
 });
 
-test("init scaffolds src/plugins/.gitkeep", async () => {
+test("init writes the consumer release workflow", async () => {
   await withSandbox(async (root) => {
-    await initHarness({ repoRoot: root, marketplace: "shop", vendors: ["claude"], silent: true });
-    assert.ok(existsSync(join(root, "src/plugins/.gitkeep")));
+    await initHarness(options(root));
+    equal(readFileSync(join(root, ".github/workflows/harness.yml"), "utf8"), consumerWorkflow());
   });
 });
 
-test("init writes .gitignore with dist/", async () => {
+test("init gitignores the .harness build dir", async () => {
   await withSandbox(async (root) => {
-    await initHarness({ repoRoot: root, marketplace: "shop", vendors: ["claude"], silent: true });
-    const ignore = readFileSync(join(root, ".gitignore"), "utf8");
-    assert.match(ignore, /^dist\/?$/m);
+    await initHarness(options(root));
+    match(readFileSync(join(root, ".gitignore"), "utf8"), /^\.harness\/$/m);
   });
 });
 
 test("init appends to an existing .gitignore without overwriting", async () => {
   await withSandbox(async (root) => {
-    writeFileSync(join(root, ".gitignore"), "node_modules/\n");
-    await initHarness({ repoRoot: root, marketplace: "shop", vendors: ["claude"], silent: true });
-    const ignore = readFileSync(join(root, ".gitignore"), "utf8");
-    assert.match(ignore, /node_modules\//);
-    assert.match(ignore, /^dist\/?$/m);
+    writeFileSync(join(root, ".gitignore"), "node_modules/");
+    await initHarness(options(root));
+    equal(readFileSync(join(root, ".gitignore"), "utf8"), "node_modules/\n.harness/\n");
+  });
+});
+
+test("init leaves a .gitignore that already ignores .harness unchanged", async () => {
+  await withSandbox(async (root) => {
+    writeFileSync(join(root, ".gitignore"), "/.harness\n");
+    await initHarness(options(root));
+    equal(readFileSync(join(root, ".gitignore"), "utf8"), "/.harness\n");
   });
 });
 
 test("init refuses to overwrite an existing harness.yaml", async () => {
   await withSandbox(async (root) => {
-    writeFileSync(join(root, "harness.yaml"), "marketplace: old\nvendors: [claude]\n");
-    await assert.rejects(
-      initHarness({ repoRoot: root, marketplace: "new", vendors: ["claude"], silent: true }),
-      /harness\.yaml/,
-    );
+    writeFileSync(join(root, "harness.yaml"), "marketplace: old\n");
+    await rejects(initHarness(options(root)), /harness\.yaml/);
+  });
+});
+
+test("init refuses to overwrite an existing workflow before writing anything", async () => {
+  await withSandbox(async (root) => {
+    mkdirSync(join(root, ".github/workflows"), { recursive: true });
+    writeFileSync(join(root, ".github/workflows/harness.yml"), "name: mine\n");
+    await rejects(initHarness(options(root)), /harness\.yml/);
+    ok(!existsSync(join(root, "harness.yaml")));
   });
 });

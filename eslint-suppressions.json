@@ -164,11 +164,6 @@
       "count": 3
     }
   },
-  "src/init/index.test.ts": {
-    "tenets/destructure-dot-access": {
-      "count": 10
-    }
-  },
   "src/install/discovery.test.ts": {
     "tenets/destructure-dot-access": {
       "count": 6
