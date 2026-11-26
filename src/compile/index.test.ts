@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { compilePlugins } from "./index.js";
-import { claudeVendor } from "../vendors/claude/index.js";
+import { vendor as claudeVendor } from "../vendors/claude/index.js";
 import type { PluginSource } from "../installed.js";
 import { layoutAt, type Layout } from "../layout/index.js";
 import { AGENT_PLUGINS_SCHEMA } from "../plugin/index.js";

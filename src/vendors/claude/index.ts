@@ -13,12 +13,7 @@ import {
   writeInstalledPlugins,
 } from "./installedPlugins.js";
 import type { InstalledPlugins } from "./installedPlugins.js";
-import {
-  CATALOG_REL,
-  PLUGIN_MANIFEST_REL,
-  emitClaudeCatalog,
-  emitClaudePluginManifest,
-} from "./emit.js";
+import { CATALOG_REL, PLUGIN_MANIFEST_REL, emitCatalog, emitPluginManifest } from "./emit.js";
 import type {
   DiscoveredVendorPlugin,
   PluginPartition,
@@ -86,7 +81,7 @@ function partitionByEnabled(ctx: VendorInstallContext): PluginPartition {
 
 const SETTINGS_FILE = "settings.json";
 
-export function makeClaudeVendor(home: string): Vendor {
+export function makeVendor(home: string): Vendor {
   return {
     name: VENDOR_NAME,
     home,
@@ -98,8 +93,8 @@ export function makeClaudeVendor(home: string): Vendor {
       if (destRel === SETTINGS_FILE) return null;
       return { strategy: "link", destAbs: join(home, destRel) };
     },
-    emitPluginManifest: emitClaudePluginManifest,
-    emitCatalog: async (ctx) => emitClaudeCatalog(ctx.vendorDir, ctx.catalog),
+    emitPluginManifest: emitPluginManifest,
+    emitCatalog: async (ctx) => emitCatalog(ctx.vendorDir, ctx.catalog),
     async install(ctx: VendorInstallContext): Promise<void> {
       if (ctx.plugins.length === 0) return;
       const { enabled, disabled } = partitionByEnabled(ctx);
@@ -350,4 +345,4 @@ async function refreshMarketplace(ctx: VendorInstallContext): Promise<void> {
   await runIgnoreFailure(ctx.run, "claude", ["plugin", "marketplace", "update", ctx.marketplace]);
 }
 
-export const claudeVendor: Vendor = makeClaudeVendor(join(homedir(), ".claude"));
+export const vendor: Vendor = makeVendor(join(homedir(), ".claude"));

@@ -4,8 +4,8 @@ import { mkdtemp, mkdir, writeFile, symlink, readFile, lstat, stat, rm } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { migrateRuntime, assertRuntimeDetached, installDefaults } from "./runtime.js";
-import { makeClaudeVendor } from "../vendors/claude/index.js";
-import { makeCodexVendor } from "../vendors/codex/index.js";
+import { makeVendor as makeClaudeVendor } from "../vendors/claude/index.js";
+import { makeVendor as makeCodexVendor } from "../vendors/codex/index.js";
 
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "runtime-test-"));

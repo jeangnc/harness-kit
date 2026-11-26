@@ -5,11 +5,11 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 import type { TestContext } from "node:test";
 
-import { installSelectedPlugins, listCodexMcp, listCodexPlugins } from "./native.js";
-import type { CodexPluginEntry } from "./native.js";
+import { installSelectedPlugins, listMcpServers, listPlugins } from "./native.js";
+import type { PluginEntry } from "./native.js";
 import type { CommandRunner } from "../../install/runner.js";
 
-async function fixture(t: TestContext, entries: readonly CodexPluginEntry[] = []) {
+async function fixture(t: TestContext, entries: readonly PluginEntry[] = []) {
   const home = await mkdtemp(join(tmpdir(), "harness-codex-native-"));
   t.after(async () => rm(home, { recursive: true, force: true }));
   const path = join(home, "config.toml");
@@ -42,7 +42,7 @@ async function fixture(t: TestContext, entries: readonly CodexPluginEntry[] = []
   return { options, path, contents, calls, backup: join(home, "config.before-install.toml") };
 }
 
-function plugin(overrides: Partial<CodexPluginEntry> = {}): CodexPluginEntry {
+function plugin(overrides: Partial<PluginEntry> = {}): PluginEntry {
   return {
     name: "foo",
     marketplaceName: "foo-market",
@@ -220,7 +220,7 @@ test("plugin inventory uses the requested scope without exposing extra native fi
       available: [plugin({ name: "available", installed: false })],
     });
   };
-  deepEqual(await listCodexPlugins({ home: "state", cwd: "project/nested", run }), [plugin()]);
+  deepEqual(await listPlugins({ home: "state", cwd: "project/nested", run }), [plugin()]);
   deepEqual(calls, [
     [
       "codex",
@@ -240,7 +240,7 @@ test("plugin inventory preserves source origins without exposing source details"
       available: [],
     });
 
-  deepEqual(await listCodexPlugins({ home: "state", cwd: "/", run }), [
+  deepEqual(await listPlugins({ home: "state", cwd: "/", run }), [
     plugin({ source: { source: "local" } }),
     plugin({ name: "bar", source: { source: "remote" } }),
   ]);
@@ -253,7 +253,7 @@ test("plugin inventory accepts a source without an origin discriminator", async 
       available: [],
     });
 
-  deepEqual(await listCodexPlugins({ home: "state", cwd: "/", run }), [plugin({ source: {} })]);
+  deepEqual(await listPlugins({ home: "state", cwd: "/", run }), [plugin({ source: {} })]);
 });
 
 test("MCP inventory returns only names and enablement", async () => {
@@ -266,7 +266,7 @@ test("MCP inventory returns only names and enablement", async () => {
       { name: "disabled", enabled: false, auth_status: "unsupported" },
     ]);
   };
-  deepEqual(await listCodexMcp({ home: "state", cwd: "project/nested", run }), [
+  deepEqual(await listMcpServers({ home: "state", cwd: "project/nested", run }), [
     { name: "enabled", enabled: true },
     { name: "disabled", enabled: false },
   ]);
@@ -274,7 +274,7 @@ test("MCP inventory returns only names and enablement", async () => {
 
 test("malformed MCP output is rejected without exposing its contents", async () => {
   await rejects(
-    listCodexMcp({
+    listMcpServers({
       home: "state",
       cwd: "/",
       run: async () => JSON.stringify([{ name: "credential-secret", enabled: "invalid" }]),
@@ -290,7 +290,7 @@ test("malformed MCP output is rejected without exposing its contents", async () 
 
 test("malformed plugin output is rejected without exposing its contents", async () => {
   await rejects(
-    listCodexPlugins({ home: "state", cwd: "/", run: async () => "credential-secret" }),
+    listPlugins({ home: "state", cwd: "/", run: async () => "credential-secret" }),
     (error: unknown) => {
       ok(error instanceof Error);
       equal(error.message, "Codex plugin list did not return the expected native JSON");

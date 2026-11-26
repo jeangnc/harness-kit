@@ -3,29 +3,24 @@ import { join, parse, resolve } from "node:path";
 
 import { vendorBuild } from "../../layout/index.js";
 import { defaultPartition } from "../shared.js";
-import {
-  CATALOG_REL,
-  PLUGIN_MANIFEST_REL,
-  emitCodexCatalog,
-  emitCodexPluginManifest,
-} from "./emit.js";
+import { CATALOG_REL, PLUGIN_MANIFEST_REL, emitCatalog, emitPluginManifest } from "./emit.js";
 import type { Vendor, VendorInstallContext } from "../../vendor/schema.js";
 import {
-  installCodexPlugin,
+  installPlugin,
   listMarketplacePlugins,
-  registerCodexGitMarketplace,
-  registerCodexMarketplace,
-  removeCodexMarketplace,
-  removeCodexPlugin,
-  upgradeCodexMarketplace,
+  registerGitMarketplace,
+  registerMarketplace,
+  removeMarketplace,
+  removePlugin,
+  upgradeMarketplace,
 } from "./native.js";
-import type { CodexNativeContext } from "./native.js";
+import type { Invocation } from "./native.js";
 
 const VENDOR_NAME = "codex";
 
-export function makeCodexVendor(homePath: string): Vendor {
+export function makeVendor(homePath: string): Vendor {
   const home = resolve(homePath);
-  const inHome = (ctx: VendorInstallContext): CodexNativeContext => ({
+  const inHome = (ctx: VendorInstallContext): Invocation => ({
     home,
     cwd: parse(home).root,
     run: ctx.run,
@@ -38,22 +33,22 @@ export function makeCodexVendor(homePath: string): Vendor {
     runtimeLayout: { kind: "nested", directories: ["profiles", "hooks", "configs"] },
     pluginSelection: "native",
     configPlacement: () => null,
-    emitPluginManifest: emitCodexPluginManifest,
-    emitCatalog: async (ctx) => emitCodexCatalog(ctx.vendorDir, ctx.catalog),
+    emitPluginManifest: emitPluginManifest,
+    emitCatalog: async (ctx) => emitCatalog(ctx.vendorDir, ctx.catalog),
     install: async (ctx) => refreshPlugins(ctx, inHome(ctx)),
     refresh: async (ctx) => refreshPlugins(ctx, inHome(ctx)),
     async uninstall(ctx) {
       const native = inHome(ctx);
       const entries = await listMarketplacePlugins({ ...native, marketplace: ctx.marketplace });
       for (const plugin of entries.filter((entry) => entry.installed)) {
-        await removeCodexPlugin({ ...native, key: `${plugin.name}@${ctx.marketplace}` });
+        await removePlugin({ ...native, key: `${plugin.name}@${ctx.marketplace}` });
       }
-      await removeCodexMarketplace({ ...native, marketplace: ctx.marketplace });
+      await removeMarketplace({ ...native, marketplace: ctx.marketplace });
     },
     partitionPlugins: defaultPartition,
     async pruneStale(ctx, names) {
       for (const name of names) {
-        await removeCodexPlugin({ ...inHome(ctx), key: `${name}@${ctx.marketplace}` });
+        await removePlugin({ ...inHome(ctx), key: `${name}@${ctx.marketplace}` });
       }
     },
     async isInstalled(ctx) {
@@ -71,22 +66,19 @@ export function makeCodexVendor(homePath: string): Vendor {
   };
 }
 
-async function refreshPlugins(
-  ctx: VendorInstallContext,
-  native: CodexNativeContext,
-): Promise<void> {
+async function refreshPlugins(ctx: VendorInstallContext, native: Invocation): Promise<void> {
   const { source } = ctx;
   if (source.kind === "local") {
-    await registerCodexMarketplace({
+    await registerMarketplace({
       ...native,
       marketplace: { name: ctx.marketplace, path: vendorBuild(ctx.distRoot, VENDOR_NAME).root },
     });
   } else {
-    await registerCodexGitMarketplace({
+    await registerGitMarketplace({
       ...native,
       marketplace: { name: ctx.marketplace, repository: source.repository.slug, ref: VENDOR_NAME },
     });
-    await upgradeCodexMarketplace({ ...native, marketplace: ctx.marketplace });
+    await upgradeMarketplace({ ...native, marketplace: ctx.marketplace });
   }
   const entries = await listMarketplacePlugins({ ...native, marketplace: ctx.marketplace });
   for (const plugin of ctx.plugins) {
@@ -99,7 +91,7 @@ async function refreshPlugins(
       }
       continue;
     }
-    await installCodexPlugin({
+    await installPlugin({
       ...native,
       plugin: { key: `${plugin.name}@${ctx.marketplace}`, version: plugin.version },
     });
@@ -107,6 +99,4 @@ async function refreshPlugins(
   }
 }
 
-export const codexVendor: Vendor = makeCodexVendor(
-  process.env["CODEX_HOME"] ?? join(homedir(), ".codex"),
-);
+export const vendor: Vendor = makeVendor(process.env["CODEX_HOME"] ?? join(homedir(), ".codex"));

@@ -8,7 +8,7 @@ import { extensionBlock, withoutExtensions } from "../../plugin/index.js";
 import { pluginSourcePath, writeJson } from "../shared.js";
 import type { VendorEmitContext } from "../../vendor/schema.js";
 
-export const CODEX_EXTENSION = "codex";
+export const EXTENSION_KEY = "codex";
 export const PLUGIN_MANIFEST_REL = ".codex-plugin/plugin.json";
 export const CATALOG_REL = ".agents/plugins/marketplace.json";
 
@@ -19,34 +19,34 @@ const PolicySchema = z
   })
   .strict();
 
-const CodexExtensionSchema = z
+const ExtensionSchema = z
   .object({
     policy: PolicySchema.default({ installation: "AVAILABLE", authentication: "ON_INSTALL" }),
     category: z.string().min(1).default("Productivity"),
   })
   .passthrough();
 
-type CodexExtension = z.infer<typeof CodexExtensionSchema>;
+type Extension = z.infer<typeof ExtensionSchema>;
 
-export async function emitCodexPluginManifest(ctx: VendorEmitContext): Promise<void> {
-  const { policy: _policy, category: _category, ...manifestFields } = codexExtension(ctx.plugin);
+export async function emitPluginManifest(ctx: VendorEmitContext): Promise<void> {
+  const { policy: _policy, category: _category, ...manifestFields } = readExtension(ctx.plugin);
   await writeJson(join(ctx.pluginOutDir, PLUGIN_MANIFEST_REL), {
     ...withoutExtensions(ctx.plugin.manifest),
     ...manifestFields,
   });
 }
 
-export async function emitCodexCatalog(vendorDir: string, catalog: Catalog): Promise<void> {
+export async function emitCatalog(vendorDir: string, catalog: Catalog): Promise<void> {
   await writeJson(join(vendorDir, CATALOG_REL), {
     name: catalog.name,
     interface: { displayName: catalog.name },
-    ...(catalog.extensions[CODEX_EXTENSION] ?? {}),
+    ...(catalog.extensions[EXTENSION_KEY] ?? {}),
     plugins: catalog.plugins.map(catalogEntry),
   });
 }
 
 function catalogEntry(plugin: ResolvedPlugin): Record<string, unknown> {
-  const { policy, category } = codexExtension(plugin);
+  const { policy, category } = readExtension(plugin);
   return {
     name: plugin.name,
     source: { source: "local", path: pluginSourcePath(plugin.name) },
@@ -55,8 +55,8 @@ function catalogEntry(plugin: ResolvedPlugin): Record<string, unknown> {
   };
 }
 
-function codexExtension(plugin: ResolvedPlugin): CodexExtension {
-  const parsed = CodexExtensionSchema.safeParse(extensionBlock(plugin.manifest, CODEX_EXTENSION));
+function readExtension(plugin: ResolvedPlugin): Extension {
+  const parsed = ExtensionSchema.safeParse(extensionBlock(plugin.manifest, EXTENSION_KEY));
   if (parsed.success) return parsed.data;
   throw new Error(
     `invalid extensions.codex in ${plugin.manifestPath}: ${formatZodIssues(parsed.error).join("; ")}`,

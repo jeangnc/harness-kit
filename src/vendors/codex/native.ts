@@ -19,46 +19,46 @@ const pluginList = z.object({
 });
 const mcpEntry = z.object({ name: z.string(), enabled: z.boolean() });
 
-export type CodexPluginEntry = z.infer<typeof pluginEntry>;
-export type CodexMcpEntry = z.infer<typeof mcpEntry>;
+export type PluginEntry = z.infer<typeof pluginEntry>;
+export type McpEntry = z.infer<typeof mcpEntry>;
 
-export interface CodexNativeContext {
+export interface Invocation {
   readonly home: string;
   readonly cwd: string;
   readonly run: CommandRunner;
 }
 
-export interface CodexMarketplace {
+export interface LocalMarketplace {
   readonly name: string;
   readonly path: string;
 }
 
-export interface SelectedCodexPlugin {
+export interface SelectedPlugin {
   readonly key: string;
   readonly version: string;
 }
 
-export interface SelectedCodexPlugins {
+export interface SelectedPlugins {
   readonly home: string;
-  readonly marketplaces: readonly CodexMarketplace[];
-  readonly plugins: readonly SelectedCodexPlugin[];
+  readonly marketplaces: readonly LocalMarketplace[];
+  readonly plugins: readonly SelectedPlugin[];
   readonly run: CommandRunner;
 }
 
-export async function installSelectedPlugins(options: SelectedCodexPlugins): Promise<void> {
+export async function installSelectedPlugins(options: SelectedPlugins): Promise<void> {
   const home = resolve(options.home);
   const context = { home, cwd: parse(home).root, run: options.run };
   const snapshot = await snapshotConfig(home);
   try {
     for (const marketplace of options.marketplaces) {
-      await registerCodexMarketplace({ ...context, marketplace });
+      await registerMarketplace({ ...context, marketplace });
     }
-    const installed = await listCodexPlugins(context);
+    const installed = await listPlugins(context);
     for (const plugin of options.plugins) {
       if (installed.some((entry) => matchesPlugin(entry, plugin))) continue;
-      await installCodexPlugin({ ...context, plugin });
+      await installPlugin({ ...context, plugin });
     }
-    const actual = await listCodexPlugins(context);
+    const actual = await listPlugins(context);
     for (const plugin of options.plugins) {
       if (!actual.some((entry) => matchesPlugin(entry, plugin))) {
         throw new Error(
@@ -71,7 +71,7 @@ export async function installSelectedPlugins(options: SelectedCodexPlugins): Pro
   }
 }
 
-function matchesPlugin(entry: CodexPluginEntry, plugin: SelectedCodexPlugin): boolean {
+function matchesPlugin(entry: PluginEntry, plugin: SelectedPlugin): boolean {
   return (
     `${entry.name}@${entry.marketplaceName}` === plugin.key && entry.version === plugin.version
   );
@@ -119,10 +119,8 @@ async function restoreConfig(snapshot: ConfigSnapshot): Promise<void> {
   await rm(snapshot.backup);
 }
 
-export async function listCodexPlugins(
-  context: CodexNativeContext,
-): Promise<readonly CodexPluginEntry[]> {
-  const result = await readNativeJson({
+export async function listPlugins(context: Invocation): Promise<readonly PluginEntry[]> {
+  const result = await readJson({
     ...context,
     args: ["plugin", "list", "--json"],
     operation: "plugin list",
@@ -131,8 +129,8 @@ export async function listCodexPlugins(
   return result.installed.filter((entry) => entry.installed);
 }
 
-export async function listCodexMcp(context: CodexNativeContext): Promise<readonly CodexMcpEntry[]> {
-  return readNativeJson({
+export async function listMcpServers(context: Invocation): Promise<readonly McpEntry[]> {
+  return readJson({
     ...context,
     args: ["mcp", "list", "--json"],
     operation: "MCP list",
@@ -141,9 +139,9 @@ export async function listCodexMcp(context: CodexNativeContext): Promise<readonl
 }
 
 export async function listMarketplacePlugins(
-  options: CodexNativeContext & { readonly marketplace: string },
-): Promise<readonly CodexPluginEntry[]> {
-  const result = await readNativeJson({
+  options: Invocation & { readonly marketplace: string },
+): Promise<readonly PluginEntry[]> {
+  const result = await readJson({
     ...options,
     args: ["plugin", "list", "--marketplace", options.marketplace, "--available", "--json"],
     operation: "plugin list",
@@ -154,26 +152,26 @@ export async function listMarketplacePlugins(
   );
 }
 
-export interface CodexGitMarketplace {
+export interface GitMarketplace {
   readonly name: string;
   readonly repository: string;
   readonly ref: string;
 }
 
-export async function registerCodexMarketplace(
-  options: CodexNativeContext & { readonly marketplace: CodexMarketplace },
+export async function registerMarketplace(
+  options: Invocation & { readonly marketplace: LocalMarketplace },
 ): Promise<void> {
-  await addCodexMarketplace(options, {
+  await addMarketplace(options, {
     name: options.marketplace.name,
     args: [resolve(options.marketplace.path)],
   });
 }
 
-export async function registerCodexGitMarketplace(
-  options: CodexNativeContext & { readonly marketplace: CodexGitMarketplace },
+export async function registerGitMarketplace(
+  options: Invocation & { readonly marketplace: GitMarketplace },
 ): Promise<void> {
   const { name, repository, ref } = options.marketplace;
-  await addCodexMarketplace(options, { name, args: [repository, "--ref", ref] });
+  await addMarketplace(options, { name, args: [repository, "--ref", ref] });
 }
 
 interface MarketplaceAddition {
@@ -181,11 +179,8 @@ interface MarketplaceAddition {
   readonly args: readonly string[];
 }
 
-async function addCodexMarketplace(
-  context: CodexNativeContext,
-  addition: MarketplaceAddition,
-): Promise<void> {
-  const result = await readNativeJson({
+async function addMarketplace(context: Invocation, addition: MarketplaceAddition): Promise<void> {
+  const result = await readJson({
     ...context,
     args: ["plugin", "marketplace", "add", ...addition.args, "--json"],
     operation: "marketplace add",
@@ -196,10 +191,10 @@ async function addCodexMarketplace(
   }
 }
 
-export async function upgradeCodexMarketplace(
-  options: CodexNativeContext & { readonly marketplace: string },
+export async function upgradeMarketplace(
+  options: Invocation & { readonly marketplace: string },
 ): Promise<void> {
-  const result = await readNativeJson({
+  const result = await readJson({
     ...options,
     args: ["plugin", "marketplace", "upgrade", options.marketplace, "--json"],
     operation: "marketplace upgrade",
@@ -212,10 +207,10 @@ export async function upgradeCodexMarketplace(
   }
 }
 
-export async function installCodexPlugin(
-  options: CodexNativeContext & { readonly plugin: SelectedCodexPlugin },
+export async function installPlugin(
+  options: Invocation & { readonly plugin: SelectedPlugin },
 ): Promise<void> {
-  const result = await readNativeJson({
+  const result = await readJson({
     ...options,
     args: ["plugin", "add", options.plugin.key, "--json"],
     operation: "plugin add",
@@ -228,35 +223,33 @@ export async function installCodexPlugin(
   }
 }
 
-export async function removeCodexPlugin(
-  options: CodexNativeContext & { readonly key: string },
-): Promise<void> {
-  await runNative({
+export async function removePlugin(options: Invocation & { readonly key: string }): Promise<void> {
+  await execute({
     ...options,
     args: ["plugin", "remove", options.key, "--json"],
     operation: "plugin remove",
   });
 }
 
-export async function removeCodexMarketplace(
-  options: CodexNativeContext & { readonly marketplace: string },
+export async function removeMarketplace(
+  options: Invocation & { readonly marketplace: string },
 ): Promise<void> {
-  await runNative({
+  await execute({
     ...options,
     args: ["plugin", "marketplace", "remove", options.marketplace, "--json"],
     operation: "marketplace remove",
   });
 }
 
-interface NativeRequest extends CodexNativeContext {
+interface CommandRequest extends Invocation {
   readonly args: readonly string[];
   readonly operation: string;
 }
 
-async function readNativeJson<T>(
-  request: NativeRequest & { readonly schema: z.ZodType<T> },
+async function readJson<T>(
+  request: CommandRequest & { readonly schema: z.ZodType<T> },
 ): Promise<T> {
-  const output = await runNative(request);
+  const output = await execute(request);
   try {
     return request.schema.parse(JSON.parse(output ?? ""));
   } catch {
@@ -264,7 +257,7 @@ async function readNativeJson<T>(
   }
 }
 
-async function runNative(request: NativeRequest): Promise<void | string> {
+async function execute(request: CommandRequest): Promise<void | string> {
   try {
     return await request.run("codex", request.args, {
       env: { CODEX_HOME: resolve(request.home) },

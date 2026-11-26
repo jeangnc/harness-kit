@@ -2,7 +2,7 @@ import { deepEqual, ok, rejects } from "node:assert/strict";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { CommandRunner } from "../install/runner.js";
-import type { CodexPluginEntry } from "../vendors/codex/native.js";
+import type { PluginEntry } from "../vendors/codex/native.js";
 import { setupProject, verifyProject } from "./index.js";
 import {
   createFixture,
@@ -19,7 +19,7 @@ test("Verification reports enabled remote account plugins alongside the configur
   const fixture = await createFixture(t);
   const native = createNativeRuntime(fixture);
   const plan = await prepareFixture(fixture);
-  const remote: CodexPluginEntry = {
+  const remote: PluginEntry = {
     name: "bar",
     marketplaceName: "bar",
     version: "1.0.0",
@@ -41,7 +41,7 @@ test("Verification reports enabled remote account plugins alongside the configur
 
 function withInstalledPlugins(
   run: CommandRunner,
-  select: (plugins: readonly CodexPluginEntry[]) => readonly CodexPluginEntry[],
+  select: (plugins: readonly PluginEntry[]) => readonly PluginEntry[],
 ): CommandRunner {
   return async (program, args, options) => {
     const output = await run(program, args, options);
@@ -57,7 +57,7 @@ test("Verification rejects enabled local plugins absent from the configuration",
   const native = createNativeRuntime(fixture);
   const plan = await prepareFixture(fixture);
   await setupProject(plan, native.run);
-  const foreign: CodexPluginEntry = {
+  const foreign: PluginEntry = {
     name: "bar",
     marketplaceName: "bar",
     version: "1.0.0",

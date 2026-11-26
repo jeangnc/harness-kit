@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { compilePlugins } from "./index.js";
-import { claudeVendor } from "../vendors/claude/index.js";
-import { codexVendor } from "../vendors/codex/index.js";
+import { vendor as claudeVendor } from "../vendors/claude/index.js";
+import { vendor as codexVendor } from "../vendors/codex/index.js";
 import { layoutAt, type Layout } from "../layout/index.js";
 import { AGENT_PLUGINS_SCHEMA } from "../plugin/index.js";
 

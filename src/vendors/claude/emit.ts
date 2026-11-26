@@ -5,23 +5,23 @@ import { pluginSourcePath, writeJson } from "../shared.js";
 import type { Catalog } from "../../layout/index.js";
 import type { VendorEmitContext } from "../../vendor/schema.js";
 
-export const CLAUDE_EXTENSION = "claude";
+export const EXTENSION_KEY = "claude";
 export const PLUGIN_MANIFEST_REL = ".claude-plugin/plugin.json";
 export const CATALOG_REL = ".claude-plugin/marketplace.json";
 
-export async function emitClaudePluginManifest(ctx: VendorEmitContext): Promise<void> {
+export async function emitPluginManifest(ctx: VendorEmitContext): Promise<void> {
   const { manifest } = ctx.plugin;
   await writeJson(join(ctx.pluginOutDir, PLUGIN_MANIFEST_REL), {
     ...withoutExtensions(manifest),
-    ...extensionBlock(manifest, CLAUDE_EXTENSION),
+    ...extensionBlock(manifest, EXTENSION_KEY),
   });
 }
 
-export async function emitClaudeCatalog(vendorDir: string, catalog: Catalog): Promise<void> {
+export async function emitCatalog(vendorDir: string, catalog: Catalog): Promise<void> {
   await writeJson(join(vendorDir, CATALOG_REL), {
     name: catalog.name,
     owner: catalog.owner,
-    ...(catalog.extensions[CLAUDE_EXTENSION] ?? {}),
+    ...(catalog.extensions[EXTENSION_KEY] ?? {}),
     plugins: catalog.plugins.map((plugin) => ({
       name: plugin.name,
       source: pluginSourcePath(plugin.name),

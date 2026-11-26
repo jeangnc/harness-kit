@@ -1,7 +1,7 @@
 import { relative } from "node:path";
 
 import { defaultRunner, type CommandRunner } from "../install/runner.js";
-import { listCodexMcp, listCodexPlugins, type CodexPluginEntry } from "../vendors/codex/native.js";
+import { listMcpServers, listPlugins, type PluginEntry } from "../vendors/codex/native.js";
 import { verifyEnvironment } from "./direnv.js";
 import { inspectProjectHooks, type HookInspection, type HookInspector } from "./hooks.js";
 import { enabledPlugins, table, type ProjectPlan } from "./plan.js";
@@ -51,7 +51,7 @@ export async function verifyInventory(
 ): Promise<readonly ProjectInventory[]> {
   const scopes: ProjectInventory[] = [];
   for (const scope of plan.scopes) {
-    const listed = await listCodexPlugins({ home: plan.home, cwd: scope.cwd, run });
+    const listed = await listPlugins({ home: plan.home, cwd: scope.cwd, run });
     const enabled = listed.filter((entry) => entry.enabled);
     const actual = pluginKeys(enabled.filter((entry) => entry.source?.source !== "remote"));
     const expected = enabledPlugins(scope.config);
@@ -60,7 +60,7 @@ export async function verifyInventory(
         `Enabled plugin inventory differs at ${scope.cwd}; expected ${expected.join(", ")}, found ${actual.join(", ")}`,
       );
     }
-    const servers = await listCodexMcp({ home: plan.home, cwd: scope.cwd, run });
+    const servers = await listMcpServers({ home: plan.home, cwd: scope.cwd, run });
     for (const [name, config] of Object.entries(table(scope.config["mcp_servers"]))) {
       const server = servers.find((entry) => entry.name === name);
       if (server?.enabled !== (table(config)["enabled"] ?? true)) {
@@ -79,6 +79,6 @@ export async function verifyInventory(
   return scopes;
 }
 
-function pluginKeys(plugins: readonly CodexPluginEntry[]): string[] {
+function pluginKeys(plugins: readonly PluginEntry[]): string[] {
   return plugins.map((entry) => `${entry.name}@${entry.marketplaceName}`).sort();
 }

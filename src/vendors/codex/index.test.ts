@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { codexVendor, makeCodexVendor } from "./index.js";
+import { vendor as codexVendor, makeVendor } from "./index.js";
 import type { VendorInstallContext } from "../../vendor/schema.js";
 
 function fixture(
@@ -41,7 +41,7 @@ function fixture(
     },
     log: () => undefined,
   };
-  return { ctx, calls, vendor: makeCodexVendor("/tmp/foo/home") };
+  return { ctx, calls, vendor: makeVendor("/tmp/foo/home") };
 }
 
 test("Codex leaves every runtime config user-owned", () => {
@@ -186,7 +186,7 @@ test("installation does not write user files or delete cached content itself", a
     await writeFile(join(cache, "foo"), "foo");
     await writeFile(join(home, "config.toml"), "foo = true\n");
     const { ctx } = fixture([{ name: "foo", enabled: true, installed: true, version: "1.0.0" }]);
-    await makeCodexVendor(home).install(ctx);
+    await makeVendor(home).install(ctx);
     equal(await readFile(join(cache, "foo"), "utf8"), "foo");
     equal(await readFile(join(home, "config.toml"), "utf8"), "foo = true\n");
   } finally {
@@ -236,5 +236,5 @@ test("native commands target the vendor's configured home", async () => {
 });
 
 test("relative Codex homes are resolved before changing command directories", () => {
-  equal(makeCodexVendor("foo").home, resolve("foo"));
+  equal(makeVendor("foo").home, resolve("foo"));
 });
