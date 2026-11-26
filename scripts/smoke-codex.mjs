@@ -2,14 +2,14 @@ import { mkdtemp, mkdir, writeFile, readFile, realpath } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { makeCodexVendor } from "../dist/vendors/codex/index.js";
+import { makeVendor } from "../dist/vendors/codex/index.js";
 import { defaultRunner } from "../dist/install/runner.js";
 const root = await realpath(await mkdtemp(join(tmpdir(), "harness-native-smoke-")));
 const home = join(root, "home");
-const distRoot = join(root, "dist");
+const distRoot = join(root, ".harness");
 const plugin = join(distRoot, "codex/plugins/foo");
 await mkdir(join(plugin, ".codex-plugin"), { recursive: true });
-await mkdir(join(distRoot, "codex/.claude-plugin"), { recursive: true });
+await mkdir(join(distRoot, "codex/.agents/plugins"), { recursive: true });
 await mkdir(home, { recursive: true });
 await writeFile(
   join(home, "config.toml"),
@@ -20,19 +20,26 @@ await writeFile(
   JSON.stringify({ name: "foo", version: "2.0.0", description: "foo" }),
 );
 await writeFile(
-  join(distRoot, "codex/.claude-plugin/marketplace.json"),
+  join(distRoot, "codex/.agents/plugins/marketplace.json"),
   JSON.stringify({
     name: "foo-market",
-    owner: { name: "foo" },
-    plugins: [{ name: "foo", source: "./plugins/foo" }],
+    interface: { displayName: "foo-market" },
+    plugins: [
+      {
+        name: "foo",
+        source: { source: "local", path: "./plugins/foo" },
+        policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+        category: "Productivity",
+      },
+    ],
   }),
 );
-const vendor = makeCodexVendor(home);
+const vendor = makeVendor(home);
 const ctx = {
   distRoot,
   marketplace: "foo-market",
   plugins: [{ name: "foo", version: "2.0.0", path: plugin }],
-  mode: "local",
+  source: { kind: "local" },
   run: defaultRunner,
   log: console.log,
 };
@@ -63,10 +70,14 @@ const effective = JSON.parse(
   ),
 );
 assert.equal(effective.installed[0].enabled, true);
-await assert.rejects(
-  vendor.refresh({ ...ctx, plugins: [{ name: "foo", version: "3.0.0", path: plugin }] }),
-  /disabled plugin foo/,
-);
+const logs = [];
+await vendor.refresh({
+  ...ctx,
+  plugins: [{ name: "foo", version: "3.0.0", path: plugin }],
+  log: (line) => logs.push(line),
+});
+assert.ok(logs.some((line) => line.includes("skipped disabled foo@2.0.0")));
+assert.equal((await vendor.installedVersions(ctx)).get("foo"), "2.0.0");
 assert.match(await readFile(join(home, "config.toml"), "utf8"), /enabled = false/);
 console.log("PASS conflicting project/global selection remains globally disabled");
 await vendor.uninstall(ctx);

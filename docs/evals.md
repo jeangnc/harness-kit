@@ -57,7 +57,7 @@ the close marker is not in the region — assert on it explicitly if it matters.
 whose `start` never appears in the output **fails the run** (the required block is missing).
 
 The engine is [promptfoo](https://www.promptfoo.dev) with its `anthropic:claude-agent-sdk`
-provider; the local `dist/` plugins load into every session. No API key needed: the session and
+provider; the local `.harness/` build (`--dist`, default `./.harness`) loads into every session. No API key needed: the session and
 the rubric judge use the `claude` login, or `ANTHROPIC_API_KEY` when it is set. Each session runs
 with `bypassPermissions` so it completes unattended regardless of the launcher's mode (a session
 in plan mode would otherwise write plan files instead of the code under test). The judge model is separate from the session

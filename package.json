@@ -1,8 +1,8 @@
 {
   "name": "@jean.gnc/harness-kit",
-  "version": "0.23.2",
+  "version": "1.0.0",
   "type": "module",
-  "description": "Build your own multi-agent harness: typed toolkit for authoring plugins (skills, agents, commands, hooks) and shipping them to Claude Code and Codex from a single source tree.",
+  "description": "Author agent plugins once in a vendor-neutral tree and publish native Claude Code and Codex marketplaces from it.",
   "license": "MIT",
   "author": "Jean Gonçalves <jean.gnc@gmail.com>",
   "homepage": "https://github.com/jeangnc/harness-kit#readme",

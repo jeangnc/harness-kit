@@ -4,7 +4,7 @@ Thanks for taking the time. This doc covers the dev workflow only.
 
 ## Requirements
 
-- Node ≥ 20
+- Node ≥ 24
 - pnpm (this repo's lockfile is pnpm)
 - git
 - Optional: `claude` and/or `codex` CLIs on `$PATH` — needed to exercise `install` / `uninstall` end-to-end
@@ -23,7 +23,7 @@ pnpm install --frozen-lockfile
 
 | Script | What it does |
 | --- | --- |
-| `pnpm test` | Full test suite via `tsx --test 'tests/**/*.test.ts'` |
+| `pnpm test` | Full test suite via `tsx --test 'src/**/*.test.ts'` |
 | `pnpm lint` | `tsc --noEmit` + Prettier check + ESLint |
 | `pnpm lint:format` | Prettier check only |
 | `pnpm lint:code` | ESLint only |
@@ -35,21 +35,24 @@ pnpm install --frozen-lockfile
 
 Production code lives in `src/`:
 
-- `skill.ts` — Zod schemas + `defineSkill`
-- `plugin.ts` — Zod schemas + `definePlugin`
-- `compile.ts` — discovery, placeholder substitution, `SKILL.md` emission
-- `build.ts` — higher-level wrapper around `compile`
-- `install.ts` — install / uninstall for Claude + Codex
-- `placeholders.ts` — placeholder lexer + substitution
-- `invariants.ts` — companion-file parity check
-- `cli.ts` — `harness-kit` bin entry
+- `layout/` — repo layout, `plugin.json` discovery, catalog loading
+- `overlay/` — per-vendor effective trees
+- `plugin/`, `skill/` — Zod schemas for `plugin.json` and `SKILL.md`
+- `compile/` — placeholder substitution and plugin emission
+- `configs/` — `configs/` emission and the link manifest
+- `build.ts` — `harness build` entry
+- `publish/` — vendor branch publishing and the consumer workflow
+- `install/` — install / update / uninstall
+- `vendors/` — Claude and Codex adapters
+- `placeholders/` — placeholder lexer + substitution
+- `cli.ts` — `harness` bin entry
 - `index.ts` — public exports
 
-Tests live in `tests/` (flat, 1:1 with source). Fixture trees live in `tests/fixtures/`.
+Tests sit next to their source as `*.test.ts`. Fixture trees live in `src/compile/__fixtures__/`.
 
 ## Tests
 
-The test runner is Node's built-in test runner via `tsx`. Any new behaviour needs a test. For pipeline behaviour, mirror the existing fixture pattern (`tests/fixtures/good`, `tests/fixtures/companionRender`) — a fully-formed mini source tree the test points `compile` at.
+The test runner is Node's built-in test runner via `tsx`. Any new behaviour needs a test. For pipeline behaviour, mirror the existing fixture pattern (`src/compile/__fixtures__/good`, `src/compile/__fixtures__/companionRender`) — a fully-formed mini repo the test builds.
 
 ## Style
 
@@ -63,7 +66,7 @@ Imperative, terse, sentence-case. Match the existing log: `Add X`, `Improves rea
 
 ## Pull requests
 
-Branch off `main` and open the PR against `main`. CI (`.github/workflows/ci.yml`) runs `pnpm lint`, `pnpm test`, and `pnpm build` on Node 20.x / 22.x / 24.x with pnpm 10; all jobs must be green.
+Branch off `main` and open the PR against `main`. CI (`.github/workflows/ci.yml`) runs `pnpm lint`, `pnpm test`, and `pnpm build` on Node 24 with pnpm 10; all jobs must be green.
 
 ## Releases
 

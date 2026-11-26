@@ -1,50 +1,92 @@
-# Marketplace + plugin manifests
+# Catalog + plugin manifests
 
-harness-kit's manifests are a strict superset of the upstream Claude Code shapes — anything documented in the Claude marketplace schema passes through unchanged. This page covers the harness-kit-specific extensions and a few less-obvious behaviors.
+A harness repo has no hand-written marketplace manifest. `harness build` derives one catalog per vendor from `harness.yaml` and the plugins it discovers. This page covers `harness.yaml`, `plugin.json`, and what each vendor catalog contains.
 
-## Marketplace manifest (`src/.claude-plugin/marketplace.json`)
+## `harness.yaml`
 
-Enumerates the plugins to compile. Folders not listed here are ignored.
-
-```json
-{
-  "name": "my-harness",
-  "owner": { "name": "you" },
-  "plugins": [
-    { "source": { "kind": "relative", "path": "my-plugin" } }
-  ]
-}
+```yaml
+marketplace: my-harness
+owner:
+  name: you
+  email: you@example.com # optional
+  url: https://example.com # optional
+vendors:
+  - claude
+  - codex
+roots: # optional — named include aliases
+  shared: shared
+extensions: # optional — extra fields per vendor catalog
+  claude:
+    metadata: { description: My harness }
 ```
 
-### `metadata.pluginRoot`
+- `marketplace` (required) — kebab-case catalog name. Users install plugins as `<plugin>@<marketplace>`.
+- `owner` (required) — `name`, plus optional `email` and `url`.
+- `vendors` (required) — at least one built-in vendor name.
+- `roots` — name → repo-relative path. Reachable from markdown as `{{include:@<name>/…}}`. See [authoring.md](./authoring.md#composing-with-includes).
+- `extensions.<vendor>` — fields merged into that vendor's catalog as-is.
 
-By default plugin source paths resolve relative to `src/plugins/`. Set `metadata.pluginRoot` to rebase the lookup elsewhere — useful when `plugins/` lives next to a `packages/` tree or another sibling directory. `pluginRoot` controls source resolution only; it has no effect on the dist layout, which always emits per-vendor plugins under `dist/<vendor>/plugins/<name>/`.
+Unknown keys fail the build. There is no `repository` key; remote installs read the GitHub repository from `GITHUB_REPOSITORY` or the `origin` remote. `harness.yml` also works, but not both.
 
-```json
-{
-  "name": "my-harness",
-  "metadata": { "pluginRoot": "packages" },
-  "plugins": [
-    { "source": { "kind": "relative", "path": "my-plugin" } }
-  ]
-}
-```
+## Plugin discovery
 
-### Passthrough fields
+Every folder `plugins/<plugin>/` is a plugin. There is no plugin list.
 
-Upstream fields pass through to `dist/.claude-plugin/marketplace.json` untouched: `homepage`, `repository`, `allowCrossMarketplaceDependenciesOn`, object-form dependencies (`{ name, marketplace }`), and any other documented field. Existing Claude marketplaces drop in without rewriting their manifests.
+- Each folder must contain `plugin.json`, or the build fails.
+- The manifest `name` must equal the folder name.
+- Folders starting with `.` are ignored.
+- Plugins are emitted in folder-name order.
 
-## Plugin manifest (`src/plugins/<plugin>/.claude-plugin/plugin.json` or `PLUGIN.ts`)
+## Plugin manifest (`plugins/<plugin>/plugin.json`)
 
-### `hookRequires: [{ event, skill | command | agent }]`
-
-Declares that a hook depends on a specific skill / command / agent being available. The build validates each requirement against the locally discovered artifact IDs — a typo fails the build instead of surfacing as a runtime "skill not found" later.
+The manifest follows [Agent Plugins 1.0](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json). Vendor-specific fields live under `extensions.<vendor>`.
 
 ```json
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "my-plugin",
-  "hookRequires": [
-    { "event": "SessionStart", "skill": "my-plugin:warmup" }
-  ]
+  "version": "1.0.0",
+  "description": "What the plugin does.",
+  "extensions": {
+    "codex": {
+      "policy": { "installation": "AVAILABLE" },
+      "category": "Productivity",
+      "interface": { "displayName": "My Plugin" }
+    },
+    "harness": {
+      "hookRequires": [{ "event": "SessionStart", "skill": "my-plugin:warmup" }]
+    }
+  }
 }
 ```
+
+Required: `$schema` (exactly the URL above), `name` (kebab-case), `version`, `description`. Optional: `author`, `homepage`, `repository`, `license`, `keywords`, `extensions`. Unknown top-level keys fail the build.
+
+### `extensions.claude`
+
+Merged into the emitted `.claude-plugin/plugin.json` as top-level fields.
+
+### `extensions.codex`
+
+- `policy` — copied to the plugin's catalog entry. Default `{ "installation": "AVAILABLE", "authentication": "ON_INSTALL" }`.
+- `category` — copied to the plugin's catalog entry. Default `"Productivity"`.
+- Every other field (e.g. `interface`) is merged into the emitted `.codex-plugin/plugin.json`.
+
+### `extensions.harness.hookRequires: [{ event, skill | command | agent }]`
+
+Declares that a hook depends on a specific skill, command, or agent. Each entry sets exactly one of `skill`, `command`, or `agent` as `<plugin>:<name>`. The build checks each requirement against the local artifacts for every vendor, so a typo fails the build instead of surfacing as a runtime "skill not found".
+
+## Vendor catalogs
+
+`harness build` writes one catalog per declared vendor:
+
+| Vendor   | Catalog                                           | Plugin manifest                                          |
+| -------- | ------------------------------------------------- | -------------------------------------------------------- |
+| `claude` | `.harness/claude/.claude-plugin/marketplace.json` | `.harness/claude/plugins/<p>/.claude-plugin/plugin.json` |
+| `codex`  | `.harness/codex/.agents/plugins/marketplace.json` | `.harness/codex/plugins/<p>/.codex-plugin/plugin.json`   |
+
+Claude's catalog holds `name`, `owner`, `extensions.claude` from `harness.yaml`, and one `{ name, source: "./plugins/<p>", description }` entry per plugin.
+
+Codex's catalog holds `name`, `interface.displayName` (the marketplace name), `extensions.codex` from `harness.yaml`, and one `{ name, source: { source: "local", path: "./plugins/<p>" }, policy, category }` entry per plugin.
+
+Each vendor plugin manifest is the neutral `plugin.json` without `$schema` and `extensions`, plus that vendor's extension fields. `harness publish` pushes each `.harness/<vendor>/` tree, minus `configs/`, to the branch named after the vendor.

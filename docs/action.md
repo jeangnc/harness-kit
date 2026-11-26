@@ -47,7 +47,7 @@ jobs:
 | Input               | Required | Default | Description                                                                               |
 | ------------------- | -------- | ------- | ----------------------------------------------------------------------------------------- |
 | `mode`              | yes      | —       | `verify` runs `build`, `check`, and `lint`. `release` also runs `publish`.                |
-| `vendors`           | no       | `""`    | Space-separated vendors to publish in `release` mode. Empty publishes every declared one. |
+| `vendors`           | no       | `""`    | Comma-separated vendors to publish in `release` mode. Empty publishes every declared one. |
 | `working-directory` | no       | `.`     | Directory containing `harness.yaml`.                                                      |
 
 Any other `mode` fails the first step.

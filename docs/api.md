@@ -1,10 +1,10 @@
 # Programmatic API
 
-Everything the `harness` CLI does is also available as a typed module API. Use this when scripting a multi-step pipeline, embedding harness-kit into a larger compile system, or wiring a custom [`Vendor`](./vendors.md).
+Everything the `harness` CLI does is also available as a typed module API. Use this when scripting a multi-step pipeline, embedding harness-kit into a larger build system, or wiring a custom [`Vendor`](./vendors.md).
 
 ```ts
 import {
-  compile,
+  build,
   compilePlugins,
   install,
   uninstall,
@@ -19,34 +19,30 @@ import {
 
 All exports are re-exported from the package root; see [`src/index.ts`](../src/index.ts) for the full surface.
 
-## Compile
+## Build
 
-### `compile(options: CompileOptions): Promise<void>`
+### `build(options?: BuildOptions): Promise<void>`
 
-Compiles `src/` to `dist/`. Reads `harness.yaml` at `repoRoot` to determine vendors. Emits per-vendor subtrees under `dist/<vendor>/` (plugins, configs, and the vendor marketplace manifest) plus a top-level `dist/configs.json` link manifest.
+Builds `plugins/`, `configs/`, and named roots into `.harness/`. Reads `harness.yaml` at `repoRoot` (default `.`) to determine vendors unless `vendors` is passed. Emits per-vendor subtrees under `.harness/<vendor>/` (plugins, configs, and the vendor catalog) plus a top-level `.harness/configs.json` link manifest.
 
 ```ts
-await compile({
-  srcRoot: "./src",
-  outRoot: "./dist",
-  repoRoot: ".",
-});
+await build({ repoRoot: "." });
 ```
 
 ### `compilePlugins(options: CompilePluginsOptions): Promise<void>`
 
-Lower-level entry. `compile` is `compilePlugins` with vendor resolution wired up plus configs handling — prefer `compile` unless you need to inject vendors or skip `harness.yaml` reads and configs.
+Lower-level entry that emits plugins and catalogs only. It takes a `Layout` and `vendors` explicitly. `build` adds vendor resolution, a clean `.harness/`, and configs — prefer `build` unless you need that control.
 
 ## Lint
 
 ### `lint(options: LintOptions): Promise<LintResult>`
 
 ```ts
-const result = await lint({ outRoot: "./dist", silent: false });
+const result = await lint({ repoRoot: ".", silent: false });
 if (result.errorCount > 0) process.exit(1);
 ```
 
-Runs `markdownlint-cli2` against `plugins/**/*.md` with harness-kit's bundled rules. See the README's CLI section for the rule set.
+Runs `markdownlint-cli2` against `<vendor>/**/*.md` under `.harness/` with harness-kit's bundled rules. See [cli.md](./cli.md#bundled-rules) for the rule set.
 
 ## Install / Uninstall
 
@@ -62,10 +58,10 @@ import {
 
 const config = await loadHarnessConfig(".");
 const vendors = resolveVendors(config.vendors, builtinVendors());
-await install({ distRoot: "./dist", repoRoot: ".", vendors });
+await install({ repoRoot: ".", vendors, mode: "local" });
 ```
 
-Applies config links from `dist/configs.json` (replacing existing symlinks, backing up regular files) and calls each vendor's `install` hook.
+Applies config links from `.harness/configs.json` (replacing existing symlinks, backing up regular files) and calls each vendor's `install` hook. `mode` is `"local"` (default) or `"remote"`; remote mode resolves the GitHub repository from `GITHUB_REPOSITORY` or the `origin` remote unless `repository` is passed.
 
 ### `uninstall(options: InstallOptions): Promise<void>`
 
@@ -81,11 +77,12 @@ Same shape as `install`. Calls each vendor's `uninstall` hook.
 await initHarness({
   repoRoot: ".",
   marketplace: "my-harness",
+  owner: { name: "you" },
   vendors: ["claude", "codex"],
 });
 ```
 
-Writes `harness.yaml`, scaffolds `src/<vendor>/configs/` for each vendor, `src/plugins/`, and adds `dist/` to `.gitignore`. Fails if `harness.yaml` already exists.
+Writes `harness.yaml`, scaffolds `plugins/` and `configs/`, writes `.github/workflows/harness.yml`, and adds `.harness/` to `.gitignore`. Fails if `harness.yaml` or the workflow already exists.
 
 ## Vendor interface
 
@@ -102,7 +99,7 @@ Helpers exported here:
 ### `check(options: CheckOptions): Promise<CheckResult>`
 
 ```ts
-const result = await check({ srcRoot: "./src" });
+const result = await check({ repoRoot: "." });
 for (const v of result.violations) {
   console.log(`${v.file}:${v.line}:${v.column} ${v.token} — ${v.message}`);
 }
@@ -110,7 +107,7 @@ for (const v of result.violations) {
 
 References resolve against the union of local artifacts and the installed-plugin index. An unresolved reference into a **local** plugin (artifact missing) is a `violation`; an unresolved reference into an **external** plugin is an `unresolved-external` entry in `warnings`. Pass `sources` to override the installed-plugin index (defaults to the vendor homes).
 
-Pass `docRoots` to scan files outside `srcRoot` — repo docs that name skills but would otherwise keep stale names through a rename. Each entry is a directory (walked for `.md`) or a single file; paths already inside a plugin directory are skipped. Docs own no plugin, so the `{{ref:}}` plugin-boundary rule does not apply to them.
+Pass `docRoots` to scan files outside `plugins/` — repo docs that name skills but would otherwise keep stale names through a rename. Each entry is a directory (walked for `.md`) or a single file; paths already inside a plugin directory are skipped. Docs own no plugin, so the `{{ref:}}` plugin-boundary rule does not apply to them.
 
 ## Installed index
 
@@ -119,7 +116,7 @@ Discover and index plugins already installed under a vendor home. Useful for the
 ```ts
 import { defaultSources, discoverInstalled, indexInstalled } from "@jean.gnc/harness-kit";
 
-const sources = await defaultSources(); // claude + codex homes
+const sources = defaultSources(); // claude + codex homes
 const artifacts = await discoverInstalled(sources);
 const index = indexInstalled(artifacts);
 ```
@@ -145,20 +142,9 @@ await writeFile("out.json", toJson(report));
 
 Case files are validated by `CaseFileSchema` (exported alongside `TIERS`); types: `EvalReport`, `CaseReport`, `CaseFile`, `EvalCase`, `Expectation`, `Tier`.
 
-## Skill + plugin authoring
+## Skill + plugin schemas
 
-Use these in `SKILL.ts` / `PLUGIN.ts` files for typed metadata:
-
-```ts
-import { defineSkill, definePlugin } from "@jean.gnc/harness-kit";
-
-export default defineSkill({
-  name: "my-skill",
-  description: "What the skill does — single line.",
-});
-```
-
-Also exported: `parsePlaceholders`, `substitute`, `loadSkill`, `findSkillFile`, `checkCompanionFiles`, plus all related schemas (`SkillSchema`, `PluginSchema`, `CompanionSchema`) and types (`Skill`, `Plugin`, `LoadedSkill`, `Companion`, …).
+Exported for tooling that reads authored files: `parsePlaceholders`, `substitute`, `loadSkill`, `findSkillFile`, `checkCompanionFiles`, plus all related schemas (`SkillSchema`, `PluginSchema`, `CompanionSchema`) and types (`Skill`, `Plugin`, `LoadedSkill`, `Companion`, …).
 
 ## Result type
 

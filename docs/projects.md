@@ -6,13 +6,13 @@ Homes default to `~/.codex/projects/<checkout-directory-name>`. Use `--state-roo
 
 ## Explicit presets
 
-A preset is local JSON configuration with a name, local compiled marketplaces, TOML settings, and optional instruction text. The toolkit supplies no organization choices, credential policy, trust grants, or personal files. Keep paths and project choices in local configuration.
+A preset is local JSON configuration with a name, local built marketplaces, TOML settings, and optional instruction text. The toolkit supplies no organization choices, credential policy, trust grants, or personal files. Keep paths and project choices in local configuration.
 
 ```json
 {
   "name": "foo",
   "marketplaces": [
-    { "name": "foo-marketplace", "path": "/absolute/path/to/marketplace/dist/codex" }
+    { "name": "foo-marketplace", "path": "/absolute/path/to/marketplace/.harness/codex" }
   ],
   "config": "cli_auth_credentials_store = \"file\"\nmcp_oauth_credentials_store = \"file\"\n[projects.\"/absolute/path/to/foo\"]\ntrust_level = \"trusted\"\n[plugins.\"foo@foo-marketplace\"]\nenabled = true\n",
   "instructions": "Use the project's conventions.\n"
@@ -39,7 +39,7 @@ Verify checks enabled plugins, explicit MCP enablement, and enabled-hook trust i
 
 ## Updates and recovery
 
-Rerun setup after changing plugin selection. Bump each changed plugin's version before compiling its marketplace; same-version native caches are retained. Existing home settings and instructions remain user-owned, including on repeated setup. To change those values later, edit the home directly. Changing a preset name is refused for an existing home.
+Rerun setup after changing plugin selection. Bump each changed plugin's version before building its marketplace; same-version native caches are retained. Existing home settings and instructions remain user-owned, including on repeated setup. To change those values later, edit the home directly. Changing a preset name is refused for an existing home.
 
 Moving a checkout creates a new identity. Remove its old `CODEX_HOME` export, then run setup, enrollment, and `direnv allow` for the new location. Choose a fresh `--home-name` if the previous checkout already owns the default name. New worktrees require setup and distinct names. A failed setup clears readiness until a successful retry; an existing `.envrc` still exports its fixed path, so complete setup and verify before using that home. An interrupted setup may leave `.setup-lock`; confirm no installer is running before removing it. An interrupted native install preserves `config.before-install.toml` when restoration is needed; restore that private backup deliberately before retrying.
 

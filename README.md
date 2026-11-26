@@ -7,61 +7,83 @@
 ```sh
 pnpm add @jean.gnc/harness-kit
 harness init --marketplace my-harness --vendors claude,codex
-# author src/plugins/<plugin>/... (see docs/authoring.md)
-harness compile
+# author plugins/<plugin>/plugin.json and skills (see docs/authoring.md)
+harness build
 harness install
 ```
 
 `harness` is the canonical bin; `harness-kit` is an alias.
 
+Upgrading from 0.x: see [MIGRATING.md](./MIGRATING.md).
+
+## Install
+
+For people who use a published harness repo. Replace `<owner>/<repo>`, `<plugin>`, and `<marketplace>` (the `marketplace` value in its `harness.yaml`).
+
+Claude Code:
+
+```sh
+claude plugin marketplace add <owner>/<repo>#claude
+claude plugin install <plugin>@<marketplace>
+```
+
+Codex:
+
+```sh
+codex plugin marketplace add <owner>/<repo> --ref codex
+codex plugin add <plugin>@<marketplace>
+```
+
+Each vendor installs from the branch named after it. The release workflow keeps those branches current.
+
+Working on the harness repo itself? Run `harness build && harness install` to install the local build from `.harness/<vendor>/`. See [docs/cli.md](./docs/cli.md#harness-install).
+
 ## How it works
 
-You write plugins and configs once under `src/`, declare which vendors to target, and `harness compile` emits a per-vendor `dist/` tree that vendor installers consume. Codex runtime files remain user-owned.
+You write plugins and configs once on `main`, declare which vendors to target, and `harness build` emits a per-vendor tree under `.harness/` (gitignored). `harness publish` pushes each tree to a branch named after its vendor, and vendor CLIs install from that branch. Codex runtime files remain user-owned.
 
 ### `harness.yaml`
 
-A declarative repo config with two required fields and one optional one:
+A declarative repo config:
 
 ```yaml
 marketplace: my-harness
+owner:
+  name: you
 vendors:
   - claude
   - codex
-roots:                       # optional — named include aliases (see docs/authoring.md)
-  shared: src/shared
+roots: # optional — named include aliases (see docs/authoring.md)
+  shared: shared
 ```
 
-Created by `harness init`. Read automatically by `compile`, `install`, and `uninstall` via `--repo` (default `.`).
+`marketplace`, `owner`, and `vendors` are required. Plugins are not listed; every `plugins/*/plugin.json` is discovered. Created by `harness init`. Read by every command via `--repo` (default `.`). Field reference: [docs/catalog.md](./docs/catalog.md).
 
 ### Vendors
 
-A vendor is a named target with a home directory, a per-vendor manifest path, an `emitPluginManifest` hook, `install`/`uninstall` hooks, and an optional `aliases` hook for fan-out symlink destinations. Built-in:
+A vendor is a named target with a home directory, per-vendor manifest and catalog paths, emit hooks, and install/refresh/uninstall hooks. Built-in:
 
-- **claude** — registers plugins via `claude plugin install`; creates a `CLAUDE.md` symlink whenever an `AGENTS.md` config file is linked.
-- **codex** — uses native plugin commands and respects `CODEX_HOME`. It never links or merges runtime settings. Disabled plugins stay disabled; refreshing an outdated disabled plugin fails because native installation would enable it.
+- **claude** — registers the marketplace and installs plugins via `claude plugin`; links config files into `~/.claude`, except `settings.json`.
+- **codex** — uses native plugin commands and respects `CODEX_HOME`. It never links or merges runtime settings. Disabled plugins stay disabled; a refresh skips them and logs the version they are missing.
 
 Writing your own vendor: see [docs/vendors.md](./docs/vendors.md).
 
 ### Source layout
 
-You author a single source manifest, `src/.claude-plugin/marketplace.json`, listing which plugins to compile. `compile` reads it and emits a per-vendor manifest at `dist/<vendor>/.claude-plugin/marketplace.json` — that emitted one is the marketplace each vendor's CLI actually installs.
-
-Under `src/`:
-
 | Path | What it is |
 | --- | --- |
-| `src/.claude-plugin/marketplace.json` | The source manifest — lists the plugins to compile. |
-| `src/<vendor>/configs/` | Vendor-specific config files (e.g. `AGENTS.md`, `settings.json`). A `.fragments/` subdir holds source-only snippets, never emitted to dist. |
-| `src/plugins/<plugin>/` | A plugin, shared across every declared vendor — `skills/<name>/` (each `SKILL.md`, or `SKILL.ts` + `body.md`), plus optional `agents/`, `commands/`, and `hooks/`. |
-| `src/<root>/` | Any directory mapped under `roots:` in `harness.yaml` (e.g. `shared/`), reachable from skills via `{{include:@<root>/…}}`. |
+| `harness.yaml` | Marketplace name, owner, vendors, and optional named roots. |
+| `plugins/<plugin>/plugin.json` | The plugin manifest ([Agent Plugins 1.0](https://agent-plugins.org/schemas/1.0.0/plugin.schema.json)). Vendor fields go under `extensions.<vendor>`. |
+| `plugins/<plugin>/` | Everything else in the plugin — `skills/<name>/SKILL.md`, plus optional `agents/`, `commands/`, and `hooks/`. |
+| `plugins/<plugin>/<vendor>/` | Vendor overlay. A file at the same relative path replaces the neutral file; other files are added. |
+| `configs/` | Config files for every vendor (e.g. `AGENTS.md`). `configs/<vendor>/` overlays them per vendor. A `.fragments/` subdir holds source-only snippets. |
+| `<root>/` | Any directory mapped under `roots:` in `harness.yaml` (e.g. `shared/`), reachable via `{{include:@<root>/…}}`. Overlays work the same way. |
 
-`compile` reads `src/` and writes a `dist/<vendor>/` subtree per declared vendor; `install` applies vendor-owned config placements and registers plugins. Mechanics: [docs/pipeline.md](./docs/pipeline.md). Manifest fields: [docs/marketplace.md](./docs/marketplace.md).
-
-> **Known gap:** a repo that publishes its own marketplace from the root needs a `.claude-plugin/marketplace.json` symlink at the repo root pointing at the compiled `dist/<vendor>/.claude-plugin/marketplace.json`. `install` does not create it yet — repos that need it maintain it by hand. See [docs/pipeline.md](./docs/pipeline.md#install-pipeline).
+`build` writes `.harness/<vendor>/` per declared vendor; `install` applies vendor-owned config placements and registers plugins. Mechanics: [docs/pipeline.md](./docs/pipeline.md). Overlays: [docs/authoring.md](./docs/authoring.md#vendor-overlays). Manifest fields: [docs/catalog.md](./docs/catalog.md).
 
 ## Capabilities
 
-**Author once, render per vendor.** A single `SKILL.md` compiles to every declared vendor's tree:
+**Author once, render per vendor.** A single `SKILL.md` builds into every declared vendor's tree:
 
 ```md
 ---
@@ -74,6 +96,8 @@ description: What the skill does — single line.
 For type safety conventions, see {{skill:dev-tools:typescript}}.
 ```
 
+**Override per vendor.** Put `plugins/<plugin>/codex/skills/my-skill/SKILL.md` next to the neutral file and Codex gets that copy instead.
+
 **Compose with shared fragments.** Inline a snippet anywhere, reach it by relative path, repo-root `#`, or a named `@alias`:
 
 ```md
@@ -84,24 +108,25 @@ For type safety conventions, see {{skill:dev-tools:typescript}}.
 
 **Evaluate behavior.** `harness eval` runs routing cases (*did the right skill fire?*) and solving cases (*did the agent produce the right thing?*), graded by deterministic assertions plus an optional LLM-judge rubric. Runs on promptfoo; no API key — sessions and the judge use the `claude` login.
 
-Full authoring guide (skill format, includes, fragments vs companions, TypeScript authoring, placeholder reference): [docs/authoring.md](./docs/authoring.md). Eval format and tiers: [docs/evals.md](./docs/evals.md).
+Full authoring guide (skill format, overlays, includes, fragments vs companions, placeholder reference): [docs/authoring.md](./docs/authoring.md). Eval format and tiers: [docs/evals.md](./docs/evals.md).
 
 ## CLI
 
 ```sh
-harness init      # scaffold harness.yaml + src/<vendor>/configs/ + src/plugins/
-harness compile   # compile src/ → dist/ per declared vendors
-harness lint      # lint compiled markdown under dist/
+harness init      # scaffold harness.yaml, plugins/, configs/, and .github/workflows/harness.yml
+harness build     # build plugins/ + configs/ → .harness/<vendor>/ per declared vendor
+harness lint      # lint built markdown under .harness/
 harness check     # validate plugin references against local + installed sources
+harness publish   # push each .harness/<vendor>/ to the branch named after the vendor
 harness install   # bootstrap: link configs + register plugins per declared vendor (--mode=local|remote)
 harness update    # refresh plugins for an already-installed harness; skips config links, reports version diff
-harness migrate-runtime --vendor codex # back up and detach legacy runtime links before compiling
+harness migrate-runtime --vendor codex # back up and detach legacy runtime links before building
 harness install-defaults --vendor codex # publish static /etc/codex/config.toml separately
 harness uninstall # remove installed plugins per declared vendor
 harness eval      # run routing + solving evals against the installed harness
 ```
 
-→ Full flag reference, bundled lint rules, and `package.json` integration: [docs/cli.md](./docs/cli.md).
+→ Full flag reference, bundled lint rules, and `package.json` integration: [docs/cli.md](./docs/cli.md). CI: [docs/action.md](./docs/action.md).
 
 ## Programmatic API
 
@@ -113,11 +138,11 @@ Everything the CLI does is also a typed module API. See [docs/api.md](./docs/api
 
 ## Runtime ownership
 
-Run `harness migrate-runtime --vendor codex --dry-run` before rebuilding an existing linked installation, then repeat without `--dry-run`. Migrate Claude settings separately with `--vendor claude`. Migration preserves file contents and permissions with private backups. Compilation and mutating install commands refuse runtime links into their generated output.
+Run `harness migrate-runtime --vendor codex --dry-run` before rebuilding an existing linked installation, then repeat without `--dry-run`. Migrate Claude settings separately with `--vendor claude`. Migration preserves file contents and permissions with private backups. `build` and mutating install commands refuse runtime links into `.harness/`.
 
 Publish Codex static defaults with `harness install-defaults --vendor codex`; `--dry-run` previews the destination. Only this command needs administrator permission for `/etc/codex/config.toml`. Existing machine defaults are backed up. Never elevate the whole plugin installer. User settings, personal instructions, hooks, and profiles stay in their native user locations and stop receiving automatic template updates.
 
-Local mode registers `dist/codex` through Codex. Remote mode requires an already configured Git marketplace and refreshes it through Codex. Use native marketplace registration first for a new remote source. Native commands run outside the invoking project and only select plugins enabled at user/system scope. Project and named-profile enablement is never promoted to a global setting. Unsupported native refreshes fail explicitly instead of editing settings or caches. Run `node scripts/smoke-codex.mjs` after compiling the toolkit to verify native CLI integration in an isolated temporary home.
+Local mode registers `.harness/codex` through Codex. Remote mode registers `<owner>/<repo>` at ref `codex` and upgrades it through Codex. Native commands run outside the invoking project and only select plugins enabled at user/system scope. Project and named-profile enablement is never promoted to a global setting. Unsupported native refreshes fail explicitly instead of editing settings or caches. Run `node scripts/smoke-codex.mjs` after building the toolkit (`pnpm build`) to verify native CLI integration in an isolated temporary home.
 
 ## Requirements
 
