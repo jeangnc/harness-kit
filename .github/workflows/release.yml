@@ -7,7 +7,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - uses: actions/checkout@v6
@@ -30,3 +30,12 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: npm publish --access public --provenance
+      - name: Move floating major tag
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag --force "$major" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$major"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes
